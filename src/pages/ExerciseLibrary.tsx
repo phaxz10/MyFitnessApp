@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import {
   ArrowLeft,
   Plus,
@@ -22,6 +24,7 @@ import {
   generateExerciseDetails,
   isGeminiInitialized,
 } from '../services/gemini';
+import { exerciseFormSchema, type ExerciseFormData } from '../schemas/forms';
 import type { Exercise, AIExerciseResponse } from '../types';
 
 const MUSCLE_GROUPS = [
@@ -55,14 +58,27 @@ export function ExerciseLibrary() {
     null,
   );
   const [showDeleteModal, setShowDeleteModal] = useState<Exercise | null>(null);
-
-  // Form state
-  const [formName, setFormName] = useState('');
-  const [formDescription, setFormDescription] = useState('');
-  const [formMuscleGroups, setFormMuscleGroups] = useState('');
-  const [formEquipment, setFormEquipment] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    watch,
+    formState: { errors },
+  } = useForm<ExerciseFormData>({
+    resolver: zodResolver(exerciseFormSchema),
+    defaultValues: {
+      name: '',
+      description: '',
+      muscleGroups: '',
+      equipment: '',
+    },
+  });
+
+  const formName = watch('name');
 
   useEffect(() => {
     fetchExercises();
@@ -82,20 +98,24 @@ export function ExerciseLibrary() {
   });
 
   const resetForm = () => {
-    setFormName('');
-    setFormDescription('');
-    setFormMuscleGroups('');
-    setFormEquipment('');
+    reset({
+      name: '',
+      description: '',
+      muscleGroups: '',
+      equipment: '',
+    });
     setEditingExercise(null);
   };
 
   const handleOpenAddModal = (exercise?: Exercise) => {
     if (exercise) {
       setEditingExercise(exercise);
-      setFormName(exercise.name);
-      setFormDescription(exercise.description || '');
-      setFormMuscleGroups(exercise.muscle_groups || '');
-      setFormEquipment(exercise.equipment || '');
+      reset({
+        name: exercise.name,
+        description: exercise.description || '',
+        muscleGroups: exercise.muscle_groups || '',
+        equipment: exercise.equipment || '',
+      });
     } else {
       resetForm();
     }
@@ -117,9 +137,9 @@ export function ExerciseLibrary() {
     try {
       const details: AIExerciseResponse =
         await generateExerciseDetails(formName);
-      setFormDescription(details.description);
-      setFormMuscleGroups(details.muscle_groups.join(', '));
-      setFormEquipment(details.equipment);
+      setValue('description', details.description);
+      setValue('muscleGroups', details.muscle_groups.join(', '));
+      setValue('equipment', details.equipment);
     } catch (err) {
       console.error('Failed to generate exercise details:', err);
       alert('Failed to generate details. Please try again.');
@@ -128,26 +148,21 @@ export function ExerciseLibrary() {
     }
   };
 
-  const handleSaveExercise = async () => {
-    if (!formName.trim()) {
-      alert('Please enter an exercise name');
-      return;
-    }
-
+  const onSubmit = async (data: ExerciseFormData) => {
     try {
       if (editingExercise) {
         await updateExercise(editingExercise.id, {
-          name: formName,
-          description: formDescription,
-          muscle_groups: formMuscleGroups,
-          equipment: formEquipment,
+          name: data.name,
+          description: data.description || '',
+          muscle_groups: data.muscleGroups || '',
+          equipment: data.equipment || '',
         });
       } else {
         await addExercise({
-          name: formName,
-          description: formDescription,
-          muscle_groups: formMuscleGroups,
-          equipment: formEquipment,
+          name: data.name,
+          description: data.description || '',
+          muscle_groups: data.muscleGroups || '',
+          equipment: data.equipment || '',
           is_ai_generated: false,
         });
       }
@@ -188,6 +203,7 @@ export function ExerciseLibrary() {
       {/* Header */}
       <div className="flex items-center gap-4 mb-4">
         <button
+          type="button"
           onClick={() => navigate(-1)}
           className="p-2 text-slate-400 hover:text-white"
         >
@@ -214,6 +230,7 @@ export function ExerciseLibrary() {
       <div className="flex gap-2 overflow-x-auto pb-2 mb-4 scrollbar-hide">
         {MUSCLE_GROUPS.map((muscle) => (
           <button
+            type="button"
             key={muscle}
             onClick={() => setSelectedMuscle(muscle)}
             className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors ${
@@ -314,20 +331,22 @@ export function ExerciseLibrary() {
         }}
         title={editingExercise ? 'Edit Exercise' : 'Add Exercise'}
       >
-        <div className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div>
-            <label className="block text-slate-400 text-sm mb-1">
+            <label htmlFor="name" className="block text-slate-400 text-sm mb-1">
               Exercise Name *
             </label>
             <div className="flex gap-2">
               <Input
-                value={formName}
-                onChange={(e) => setFormName(e.target.value)}
+                id="name"
+                {...register('name')}
                 placeholder="e.g., Bench Press"
                 className="flex-1"
+                error={errors.name?.message}
               />
               {isGeminiInitialized() && (
                 <Button
+                  type="button"
                   variant="secondary"
                   onClick={handleGenerateDetails}
                   disabled={isGenerating || !formName.trim()}
@@ -343,41 +362,42 @@ export function ExerciseLibrary() {
           </div>
 
           <div>
-            <label className="block text-slate-400 text-sm mb-1">
+            <label htmlFor="description" className="block text-slate-400 text-sm mb-1">
               Description
             </label>
             <TextArea
-              value={formDescription}
-              onChange={(e) => setFormDescription(e.target.value)}
+              id="description"
+              {...register('description')}
               placeholder="How to perform the exercise..."
               rows={3}
             />
           </div>
 
           <div>
-            <label className="block text-slate-400 text-sm mb-1">
+            <label htmlFor="muscleGroups" className="block text-slate-400 text-sm mb-1">
               Muscle Groups
             </label>
             <Input
-              value={formMuscleGroups}
-              onChange={(e) => setFormMuscleGroups(e.target.value)}
+              id="muscleGroups"
+              {...register('muscleGroups')}
               placeholder="e.g., Chest, Shoulders, Triceps"
             />
           </div>
 
           <div>
-            <label className="block text-slate-400 text-sm mb-1">
+            <label htmlFor="equipment" className="block text-slate-400 text-sm mb-1">
               Equipment
             </label>
             <Input
-              value={formEquipment}
-              onChange={(e) => setFormEquipment(e.target.value)}
+              id="equipment"
+              {...register('equipment')}
               placeholder="e.g., Barbell, Bench"
             />
           </div>
 
           <div className="flex gap-3 pt-2">
             <Button
+              type="button"
               variant="secondary"
               className="flex-1"
               onClick={() => {
@@ -388,14 +408,14 @@ export function ExerciseLibrary() {
               Cancel
             </Button>
             <Button
+              type="submit"
               className="flex-1"
-              onClick={handleSaveExercise}
               disabled={loading || !formName.trim()}
             >
               {editingExercise ? 'Save Changes' : 'Add Exercise'}
             </Button>
           </div>
-        </div>
+        </form>
       </Modal>
 
       {/* Exercise Details Modal */}

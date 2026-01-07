@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import {
   ArrowLeft,
   Plus,
@@ -11,11 +13,22 @@ import {
   X,
   Save,
 } from 'lucide-react';
-import { Card, CardContent, Button, Input, Modal } from '../components/ui';
+import {
+  Card,
+  CardContent,
+  Button,
+  Input,
+  Modal,
+  TextArea,
+} from '../components/ui';
 import { RestTimer } from '../components/workout';
 import { useWorkoutLogs } from '../hooks/useWorkoutLogs';
 import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
 import { useExercises } from '../hooks/useExercises';
+import {
+  workoutNotesSchema,
+  type WorkoutNotesFormData,
+} from '../schemas/forms';
 import type {
   Exercise,
   ProgramExerciseWithDetails,
@@ -57,9 +70,20 @@ export function WorkoutSession() {
   const [showAddExercise, setShowAddExercise] = useState(false);
   const [showEndWorkout, setShowEndWorkout] = useState(false);
   const [showCancelWorkout, setShowCancelWorkout] = useState(false);
-  const [workoutNotes, setWorkoutNotes] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [elapsedTime, setElapsedTime] = useState(0);
+
+  // Form for workout notes
+  const {
+    register,
+    handleSubmit,
+    reset: resetNotesForm,
+  } = useForm<WorkoutNotesFormData>({
+    resolver: zodResolver(workoutNotesSchema),
+    defaultValues: {
+      notes: '',
+    },
+  });
 
   // Resume workout on mount
   useEffect(() => {
@@ -310,9 +334,10 @@ export function WorkoutSession() {
     );
   };
 
-  const handleEndWorkout = async () => {
+  const handleEndWorkout = async (data: WorkoutNotesFormData) => {
     if (!activeWorkout) return;
-    await endWorkout(activeWorkout.id, workoutNotes || undefined);
+    await endWorkout(activeWorkout.id, data.notes || undefined);
+    resetNotesForm();
     navigate('/workout');
   };
 
@@ -681,53 +706,58 @@ export function WorkoutSession() {
         onClose={() => setShowEndWorkout(false)}
         title="Finish Workout"
       >
-        <div className="mb-4">
-          <p className="text-slate-300 mb-2">Workout Summary</p>
-          <div className="grid grid-cols-3 gap-4 p-4 bg-slate-700 rounded-lg">
-            <div className="text-center">
-              <p className="text-2xl font-bold text-white">
-                {formatElapsedTime(elapsedTime)}
-              </p>
-              <p className="text-xs text-slate-400">Duration</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-white">
-                {exercisesWithSets.length}
-              </p>
-              <p className="text-xs text-slate-400">Exercises</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-white">{totalSets}</p>
-              <p className="text-xs text-slate-400">Sets</p>
+        <form onSubmit={handleSubmit(handleEndWorkout)}>
+          <div className="mb-4">
+            <p className="text-slate-300 mb-2">Workout Summary</p>
+            <div className="grid grid-cols-3 gap-4 p-4 bg-slate-700 rounded-lg">
+              <div className="text-center">
+                <p className="text-2xl font-bold text-white">
+                  {formatElapsedTime(elapsedTime)}
+                </p>
+                <p className="text-xs text-slate-400">Duration</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-white">
+                  {exercisesWithSets.length}
+                </p>
+                <p className="text-xs text-slate-400">Exercises</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-white">{totalSets}</p>
+                <p className="text-xs text-slate-400">Sets</p>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="mb-4">
-          <label className="block text-slate-400 text-sm mb-2">
-            Notes (optional)
-          </label>
-          <textarea
-            value={workoutNotes}
-            onChange={(e) => setWorkoutNotes(e.target.value)}
-            placeholder="How did the workout go?"
-            className="w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 resize-none"
-            rows={3}
-          />
-        </div>
+          <div className="mb-4">
+            <label
+              htmlFor="workoutNotes"
+              className="block text-slate-400 text-sm mb-2"
+            >
+              Notes (optional)
+            </label>
+            <TextArea
+              id="workoutNotes"
+              {...register('notes')}
+              placeholder="How did the workout go?"
+              rows={3}
+            />
+          </div>
 
-        <div className="flex gap-3">
-          <Button
-            variant="secondary"
-            className="flex-1"
-            onClick={() => setShowEndWorkout(false)}
-          >
-            Continue
-          </Button>
-          <Button className="flex-1" onClick={handleEndWorkout}>
-            Save Workout
-          </Button>
-        </div>
+          <div className="flex gap-3">
+            <Button
+              type="button"
+              variant="secondary"
+              className="flex-1"
+              onClick={() => setShowEndWorkout(false)}
+            >
+              Continue
+            </Button>
+            <Button type="submit" className="flex-1">
+              Save Workout
+            </Button>
+          </div>
+        </form>
       </Modal>
 
       {/* Cancel Workout Modal */}

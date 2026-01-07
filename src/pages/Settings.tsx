@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import {
   ChevronRight,
   User,
@@ -21,6 +23,14 @@ import {
   readBackupFile,
 } from '../services/backup';
 import { resetDatabase } from '../services/db';
+import {
+  profileFormSchema,
+  goalsFormSchema,
+  apiKeyFormSchema,
+  type ProfileFormData,
+  type GoalsFormData,
+  type ApiKeyFormData,
+} from '../schemas/forms';
 
 const activityOptions = [
   { value: 'sedentary', label: 'Sedentary' },
@@ -51,20 +61,35 @@ export function Settings() {
   const [success, setSuccess] = useState<string | null>(null);
 
   // Profile form
-  const [age, setAge] = useState('');
-  const [heightCm, setHeightCm] = useState('');
-  const [activityLevel, setActivityLevel] = useState('');
-  const [goal, setGoal] = useState('');
-  const [targetRate, setTargetRate] = useState('');
+  const profileForm = useForm<ProfileFormData>({
+    resolver: zodResolver(profileFormSchema),
+    defaultValues: {
+      age: '',
+      heightCm: '',
+      activityLevel: '',
+    },
+  });
 
-  // Targets form
-  const [calories, setCalories] = useState('');
-  const [protein, setProtein] = useState('');
-  const [carbs, setCarbs] = useState('');
-  const [fat, setFat] = useState('');
+  // Goals form
+  const goalsForm = useForm<GoalsFormData>({
+    resolver: zodResolver(goalsFormSchema),
+    defaultValues: {
+      goal: '',
+      targetRate: '',
+      calories: '',
+      protein: '',
+      carbs: '',
+      fat: '',
+    },
+  });
 
-  // API Key
-  const [apiKey, setApiKey] = useState('');
+  // API Key form
+  const apiKeyForm = useForm<ApiKeyFormData>({
+    resolver: zodResolver(apiKeyFormSchema),
+    defaultValues: {
+      apiKey: '',
+    },
+  });
 
   useEffect(() => {
     fetchProfile();
@@ -72,29 +97,37 @@ export function Settings() {
 
   useEffect(() => {
     if (profile) {
-      setAge(profile.age.toString());
-      setHeightCm(profile.height_cm.toString());
-      setActivityLevel(profile.activity_level);
-      setGoal(profile.goal);
-      setTargetRate(profile.target_rate_kg_per_week.toString());
-      setCalories(profile.calorie_target.toString());
-      setProtein(profile.protein_target_g.toString());
-      setCarbs(profile.carbs_target_g.toString());
-      setFat(profile.fat_target_g.toString());
-      setApiKey(profile.gemini_api_key || '');
+      profileForm.reset({
+        age: profile.age.toString(),
+        heightCm: profile.height_cm.toString(),
+        activityLevel: profile.activity_level,
+      });
+      goalsForm.reset({
+        goal: profile.goal,
+        targetRate: profile.target_rate_kg_per_week.toString(),
+        calories: profile.calorie_target.toString(),
+        protein: profile.protein_target_g.toString(),
+        carbs: profile.carbs_target_g.toString(),
+        fat: profile.fat_target_g.toString(),
+      });
+      apiKeyForm.reset({
+        apiKey: profile.gemini_api_key || '',
+      });
     }
-  }, [profile]);
+  }, [profile, profileForm, goalsForm, apiKeyForm]);
 
-  const handleUpdateProfile = async () => {
+  const handleUpdateProfile = async (data: ProfileFormData) => {
     setIsLoading(true);
     setError(null);
     try {
       await updateProfile({
-        age: parseInt(age),
-        height_cm: parseFloat(heightCm),
-        activity_level: activityLevel as any,
-        goal: goal as any,
-        target_rate_kg_per_week: parseFloat(targetRate),
+        age: parseInt(data.age),
+        height_cm: parseFloat(data.heightCm),
+        activity_level: data.activityLevel as
+          | 'sedentary'
+          | 'light'
+          | 'moderate'
+          | 'active',
       });
       setSuccess('Profile updated');
       setActiveSection(null);
@@ -105,15 +138,22 @@ export function Settings() {
     }
   };
 
-  const handleUpdateTargets = async () => {
+  const handleUpdateTargets = async (data: GoalsFormData) => {
     setIsLoading(true);
     setError(null);
     try {
       await updateProfile({
-        calorie_target: parseInt(calories),
-        protein_target_g: parseInt(protein),
-        carbs_target_g: parseInt(carbs),
-        fat_target_g: parseInt(fat),
+        goal: data.goal as
+          | 'bulk'
+          | 'lean_bulk'
+          | 'recomp'
+          | 'cut'
+          | 'maintain',
+        target_rate_kg_per_week: parseFloat(data.targetRate),
+        calorie_target: parseInt(data.calories),
+        protein_target_g: parseInt(data.protein),
+        carbs_target_g: parseInt(data.carbs),
+        fat_target_g: parseInt(data.fat),
       });
       setSuccess('Targets updated');
       setActiveSection(null);
@@ -134,20 +174,30 @@ export function Settings() {
     setError(null);
     try {
       initGemini(profile.gemini_api_key);
+      const values = goalsForm.getValues();
       const result = await calculateTargets({
-        age: parseInt(age),
+        age: parseInt(profileForm.getValues().age),
         gender: profile.gender,
-        height_cm: parseFloat(heightCm),
+        height_cm: parseFloat(profileForm.getValues().heightCm),
         weight_kg: 70, // Would need to get latest weight
-        activity_level: activityLevel as any,
-        goal: goal as any,
-        target_rate_kg_per_week: parseFloat(targetRate),
+        activity_level: profileForm.getValues().activityLevel as
+          | 'sedentary'
+          | 'light'
+          | 'moderate'
+          | 'active',
+        goal: values.goal as
+          | 'bulk'
+          | 'lean_bulk'
+          | 'recomp'
+          | 'cut'
+          | 'maintain',
+        target_rate_kg_per_week: parseFloat(values.targetRate),
       });
 
-      setCalories(result.calorie_target.toString());
-      setProtein(result.protein_g.toString());
-      setCarbs(result.carbs_g.toString());
-      setFat(result.fat_g.toString());
+      goalsForm.setValue('calories', result.calorie_target.toString());
+      goalsForm.setValue('protein', result.protein_g.toString());
+      goalsForm.setValue('carbs', result.carbs_g.toString());
+      goalsForm.setValue('fat', result.fat_g.toString());
       setSuccess('Targets recalculated');
     } catch (err) {
       setError('Failed to recalculate targets');
@@ -156,13 +206,13 @@ export function Settings() {
     }
   };
 
-  const handleUpdateApiKey = async () => {
+  const handleUpdateApiKey = async (data: ApiKeyFormData) => {
     setIsLoading(true);
     setError(null);
     try {
-      await updateProfile({ gemini_api_key: apiKey || null });
-      if (apiKey) {
-        initGemini(apiKey);
+      await updateProfile({ gemini_api_key: data.apiKey || null });
+      if (data.apiKey) {
+        initGemini(data.apiKey);
       }
       setSuccess('API key updated');
       setActiveSection(null);
@@ -245,6 +295,7 @@ export function Settings() {
       <Card className="mb-3">
         <CardContent className="p-0">
           <button
+            type="button"
             onClick={() =>
               setActiveSection(activeSection === 'profile' ? null : 'profile')
             }
@@ -266,33 +317,32 @@ export function Settings() {
           </button>
 
           {activeSection === 'profile' && (
-            <div className="px-4 pb-4 space-y-3 border-t border-slate-700 pt-4">
+            <form
+              onSubmit={profileForm.handleSubmit(handleUpdateProfile)}
+              className="px-4 pb-4 space-y-3 border-t border-slate-700 pt-4"
+            >
               <Input
                 label="Age"
                 type="number"
-                value={age}
-                onChange={(e) => setAge(e.target.value)}
+                {...profileForm.register('age')}
+                error={profileForm.formState.errors.age?.message}
               />
               <Input
                 label="Height (cm)"
                 type="number"
-                value={heightCm}
-                onChange={(e) => setHeightCm(e.target.value)}
+                {...profileForm.register('heightCm')}
+                error={profileForm.formState.errors.heightCm?.message}
               />
               <Select
                 label="Activity Level"
-                value={activityLevel}
-                onChange={(e) => setActivityLevel(e.target.value)}
+                {...profileForm.register('activityLevel')}
                 options={activityOptions}
+                error={profileForm.formState.errors.activityLevel?.message}
               />
-              <Button
-                onClick={handleUpdateProfile}
-                isLoading={isLoading}
-                className="w-full"
-              >
+              <Button type="submit" isLoading={isLoading} className="w-full">
                 Save Changes
               </Button>
-            </div>
+            </form>
           )}
         </CardContent>
       </Card>
@@ -301,6 +351,7 @@ export function Settings() {
       <Card className="mb-3">
         <CardContent className="p-0">
           <button
+            type="button"
             onClick={() =>
               setActiveSection(activeSection === 'goals' ? null : 'goals')
             }
@@ -322,55 +373,55 @@ export function Settings() {
           </button>
 
           {activeSection === 'goals' && (
-            <div className="px-4 pb-4 space-y-3 border-t border-slate-700 pt-4">
+            <form
+              onSubmit={goalsForm.handleSubmit(handleUpdateTargets)}
+              className="px-4 pb-4 space-y-3 border-t border-slate-700 pt-4"
+            >
               <Select
                 label="Goal"
-                value={goal}
-                onChange={(e) => setGoal(e.target.value)}
+                {...goalsForm.register('goal')}
                 options={goalOptions}
+                error={goalsForm.formState.errors.goal?.message}
               />
               <Input
                 label="Target Rate (kg/week)"
                 type="number"
                 step="0.25"
-                value={targetRate}
-                onChange={(e) => setTargetRate(e.target.value)}
+                {...goalsForm.register('targetRate')}
+                error={goalsForm.formState.errors.targetRate?.message}
               />
               <div className="grid grid-cols-2 gap-3">
                 <Input
                   label="Calories"
                   type="number"
-                  value={calories}
-                  onChange={(e) => setCalories(e.target.value)}
+                  {...goalsForm.register('calories')}
+                  error={goalsForm.formState.errors.calories?.message}
                 />
                 <Input
                   label="Protein (g)"
                   type="number"
-                  value={protein}
-                  onChange={(e) => setProtein(e.target.value)}
+                  {...goalsForm.register('protein')}
+                  error={goalsForm.formState.errors.protein?.message}
                 />
                 <Input
                   label="Carbs (g)"
                   type="number"
-                  value={carbs}
-                  onChange={(e) => setCarbs(e.target.value)}
+                  {...goalsForm.register('carbs')}
+                  error={goalsForm.formState.errors.carbs?.message}
                 />
                 <Input
                   label="Fat (g)"
                   type="number"
-                  value={fat}
-                  onChange={(e) => setFat(e.target.value)}
+                  {...goalsForm.register('fat')}
+                  error={goalsForm.formState.errors.fat?.message}
                 />
               </div>
               <div className="flex gap-2">
-                <Button
-                  onClick={handleUpdateTargets}
-                  isLoading={isLoading}
-                  className="flex-1"
-                >
+                <Button type="submit" isLoading={isLoading} className="flex-1">
                   Save Changes
                 </Button>
                 <Button
+                  type="button"
                   variant="secondary"
                   onClick={handleRecalculateTargets}
                   isLoading={isLoading}
@@ -379,7 +430,7 @@ export function Settings() {
                   <RefreshCw size={16} />
                 </Button>
               </div>
-            </div>
+            </form>
           )}
         </CardContent>
       </Card>
@@ -388,6 +439,7 @@ export function Settings() {
       <Card className="mb-3">
         <CardContent className="p-0">
           <button
+            type="button"
             onClick={() =>
               setActiveSection(activeSection === 'api' ? null : 'api')
             }
@@ -407,12 +459,14 @@ export function Settings() {
           </button>
 
           {activeSection === 'api' && (
-            <div className="px-4 pb-4 space-y-3 border-t border-slate-700 pt-4">
+            <form
+              onSubmit={apiKeyForm.handleSubmit(handleUpdateApiKey)}
+              className="px-4 pb-4 space-y-3 border-t border-slate-700 pt-4"
+            >
               <Input
                 label="Gemini API Key"
                 type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
+                {...apiKeyForm.register('apiKey')}
                 placeholder="Enter your API key"
               />
               <a
@@ -423,14 +477,10 @@ export function Settings() {
               >
                 Get your free API key
               </a>
-              <Button
-                onClick={handleUpdateApiKey}
-                isLoading={isLoading}
-                className="w-full"
-              >
+              <Button type="submit" isLoading={isLoading} className="w-full">
                 Save API Key
               </Button>
-            </div>
+            </form>
           )}
         </CardContent>
       </Card>

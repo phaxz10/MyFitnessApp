@@ -1,5 +1,7 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Camera, Upload, X, Plus, Minus } from 'lucide-react';
 import {
   Card,
@@ -15,6 +17,7 @@ import { useAppStore } from '../hooks/useAppStore';
 import { analyzeFoodImage } from '../services/gemini';
 import { formatDate } from '../utils/date';
 import { recalculateMacros } from '../utils/calculations';
+import { mealScannerSchema, type MealScannerFormData } from '../schemas/forms';
 import type { MealType, AIFoodItem } from '../types';
 
 const mealTypes: { value: MealType; label: string }[] = [
@@ -38,8 +41,6 @@ export function MealScanner() {
   const [step, setStep] = useState<'capture' | 'analyzing' | 'results'>(
     'capture',
   );
-  const [mealType, setMealType] = useState<MealType>('lunch');
-  const [description, setDescription] = useState('');
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageData, setImageData] = useState<{
     base64: string;
@@ -48,6 +49,18 @@ export function MealScanner() {
   const [results, setResults] = useState<EditableFoodItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // React Hook Form for the capture step form
+  const { register, watch } = useForm<MealScannerFormData>({
+    resolver: zodResolver(mealScannerSchema),
+    defaultValues: {
+      mealType: 'lunch',
+      description: '',
+    },
+  });
+
+  const mealType = watch('mealType');
+  const description = watch('description');
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -189,7 +202,6 @@ export function MealScanner() {
     setImagePreview(null);
     setImageData(null);
     setResults([]);
-    setDescription('');
     setError(null);
   };
 
@@ -248,8 +260,7 @@ export function MealScanner() {
         <div className="space-y-4">
           <Select
             label="Meal Type"
-            value={mealType}
-            onChange={(e) => setMealType(e.target.value as MealType)}
+            {...register('mealType')}
             options={mealTypes}
           />
 
@@ -272,6 +283,7 @@ export function MealScanner() {
                     className="w-full h-64 object-cover rounded-lg"
                   />
                   <button
+                    type="button"
                     onClick={() => {
                       setImagePreview(null);
                       setImageData(null);
@@ -282,14 +294,15 @@ export function MealScanner() {
                   </button>
                 </div>
               ) : (
-                <div
+                <button
+                  type="button"
                   onClick={handleCapture}
-                  className="h-64 border-2 border-dashed border-slate-600 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-slate-500 transition-colors"
+                  className="h-64 w-full border-2 border-dashed border-slate-600 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-slate-500 transition-colors"
                 >
                   <Camera size={48} className="text-slate-500 mb-4" />
                   <p className="text-slate-400">Tap to capture or upload</p>
                   <p className="text-slate-500 text-sm">JPG, PNG supported</p>
-                </div>
+                </button>
               )}
 
               <div className="flex gap-2 mt-4">
@@ -307,7 +320,10 @@ export function MealScanner() {
                     const input = document.createElement('input');
                     input.type = 'file';
                     input.accept = 'image/*';
-                    input.onchange = (e) => handleFileSelect(e as any);
+                    input.onchange = (e) =>
+                      handleFileSelect(
+                        e as unknown as React.ChangeEvent<HTMLInputElement>,
+                      );
                     input.click();
                   }}
                   className="flex-1"
@@ -321,8 +337,7 @@ export function MealScanner() {
 
           <TextArea
             label="Description (optional)"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            {...register('description')}
             placeholder="e.g., Filipino chicken adobo with rice"
             rows={2}
             helperText="Adding details helps improve accuracy"
@@ -373,10 +388,14 @@ export function MealScanner() {
               ) : (
                 <div className="space-y-4">
                   {results.map((item, index) => (
-                    <div key={index} className="bg-slate-700/30 rounded-lg p-3">
+                    <div
+                      key={`${item.name}-${item.originalPortion}`}
+                      className="bg-slate-700/30 rounded-lg p-3"
+                    >
                       <div className="flex justify-between items-start mb-2">
                         <p className="text-white font-medium">{item.name}</p>
                         <button
+                          type="button"
                           onClick={() => handleRemoveItem(index)}
                           className="text-slate-400 hover:text-red-400"
                         >
@@ -386,6 +405,7 @@ export function MealScanner() {
 
                       <div className="flex items-center gap-2 mb-2">
                         <button
+                          type="button"
                           onClick={() =>
                             handlePortionChange(
                               index,
@@ -409,6 +429,7 @@ export function MealScanner() {
                         />
                         <span className="text-slate-400 text-sm">g</span>
                         <button
+                          type="button"
                           onClick={() =>
                             handlePortionChange(index, item.portion_grams + 10)
                           }

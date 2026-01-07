@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus, ChevronLeft, ChevronRight, Trash2, Edit2 } from 'lucide-react';
 import {
   Card,
@@ -16,6 +18,7 @@ import { useAppStore } from '../hooks/useAppStore';
 import { analyzeFoodText } from '../services/gemini';
 import { formatDate, formatDisplayDate } from '../utils/date';
 import { formatCalories } from '../utils/calculations';
+import { foodEntrySchema, type FoodEntryFormData } from '../schemas/forms';
 import type { MealType, FoodEntry } from '../types';
 
 const mealTypes: { value: MealType; label: string }[] = [
@@ -43,16 +46,31 @@ export function CalorieLog() {
   const [editingEntry, setEditingEntry] = useState<FoodEntry | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Form state
-  const [mealType, setMealType] = useState<MealType>('breakfast');
-  const [foodDescription, setFoodDescription] = useState('');
-  const [portionGrams, setPortionGrams] = useState('');
-  const [calories, setCalories] = useState('');
-  const [protein, setProtein] = useState('');
-  const [carbs, setCarbs] = useState('');
-  const [fat, setFat] = useState('');
   const [useAI, setUseAI] = useState(true);
+
+  // React Hook Form
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    watch,
+    formState: { errors },
+  } = useForm<FoodEntryFormData>({
+    resolver: zodResolver(foodEntrySchema),
+    defaultValues: {
+      mealType: 'breakfast',
+      foodDescription: '',
+      portionGrams: '',
+      calories: '',
+      protein: '',
+      carbs: '',
+      fat: '',
+    },
+  });
+
+  const foodDescription = watch('foodDescription');
+  const calories = watch('calories');
 
   useEffect(() => {
     fetchProfile();
@@ -62,11 +80,28 @@ export function CalorieLog() {
     fetchEntriesByDate(currentDate);
   }, [currentDate, fetchEntriesByDate]);
 
+  const openAddModal = useCallback(() => {
+    setIsEditMode(false);
+    setEditingEntry(null);
+    setUseAI(true);
+    reset({
+      mealType: 'breakfast',
+      foodDescription: '',
+      portionGrams: '',
+      calories: '',
+      protein: '',
+      carbs: '',
+      fat: '',
+    });
+    setError(null);
+    setIsModalOpen(true);
+  }, [reset]);
+
   useEffect(() => {
     if (searchParams.get('action') === 'add') {
       openAddModal();
     }
-  }, [searchParams]);
+  }, [searchParams, openAddModal]);
 
   const summary = getDailySummary(currentDate);
 
@@ -82,36 +117,34 @@ export function CalorieLog() {
     setCurrentDate(formatDate(date));
   };
 
-  const openAddModal = () => {
-    setIsEditMode(false);
-    setEditingEntry(null);
-    resetForm();
-    setIsModalOpen(true);
-  };
-
   const openEditModal = (entry: FoodEntry) => {
     setIsEditMode(true);
     setEditingEntry(entry);
-    setMealType(entry.meal_type);
-    setFoodDescription(entry.food_description);
-    setPortionGrams(entry.portion_grams.toString());
-    setCalories(entry.calories.toString());
-    setProtein(entry.protein_g.toString());
-    setCarbs(entry.carbs_g.toString());
-    setFat(entry.fat_g.toString());
     setUseAI(false);
+    reset({
+      mealType: entry.meal_type,
+      foodDescription: entry.food_description,
+      portionGrams: entry.portion_grams.toString(),
+      calories: entry.calories.toString(),
+      protein: entry.protein_g.toString(),
+      carbs: entry.carbs_g.toString(),
+      fat: entry.fat_g.toString(),
+    });
+    setError(null);
     setIsModalOpen(true);
   };
 
-  const resetForm = () => {
-    setMealType('breakfast');
-    setFoodDescription('');
-    setPortionGrams('');
-    setCalories('');
-    setProtein('');
-    setCarbs('');
-    setFat('');
-    setUseAI(true);
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    reset({
+      mealType: 'breakfast',
+      foodDescription: '',
+      portionGrams: '',
+      calories: '',
+      protein: '',
+      carbs: '',
+      fat: '',
+    });
     setError(null);
   };
 
@@ -132,11 +165,11 @@ export function CalorieLog() {
           (sum, item) => sum + item.portion_grams,
           0,
         );
-        setPortionGrams(totalPortion.toString());
-        setCalories(total.calories.toString());
-        setProtein(total.protein_g.toString());
-        setCarbs(total.carbs_g.toString());
-        setFat(total.fat_g.toString());
+        setValue('portionGrams', totalPortion.toString());
+        setValue('calories', total.calories.toString());
+        setValue('protein', total.protein_g.toString());
+        setValue('carbs', total.carbs_g.toString());
+        setValue('fat', total.fat_g.toString());
       }
     } catch (err) {
       setError('Failed to analyze food. Please enter values manually.');
@@ -146,47 +179,36 @@ export function CalorieLog() {
     }
   };
 
-  const handleSave = async () => {
-    if (!foodDescription.trim()) {
-      setError('Please enter a food description');
-      return;
-    }
-
-    if (!calories || !protein || !carbs || !fat) {
-      setError('Please fill in all nutritional values');
-      return;
-    }
-
+  const onSubmit = async (data: FoodEntryFormData) => {
     setIsLoading(true);
     setError(null);
 
     try {
       if (isEditMode && editingEntry) {
         await updateEntry(editingEntry.id, {
-          meal_type: mealType,
-          food_description: foodDescription,
-          portion_grams: parseFloat(portionGrams) || 0,
-          calories: parseInt(calories),
-          protein_g: parseFloat(protein),
-          carbs_g: parseFloat(carbs),
-          fat_g: parseFloat(fat),
+          meal_type: data.mealType,
+          food_description: data.foodDescription,
+          portion_grams: parseFloat(data.portionGrams || '0'),
+          calories: parseInt(data.calories),
+          protein_g: parseFloat(data.protein),
+          carbs_g: parseFloat(data.carbs),
+          fat_g: parseFloat(data.fat),
         });
         await fetchEntriesByDate(currentDate);
       } else {
         await addEntry({
           date: currentDate,
-          meal_type: mealType,
-          food_description: foodDescription,
-          portion_grams: parseFloat(portionGrams) || 0,
-          calories: parseInt(calories),
-          protein_g: parseFloat(protein),
-          carbs_g: parseFloat(carbs),
-          fat_g: parseFloat(fat),
+          meal_type: data.mealType,
+          food_description: data.foodDescription,
+          portion_grams: parseFloat(data.portionGrams || '0'),
+          calories: parseInt(data.calories),
+          protein_g: parseFloat(data.protein),
+          carbs_g: parseFloat(data.carbs),
+          fat_g: parseFloat(data.fat),
           is_ai_generated: useAI,
         });
       }
-      setIsModalOpen(false);
-      resetForm();
+      handleCloseModal();
     } catch (err) {
       setError('Failed to save entry');
     } finally {
@@ -200,11 +222,29 @@ export function CalorieLog() {
     }
   };
 
+  const handleOpenAddModalForMeal = (mealType: MealType) => {
+    setIsEditMode(false);
+    setEditingEntry(null);
+    setUseAI(true);
+    reset({
+      mealType,
+      foodDescription: '',
+      portionGrams: '',
+      calories: '',
+      protein: '',
+      carbs: '',
+      fat: '',
+    });
+    setError(null);
+    setIsModalOpen(true);
+  };
+
   return (
     <div className="p-4 pb-20">
       {/* Date Navigation */}
       <div className="flex items-center justify-between mb-6">
         <button
+          type="button"
           onClick={goToPreviousDay}
           className="p-2 text-slate-400 hover:text-white"
         >
@@ -219,6 +259,7 @@ export function CalorieLog() {
           )}
         </div>
         <button
+          type="button"
           onClick={goToNextDay}
           className="p-2 text-slate-400 hover:text-white"
         >
@@ -302,12 +343,14 @@ export function CalorieLog() {
                       </div>
                       <div className="flex gap-1">
                         <button
+                          type="button"
                           onClick={() => openEditModal(entry)}
                           className="p-2 text-slate-400 hover:text-blue-400"
                         >
                           <Edit2 size={16} />
                         </button>
                         <button
+                          type="button"
                           onClick={() => handleDelete(entry)}
                           className="p-2 text-slate-400 hover:text-red-400"
                         >
@@ -320,10 +363,8 @@ export function CalorieLog() {
               )}
 
               <button
-                onClick={() => {
-                  setMealType(value);
-                  openAddModal();
-                }}
+                type="button"
+                onClick={() => handleOpenAddModalForMeal(value)}
                 className="mt-3 w-full py-2 border border-dashed border-slate-600 rounded-lg text-slate-400 hover:text-white hover:border-slate-500 transition-colors flex items-center justify-center gap-2"
               >
                 <Plus size={16} />
@@ -337,29 +378,30 @@ export function CalorieLog() {
       {/* Add/Edit Modal */}
       <Modal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={handleCloseModal}
         title={isEditMode ? 'Edit Entry' : 'Add Food Entry'}
         size="lg"
       >
-        <div className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <Select
             label="Meal Type"
-            value={mealType}
-            onChange={(e) => setMealType(e.target.value as MealType)}
+            {...register('mealType')}
             options={mealTypes}
+            error={errors.mealType?.message}
           />
 
           <TextArea
             label="Food Description"
-            value={foodDescription}
-            onChange={(e) => setFoodDescription(e.target.value)}
+            {...register('foodDescription')}
             placeholder="e.g., 50g cooked rice, 100g pork adobo"
             rows={3}
+            error={errors.foodDescription?.message}
           />
 
           {!isEditMode && isOnline && profile?.gemini_api_key && (
             <div className="flex gap-2">
               <Button
+                type="button"
                 onClick={handleAnalyzeWithAI}
                 isLoading={isLoading}
                 disabled={!foodDescription.trim()}
@@ -367,7 +409,11 @@ export function CalorieLog() {
               >
                 Analyze with AI
               </Button>
-              <Button variant="secondary" onClick={() => setUseAI(false)}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setUseAI(false)}
+              >
                 Manual
               </Button>
             </div>
@@ -378,8 +424,7 @@ export function CalorieLog() {
               <Input
                 label="Portion (grams)"
                 type="number"
-                value={portionGrams}
-                onChange={(e) => setPortionGrams(e.target.value)}
+                {...register('portionGrams')}
                 placeholder="Optional"
               />
 
@@ -387,33 +432,33 @@ export function CalorieLog() {
                 <Input
                   label="Calories"
                   type="number"
-                  value={calories}
-                  onChange={(e) => setCalories(e.target.value)}
+                  {...register('calories')}
                   placeholder="kcal"
+                  error={errors.calories?.message}
                 />
                 <Input
                   label="Protein (g)"
                   type="number"
                   step="0.1"
-                  value={protein}
-                  onChange={(e) => setProtein(e.target.value)}
+                  {...register('protein')}
                   placeholder="grams"
+                  error={errors.protein?.message}
                 />
                 <Input
                   label="Carbs (g)"
                   type="number"
                   step="0.1"
-                  value={carbs}
-                  onChange={(e) => setCarbs(e.target.value)}
+                  {...register('carbs')}
                   placeholder="grams"
+                  error={errors.carbs?.message}
                 />
                 <Input
                   label="Fat (g)"
                   type="number"
                   step="0.1"
-                  value={fat}
-                  onChange={(e) => setFat(e.target.value)}
+                  {...register('fat')}
                   placeholder="grams"
+                  error={errors.fat?.message}
                 />
               </div>
             </>
@@ -423,21 +468,18 @@ export function CalorieLog() {
 
           <div className="flex gap-2 pt-4">
             <Button
+              type="button"
               variant="secondary"
-              onClick={() => setIsModalOpen(false)}
+              onClick={handleCloseModal}
               className="flex-1"
             >
               Cancel
             </Button>
-            <Button
-              onClick={handleSave}
-              isLoading={isLoading}
-              className="flex-1"
-            >
+            <Button type="submit" isLoading={isLoading} className="flex-1">
               {isEditMode ? 'Update' : 'Save'}
             </Button>
           </div>
-        </div>
+        </form>
       </Modal>
     </div>
   );

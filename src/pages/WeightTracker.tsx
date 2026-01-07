@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import {
   LineChart,
@@ -19,6 +21,7 @@ import {
   isOnTrackWithGoal,
   formatWeight,
 } from '../utils/calculations';
+import { weightLogSchema, type WeightLogFormData } from '../schemas/forms';
 
 export function WeightTracker() {
   const [searchParams] = useSearchParams();
@@ -31,13 +34,23 @@ export function WeightTracker() {
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | 'all'>(
     '30d',
   );
-
-  // Form state
-  const [weight, setWeight] = useState('');
-  const [waist, setWaist] = useState('');
-  const [neck, setNeck] = useState('');
-  const [arm, setArm] = useState('');
   const [isEditingToday, setIsEditingToday] = useState(false);
+
+  // React Hook Form
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<WeightLogFormData>({
+    resolver: zodResolver(weightLogSchema),
+    defaultValues: {
+      weight: '',
+      waist: '',
+      neck: '',
+      arm: '',
+    },
+  });
 
   useEffect(() => {
     fetchProfile();
@@ -50,22 +63,31 @@ export function WeightTracker() {
     }
   }, [searchParams]);
 
-  // Check if there's already an entry for today and auto-populate
+  // Check if there's already an entry for today
   const todayStr = formatDate(new Date());
   const todayLog = logs.find((log) => log.date === todayStr);
 
   // Auto-populate form when modal opens if there's a today entry
-  useEffect(() => {
-    if (isModalOpen && todayLog) {
-      setWeight(todayLog.weight_kg.toString());
-      setWaist(todayLog.waist_cm?.toString() || '');
-      setNeck(todayLog.neck_cm?.toString() || '');
-      setArm(todayLog.arm_cm?.toString() || '');
+  const handleOpenModal = useCallback(() => {
+    if (todayLog) {
+      reset({
+        weight: todayLog.weight_kg.toString(),
+        waist: todayLog.waist_cm?.toString() || '',
+        neck: todayLog.neck_cm?.toString() || '',
+        arm: todayLog.arm_cm?.toString() || '',
+      });
       setIsEditingToday(true);
-    } else if (isModalOpen) {
+    } else {
+      reset({
+        weight: '',
+        waist: '',
+        neck: '',
+        arm: '',
+      });
       setIsEditingToday(false);
     }
-  }, [isModalOpen, todayLog]);
+    setIsModalOpen(true);
+  }, [todayLog, reset]);
 
   const getFilteredLogs = () => {
     if (timeRange === 'all') return [...logs].reverse();
@@ -92,46 +114,43 @@ export function WeightTracker() {
     bodyFat: log.body_fat_pct,
   }));
 
-  const resetForm = () => {
-    setWeight('');
-    setWaist('');
-    setNeck('');
-    setArm('');
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    reset({
+      weight: '',
+      waist: '',
+      neck: '',
+      arm: '',
+    });
     setError(null);
   };
 
-  const handleSave = async () => {
-    if (!weight) {
-      setError('Please enter your weight');
-      return;
-    }
-
+  const onSubmit = async (data: WeightLogFormData) => {
     setIsLoading(true);
     setError(null);
 
     try {
       let bodyFatPct: number | null = null;
 
-      if (waist && neck && profile?.height_cm) {
+      if (data.waist && data.neck && profile?.height_cm) {
         bodyFatPct = calculateBodyFatPercentage(
           profile.gender,
-          parseFloat(waist),
-          parseFloat(neck),
+          parseFloat(data.waist),
+          parseFloat(data.neck),
           profile.height_cm,
         );
       }
 
       await addLog({
         date: formatDate(new Date()),
-        weight_kg: parseFloat(weight),
-        waist_cm: waist ? parseFloat(waist) : null,
-        neck_cm: neck ? parseFloat(neck) : null,
-        arm_cm: arm ? parseFloat(arm) : null,
+        weight_kg: parseFloat(data.weight),
+        waist_cm: data.waist ? parseFloat(data.waist) : null,
+        neck_cm: data.neck ? parseFloat(data.neck) : null,
+        arm_cm: data.arm ? parseFloat(data.arm) : null,
         body_fat_pct: bodyFatPct,
       });
 
-      setIsModalOpen(false);
-      resetForm();
+      handleCloseModal();
     } catch (err) {
       setError('Failed to save weight log');
     } finally {
@@ -151,7 +170,7 @@ export function WeightTracker() {
     <div className="p-4 pb-20">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-white">Weight Tracker</h1>
-        <Button onClick={() => setIsModalOpen(true)}>
+        <Button onClick={handleOpenModal}>
           <Plus size={18} className="mr-1" />
           Log Weight
         </Button>
@@ -223,6 +242,7 @@ export function WeightTracker() {
               {(['7d', '30d', '90d', 'all'] as const).map((range) => (
                 <button
                   key={range}
+                  type="button"
                   onClick={() => setTimeRange(range)}
                   className={`px-3 py-1 rounded text-sm ${
                     timeRange === range
@@ -316,13 +336,10 @@ export function WeightTracker() {
       {/* Add Weight Modal */}
       <Modal
         isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          resetForm();
-        }}
+        onClose={handleCloseModal}
         title={isEditingToday ? "Update Today's Weight" : 'Log Weight'}
       >
-        <div className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {isEditingToday && (
             <p className="text-slate-400 text-sm bg-slate-700/50 p-2 rounded">
               You already logged weight today. This will update your existing
@@ -333,9 +350,9 @@ export function WeightTracker() {
             label="Weight (kg)"
             type="number"
             step="0.1"
-            value={weight}
-            onChange={(e) => setWeight(e.target.value)}
+            {...register('weight')}
             placeholder="Enter your weight"
+            error={errors.weight?.message}
           />
 
           <div className="border-t border-slate-700 pt-4">
@@ -347,24 +364,21 @@ export function WeightTracker() {
                 label="Waist (cm)"
                 type="number"
                 step="0.1"
-                value={waist}
-                onChange={(e) => setWaist(e.target.value)}
+                {...register('waist')}
                 placeholder="cm"
               />
               <Input
                 label="Neck (cm)"
                 type="number"
                 step="0.1"
-                value={neck}
-                onChange={(e) => setNeck(e.target.value)}
+                {...register('neck')}
                 placeholder="cm"
               />
               <Input
                 label="Arm (cm)"
                 type="number"
                 step="0.1"
-                value={arm}
-                onChange={(e) => setArm(e.target.value)}
+                {...register('arm')}
                 placeholder="cm"
               />
             </div>
@@ -377,21 +391,18 @@ export function WeightTracker() {
 
           <div className="flex gap-2 pt-4">
             <Button
+              type="button"
               variant="secondary"
-              onClick={() => setIsModalOpen(false)}
+              onClick={handleCloseModal}
               className="flex-1"
             >
               Cancel
             </Button>
-            <Button
-              onClick={handleSave}
-              isLoading={isLoading}
-              className="flex-1"
-            >
+            <Button type="submit" isLoading={isLoading} className="flex-1">
               Save
             </Button>
           </div>
-        </div>
+        </form>
       </Modal>
     </div>
   );

@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Dumbbell } from 'lucide-react';
 import { Button, Input, Select } from '../components/ui';
 import { useAppStore } from '../hooks/useAppStore';
@@ -8,6 +10,7 @@ import { useWeight } from '../hooks/useWeight';
 import { initGemini } from '../services/gemini';
 import { calculateTargets } from '../services/gemini';
 import { formatDate } from '../utils/date';
+import { onboardingSchema, type OnboardingFormData } from '../schemas/forms';
 
 type Step =
   | 'welcome'
@@ -47,48 +50,63 @@ export function Onboarding() {
   const [step, setStep] = useState<Step>('welcome');
   const [error, setError] = useState<string | null>(null);
 
-  // Form data
-  const [age, setAge] = useState('');
-  const [gender, setGender] = useState<'male' | 'female'>('male');
-  const [heightCm, setHeightCm] = useState('');
-  const [weightKg, setWeightKg] = useState('');
-  const [activityLevel, setActivityLevel] = useState<
-    'sedentary' | 'light' | 'moderate' | 'active'
-  >('moderate');
-  const [goal, setGoal] = useState<
-    'bulk' | 'lean_bulk' | 'recomp' | 'cut' | 'maintain'
-  >('lean_bulk');
-  const [targetRate, setTargetRate] = useState('0.25');
-  const [apiKey, setApiKey] = useState('');
-
-  // Calculated targets
-  const [targets, setTargets] = useState({
-    calories: 2000,
-    protein: 150,
-    carbs: 200,
-    fat: 70,
+  // Use React Hook Form for form state management
+  const {
+    register,
+    watch,
+    setValue,
+    getValues,
+    trigger,
+    formState: { errors },
+  } = useForm<OnboardingFormData>({
+    resolver: zodResolver(onboardingSchema),
+    defaultValues: {
+      age: '',
+      gender: 'male',
+      heightCm: '',
+      weightKg: '',
+      activityLevel: 'moderate',
+      goal: 'lean_bulk',
+      targetRate: '0.25',
+      apiKey: '',
+      targets: {
+        calories: 2000,
+        protein: 150,
+        carbs: 200,
+        fat: 70,
+      },
+    },
   });
 
-  const handleNext = () => {
+  const gender = watch('gender');
+  const activityLevel = watch('activityLevel');
+  const goal = watch('goal');
+  const targets = watch('targets');
+
+  const handleNext = async () => {
     setError(null);
     switch (step) {
       case 'welcome':
         setStep('basic');
         break;
-      case 'basic':
-        if (!age || !heightCm) {
+      case 'basic': {
+        const isValid = await trigger(['age', 'heightCm']);
+        if (!isValid) {
           setError('Please fill in all fields');
           return;
         }
         setStep('weight');
         break;
-      case 'weight':
-        if (!weightKg) {
+      }
+      case 'weight': {
+        const isValid = await trigger('weightKg');
+        if (!isValid) {
           setError('Please enter your weight');
           return;
         }
         setStep('activity');
         break;
+      }
       case 'activity':
         setStep('goal');
         break;
@@ -113,19 +131,20 @@ export function Onboarding() {
   };
 
   const calculateUserTargets = async () => {
+    const values = getValues();
     try {
-      if (apiKey) {
-        initGemini(apiKey);
+      if (values.apiKey) {
+        initGemini(values.apiKey);
         const result = await calculateTargets({
-          age: parseInt(age),
-          gender,
-          height_cm: parseFloat(heightCm),
-          weight_kg: parseFloat(weightKg),
-          activity_level: activityLevel,
-          goal,
-          target_rate_kg_per_week: parseFloat(targetRate) || 0,
+          age: parseInt(values.age),
+          gender: values.gender,
+          height_cm: parseFloat(values.heightCm),
+          weight_kg: parseFloat(values.weightKg),
+          activity_level: values.activityLevel,
+          goal: values.goal,
+          target_rate_kg_per_week: parseFloat(values.targetRate) || 0,
         });
-        setTargets({
+        setValue('targets', {
           calories: result.calorie_target,
           protein: result.protein_g,
           carbs: result.carbs_g,
@@ -133,7 +152,7 @@ export function Onboarding() {
         });
       } else {
         // Fallback calculation without AI
-        const weight = parseFloat(weightKg);
+        const weight = parseFloat(values.weightKg);
         const multipliers = {
           sedentary: 1.2,
           light: 1.375,
@@ -141,14 +160,17 @@ export function Onboarding() {
           active: 1.725,
         };
         const bmr =
-          gender === 'male'
-            ? 10 * weight + 6.25 * parseFloat(heightCm) - 5 * parseInt(age) + 5
+          values.gender === 'male'
+            ? 10 * weight +
+              6.25 * parseFloat(values.heightCm) -
+              5 * parseInt(values.age) +
+              5
             : 10 * weight +
-              6.25 * parseFloat(heightCm) -
-              5 * parseInt(age) -
+              6.25 * parseFloat(values.heightCm) -
+              5 * parseInt(values.age) -
               161;
 
-        const tdee = bmr * multipliers[activityLevel];
+        const tdee = bmr * multipliers[values.activityLevel];
 
         const goalAdjustments: Record<string, number> = {
           bulk: 500,
@@ -158,19 +180,19 @@ export function Onboarding() {
           maintain: 0,
         };
 
-        const calories = Math.round(tdee + goalAdjustments[goal]);
+        const calories = Math.round(tdee + goalAdjustments[values.goal]);
         const protein = Math.round(weight * 2); // 2g per kg
         const fat = Math.round((calories * 0.25) / 9);
         const carbs = Math.round((calories - protein * 4 - fat * 9) / 4);
 
-        setTargets({ calories, protein, carbs, fat });
+        setValue('targets', { calories, protein, carbs, fat });
       }
       setStep('targets');
     } catch (err) {
       setError('Failed to calculate targets. Using default values.');
       // Set fallback values
-      const weight = parseFloat(weightKg);
-      setTargets({
+      const weight = parseFloat(values.weightKg);
+      setValue('targets', {
         calories: Math.round(weight * 30),
         protein: Math.round(weight * 2),
         carbs: Math.round(weight * 3),
@@ -181,25 +203,26 @@ export function Onboarding() {
   };
 
   const saveProfile = async () => {
+    const values = getValues();
     try {
       await createProfile({
-        age: parseInt(age),
-        gender,
-        height_cm: parseFloat(heightCm),
-        activity_level: activityLevel,
-        goal,
-        target_rate_kg_per_week: parseFloat(targetRate) || 0,
-        calorie_target: targets.calories,
-        protein_target_g: targets.protein,
-        carbs_target_g: targets.carbs,
-        fat_target_g: targets.fat,
-        gemini_api_key: apiKey || null,
+        age: parseInt(values.age),
+        gender: values.gender,
+        height_cm: parseFloat(values.heightCm),
+        activity_level: values.activityLevel,
+        goal: values.goal,
+        target_rate_kg_per_week: parseFloat(values.targetRate) || 0,
+        calorie_target: values.targets.calories,
+        protein_target_g: values.targets.protein,
+        carbs_target_g: values.targets.carbs,
+        fat_target_g: values.targets.fat,
+        gemini_api_key: values.apiKey || null,
       });
 
       // Add initial weight log
       await addLog({
         date: formatDate(new Date()),
-        weight_kg: parseFloat(weightKg),
+        weight_kg: parseFloat(values.weightKg),
         waist_cm: null,
         neck_cm: null,
         arm_cm: null,
@@ -248,26 +271,31 @@ export function Onboarding() {
               <Input
                 label="Age"
                 type="number"
-                value={age}
-                onChange={(e) => setAge(e.target.value)}
+                {...register('age')}
                 placeholder="Enter your age"
+                error={errors.age?.message}
               />
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
+                <label
+                  htmlFor="gender-selection"
+                  className="block text-sm font-medium text-slate-300 mb-2"
+                >
                   Gender
                 </label>
-                <div className="flex gap-2">
+                <div id="gender-selection" className="flex gap-2">
                   <Button
                     variant={gender === 'male' ? 'primary' : 'secondary'}
-                    onClick={() => setGender('male')}
+                    onClick={() => setValue('gender', 'male')}
                     className="flex-1"
+                    type="button"
                   >
                     Male
                   </Button>
                   <Button
                     variant={gender === 'female' ? 'primary' : 'secondary'}
-                    onClick={() => setGender('female')}
+                    onClick={() => setValue('gender', 'female')}
                     className="flex-1"
+                    type="button"
                   >
                     Female
                   </Button>
@@ -276,9 +304,9 @@ export function Onboarding() {
               <Input
                 label="Height (cm)"
                 type="number"
-                value={heightCm}
-                onChange={(e) => setHeightCm(e.target.value)}
+                {...register('heightCm')}
                 placeholder="Enter your height in cm"
+                error={errors.heightCm?.message}
               />
             </div>
             {error && <p className="text-red-400 text-sm mt-4">{error}</p>}
@@ -298,9 +326,9 @@ export function Onboarding() {
               label="Weight (kg)"
               type="number"
               step="0.1"
-              value={weightKg}
-              onChange={(e) => setWeightKg(e.target.value)}
+              {...register('weightKg')}
               placeholder="Enter your current weight"
+              error={errors.weightKg?.message}
             />
             <p className="text-slate-500 text-sm mt-2">
               This will be your starting point for tracking progress.
@@ -322,8 +350,12 @@ export function Onboarding() {
               {activityOptions.map((option) => (
                 <button
                   key={option.value}
+                  type="button"
                   onClick={() =>
-                    setActivityLevel(option.value as typeof activityLevel)
+                    setValue(
+                      'activityLevel',
+                      option.value as typeof activityLevel,
+                    )
                   }
                   className={`w-full p-4 rounded-lg border text-left transition-colors ${
                     activityLevel === option.value
@@ -349,7 +381,8 @@ export function Onboarding() {
               {goalOptions.map((option) => (
                 <button
                   key={option.value}
-                  onClick={() => setGoal(option.value as typeof goal)}
+                  type="button"
+                  onClick={() => setValue('goal', option.value as typeof goal)}
                   className={`w-full p-4 rounded-lg border text-left transition-colors ${
                     goal === option.value
                       ? 'border-blue-500 bg-blue-500/10 text-white'
@@ -375,8 +408,7 @@ export function Onboarding() {
             </p>
             <Select
               label="Weekly target (kg)"
-              value={targetRate}
-              onChange={(e) => setTargetRate(e.target.value)}
+              {...register('targetRate')}
               options={[
                 { value: '0.25', label: '0.25 kg/week (Slow & steady)' },
                 { value: '0.5', label: '0.5 kg/week (Moderate)' },
@@ -404,8 +436,7 @@ export function Onboarding() {
             <Input
               label="Gemini API Key"
               type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              {...register('apiKey')}
               placeholder="Enter your API key"
             />
             <a
@@ -431,7 +462,7 @@ export function Onboarding() {
               <Button
                 onClick={handleNext}
                 className="flex-1"
-                disabled={!apiKey}
+                disabled={!watch('apiKey')}
               >
                 Continue
               </Button>
@@ -463,7 +494,7 @@ export function Onboarding() {
                   type="number"
                   value={targets.calories}
                   onChange={(e) =>
-                    setTargets({
+                    setValue('targets', {
                       ...targets,
                       calories: parseInt(e.target.value) || 0,
                     })
@@ -477,7 +508,7 @@ export function Onboarding() {
                   type="number"
                   value={targets.protein}
                   onChange={(e) =>
-                    setTargets({
+                    setValue('targets', {
                       ...targets,
                       protein: parseInt(e.target.value) || 0,
                     })
@@ -491,7 +522,7 @@ export function Onboarding() {
                   type="number"
                   value={targets.carbs}
                   onChange={(e) =>
-                    setTargets({
+                    setValue('targets', {
                       ...targets,
                       carbs: parseInt(e.target.value) || 0,
                     })
@@ -505,7 +536,7 @@ export function Onboarding() {
                   type="number"
                   value={targets.fat}
                   onChange={(e) =>
-                    setTargets({
+                    setValue('targets', {
                       ...targets,
                       fat: parseInt(e.target.value) || 0,
                     })
@@ -533,7 +564,9 @@ export function Onboarding() {
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
+                aria-labelledby="check-icon-title"
               >
+                <title id="check-icon-title">Success checkmark</title>
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"

@@ -292,16 +292,25 @@ export function WorkoutSession() {
                 : ex.exercise.id;
             const loggedSets = setsByExercise[exerciseId];
             if (loggedSets) {
+              // Merge logged sets with existing sets
+              const mergedSets = ex.sets.map((existingSet, i) => {
+                const loggedSet = loggedSets[i];
+                if (loggedSet) {
+                  return {
+                    id: loggedSet.id,
+                    tempId: `logged-${loggedSet.id}-${i}`,
+                    reps: loggedSet.reps?.toString() || '',
+                    weight: loggedSet.weight_kg?.toString() || '',
+                    durationSeconds:
+                      loggedSet.duration_seconds?.toString() || '',
+                    completed: true,
+                  };
+                }
+                return existingSet;
+              });
               return {
                 ...ex,
-                sets: loggedSets.map((s, i) => ({
-                  id: s.id,
-                  tempId: `logged-${s.id}-${i}`,
-                  reps: s.reps?.toString() || '',
-                  weight: s.weight_kg?.toString() || '',
-                  durationSeconds: s.duration_seconds?.toString() || '',
-                  completed: true,
-                })),
+                sets: mergedSets,
               };
             }
             return ex;
@@ -510,6 +519,109 @@ export function WorkoutSession() {
     });
   };
 
+  // Add set to all exercises in a superset
+  const handleAddSetToSuperset = (exerciseIndices: number[]) => {
+    setExercisesWithSets((prev) => {
+      const updated = [...prev];
+
+      exerciseIndices.forEach((exerciseIndex) => {
+        const exerciseData = updated[exerciseIndex];
+        const lastSet = exerciseData.sets[exerciseData.sets.length - 1];
+        const isDuration =
+          exerciseData.exerciseType === 'duration' ||
+          exerciseData.exerciseType === 'duration_weight';
+
+        updated[exerciseIndex] = {
+          ...exerciseData,
+          sets: [
+            ...exerciseData.sets,
+            {
+              tempId: `new-${exerciseData.exercise.id}-${exerciseData.sets.length}-${Date.now()}`,
+              reps: isDuration ? '' : lastSet?.reps || '0',
+              weight: lastSet?.weight || '0',
+              durationSeconds: isDuration
+                ? lastSet?.durationSeconds || '30'
+                : '',
+              completed: false,
+            },
+          ],
+        };
+      });
+
+      return updated;
+    });
+  };
+
+  // Delete a round (set at specific index) from ALL exercises in a superset
+  const handleDeleteRound = (
+    supersetExerciseIndices: number[],
+    roundNumber: number,
+  ) => {
+    setExercisesWithSets((prev) => {
+      const updated = [...prev];
+
+      supersetExerciseIndices.forEach((exerciseIndex) => {
+        const exerciseData = updated[exerciseIndex];
+
+        // Only delete if this round exists
+        if (exerciseData.sets[roundNumber]) {
+          const newSets = [
+            ...exerciseData.sets.slice(0, roundNumber),
+            ...exerciseData.sets.slice(roundNumber + 1),
+          ];
+
+          updated[exerciseIndex] = {
+            ...exerciseData,
+            sets: newSets,
+          };
+        }
+      });
+
+      return updated;
+    });
+  };
+
+  // Complete ALL exercises in a round at once
+  const handleCompleteRound = (
+    supersetExerciseIndices: number[],
+    roundNumber: number,
+  ) => {
+    setExercisesWithSets((prev) => {
+      const updated = [...prev];
+
+      supersetExerciseIndices.forEach((exerciseIndex) => {
+        const exerciseData = updated[exerciseIndex];
+        const set = exerciseData.sets[roundNumber];
+
+        if (set && !set.completed) {
+          const newSets = [...exerciseData.sets];
+          newSets[roundNumber] = {
+            ...set,
+            completed: true,
+          };
+
+          updated[exerciseIndex] = {
+            ...exerciseData,
+            sets: newSets,
+          };
+        }
+      });
+
+      return updated;
+    });
+  };
+
+  // Check if ALL exercises in a round are complete
+  const isRoundComplete = (
+    supersetExercises: ExerciseWithSets[],
+    roundNumber: number,
+  ): boolean => {
+    return supersetExercises.every((ex) => {
+      const set = ex.sets[roundNumber];
+      return set && set.completed;
+    });
+  };
+
   const handleAddExercise = useCallback(
     async (exercise: Exercise) => {
       const lastPerf = await getLastPerformance(exercise.id);
@@ -540,18 +652,6 @@ export function WorkoutSession() {
     },
     [getLastPerformance],
   );
-
-  const handleRemoveExercise = (exerciseIndex: number) => {
-    // Delete all logged sets for this exercise
-    const exercise = exercisesWithSets[exerciseIndex];
-    exercise.sets.forEach(async (set) => {
-      if (set.id) {
-        await deleteSet(set.id);
-      }
-    });
-
-    setExercisesWithSets((prev) => prev.filter((_, i) => i !== exerciseIndex));
-  };
 
   const toggleExerciseExpand = (index: number) => {
     setExercisesWithSets((prev) =>
@@ -585,12 +685,562 @@ export function WorkoutSession() {
     0,
   );
 
+  // Group exercises by superset
+  const groupedExercises: (ExerciseWithSets | ExerciseWithSets[])[] = [];
+  const processedIndices = new Set<number>();
+
+  exercisesWithSets.forEach((ex, idx) => {
+    if (processedIndices.has(idx)) return;
+
+    if (ex.supersetGroupId) {
+      // Find all exercises with the same superset group ID
+      const supersetExercises = exercisesWithSets.filter(
+        (e) => e.supersetGroupId === ex.supersetGroupId,
+      );
+
+      if (supersetExercises.length > 1) {
+        // This is a real superset with multiple exercises
+        supersetExercises.forEach((e) => {
+          const originalIdx = exercisesWithSets.indexOf(e);
+          processedIndices.add(originalIdx);
+        });
+        groupedExercises.push(supersetExercises);
+      } else {
+        // Only one exercise with this ID, treat as single
+        groupedExercises.push(ex);
+        processedIndices.add(idx);
+      }
+    } else {
+      // No superset group, treat as single exercise
+      groupedExercises.push(ex);
+      processedIndices.add(idx);
+    }
+  });
+
   // Get exercise type icon
   const getExerciseTypeIcon = (type: ExerciseType) => {
     if (type === 'duration' || type === 'duration_weight') {
       return <Clock size={14} className="text-slate-400" />;
     }
     return <Dumbbell size={14} className="text-slate-400" />;
+  };
+
+  // Render exercise content (without Card wrapper)
+  const renderExerciseContent = (
+    exerciseData: ExerciseWithSets,
+    exerciseIndex: number,
+  ) => {
+    const exerciseName =
+      'exercise_name' in exerciseData.exercise
+        ? exerciseData.exercise.exercise_name
+        : exerciseData.exercise.name;
+    const isDuration =
+      exerciseData.exerciseType === 'duration' ||
+      exerciseData.exerciseType === 'duration_weight';
+    const hasWeight =
+      exerciseData.exerciseType === 'reps_weight' ||
+      exerciseData.exerciseType === 'duration_weight';
+    const targetInfo =
+      'target_rep_min' in exerciseData.exercise
+        ? isDuration
+          ? `${exerciseData.exercise.target_duration_seconds || 30}s`
+          : `${exerciseData.exercise.target_rep_min}-${exerciseData.exercise.target_rep_max} reps`
+        : null;
+
+    return (
+      <>
+        {/* Exercise Header */}
+        <button
+          type="button"
+          className="flex items-center justify-between w-full text-left"
+          onClick={() => toggleExerciseExpand(exerciseIndex)}
+        >
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-white">{exerciseName}</h3>
+              {getExerciseTypeIcon(exerciseData.exerciseType)}
+            </div>
+            {targetInfo && (
+              <p className="text-slate-400 text-sm">Target: {targetInfo}</p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-slate-400 text-sm">
+              {exerciseData.sets.filter((s) => s.completed).length}/
+              {exerciseData.sets.length}
+            </span>
+            {exerciseData.isExpanded ? (
+              <ChevronUp size={20} className="text-slate-400" />
+            ) : (
+              <ChevronDown size={20} className="text-slate-400" />
+            )}
+          </div>
+        </button>
+
+        {/* Sets */}
+        {exerciseData.isExpanded && (
+          <div className="mt-4">
+            {/* Last Performance */}
+            {exerciseData.lastPerformance &&
+              exerciseData.lastPerformance.length > 0 && (
+                <div className="mb-3 p-2 bg-slate-700/50 rounded text-xs text-slate-400">
+                  Last:{' '}
+                  {exerciseData.lastPerformance
+                    .map((s) =>
+                      s.duration_seconds
+                        ? `${s.duration_seconds}s${s.weight_kg ? ` @ ${s.weight_kg}kg` : ''}`
+                        : `${s.weight_kg || 0}kg × ${s.reps || 0}`,
+                    )
+                    .join(' | ')}
+                </div>
+              )}
+
+            {/* Set Headers */}
+            <div
+              className={`grid gap-2 mb-2 text-xs text-slate-400 ${
+                isDuration
+                  ? hasWeight
+                    ? 'grid-cols-10'
+                    : 'grid-cols-8'
+                  : hasWeight
+                    ? 'grid-cols-12'
+                    : 'grid-cols-10'
+              }`}
+            >
+              <div className="col-span-2 text-center">SET</div>
+              <div className="col-span-2 text-center">PREV</div>
+              {hasWeight && <div className="col-span-2 text-center">KG</div>}
+              {isDuration ? (
+                <div className="col-span-2 text-center">SEC</div>
+              ) : (
+                <div className="col-span-2 text-center">REPS</div>
+              )}
+              <div
+                className={
+                  isDuration && !hasWeight ? 'col-span-2' : 'col-span-2'
+                }
+              ></div>
+            </div>
+
+            {/* Sets List */}
+            {exerciseData.sets.map((set, setIndex) => {
+              const prevSet = exerciseData.lastPerformance?.[setIndex];
+
+              return (
+                <div
+                  key={set.tempId}
+                  className={`grid gap-2 items-center py-2 ${
+                    isDuration
+                      ? hasWeight
+                        ? 'grid-cols-10'
+                        : 'grid-cols-8'
+                      : hasWeight
+                        ? 'grid-cols-12'
+                        : 'grid-cols-10'
+                  } ${set.completed ? 'bg-green-900/20 rounded' : ''}`}
+                >
+                  <div className="col-span-2 text-center text-slate-300">
+                    {setIndex + 1}
+                  </div>
+                  <div className="col-span-2 text-center text-slate-500 text-sm">
+                    {prevSet
+                      ? prevSet.duration_seconds
+                        ? `${prevSet.duration_seconds}s`
+                        : `${prevSet.weight_kg || 0}×${prevSet.reps || 0}`
+                      : '-'}
+                  </div>
+                  {hasWeight && (
+                    <div className="col-span-2">
+                      <Input
+                        type="number"
+                        value={set.weight}
+                        onChange={(e) =>
+                          handleSetChange(
+                            exerciseIndex,
+                            setIndex,
+                            'weight',
+                            e.target.value,
+                          )
+                        }
+                        className="text-center p-1 h-8"
+                        disabled={set.completed}
+                      />
+                    </div>
+                  )}
+                  {isDuration ? (
+                    <div className="col-span-2">
+                      <Input
+                        type="number"
+                        value={set.durationSeconds}
+                        onChange={(e) =>
+                          handleSetChange(
+                            exerciseIndex,
+                            setIndex,
+                            'durationSeconds',
+                            e.target.value,
+                          )
+                        }
+                        className="text-center p-1 h-8"
+                        disabled={set.completed}
+                        placeholder="sec"
+                      />
+                    </div>
+                  ) : (
+                    <div className="col-span-2">
+                      <Input
+                        type="number"
+                        value={set.reps}
+                        onChange={(e) =>
+                          handleSetChange(
+                            exerciseIndex,
+                            setIndex,
+                            'reps',
+                            e.target.value,
+                          )
+                        }
+                        className="text-center p-1 h-8"
+                        disabled={set.completed}
+                      />
+                    </div>
+                  )}
+                  <div
+                    className={`${isDuration && !hasWeight ? 'col-span-2' : 'col-span-2'} flex justify-end gap-3`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteSet(exerciseIndex, setIndex)}
+                      className="p-2 text-red-400 hover:bg-red-900/30 rounded transition-colors"
+                    >
+                      <Trash2 size={20} />
+                    </button>
+                    {!set.completed && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleCompleteSet(exerciseIndex, setIndex)
+                        }
+                        className="p-2 text-green-400 hover:bg-green-900/30 rounded transition-colors"
+                      >
+                        {isDuration ? <Play size={20} /> : <Check size={20} />}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Add Set */}
+            <div className="flex justify-start mt-3 pt-3 border-t border-slate-700">
+              <button
+                type="button"
+                onClick={() => handleAddSet(exerciseIndex)}
+                className="text-blue-400 text-sm flex items-center gap-1"
+              >
+                <Plus size={16} />
+                Add Set
+              </button>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  };
+
+  // Render superset with Option B layout (card-style, spacious)
+  const renderSupersetContent = (supersetExercises: ExerciseWithSets[]) => {
+    // Find the maximum number of sets across all exercises in the superset
+    const maxSets = Math.max(...supersetExercises.map((ex) => ex.sets.length));
+    const allExpanded = supersetExercises.every((ex) => ex.isExpanded);
+    const exerciseIndices = supersetExercises.map((ex) =>
+      exercisesWithSets.indexOf(ex),
+    );
+
+    // Toggle all exercises in superset together
+    const toggleSuperset = () => {
+      supersetExercises.forEach((ex) => {
+        const idx = exercisesWithSets.indexOf(ex);
+        toggleExerciseExpand(idx);
+      });
+    };
+
+    // Calculate total completed sets
+    const totalCompletedSets = supersetExercises.reduce(
+      (sum, ex) => sum + ex.sets.filter((s) => s.completed).length,
+      0,
+    );
+    const totalSetsInSuperset = supersetExercises.reduce(
+      (sum, ex) => sum + ex.sets.length,
+      0,
+    );
+
+    return (
+      <>
+        {/* Superset Header */}
+        <button
+          type="button"
+          className="flex items-center justify-between w-full text-left mb-4"
+          onClick={toggleSuperset}
+        >
+          <div className="flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              {supersetExercises.map((ex, idx) => {
+                const exerciseName =
+                  'exercise_name' in ex.exercise
+                    ? ex.exercise.exercise_name
+                    : ex.exercise.name;
+                return (
+                  <div key={ex.exercise.id} className="flex items-center gap-1">
+                    <span className="font-medium text-white">
+                      {exerciseName}
+                    </span>
+                    {getExerciseTypeIcon(ex.exerciseType)}
+                    {idx < supersetExercises.length - 1 && (
+                      <span className="text-purple-400 font-bold ml-1">+</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-slate-400 text-sm mt-1">
+              {totalCompletedSets} / {totalSetsInSuperset} sets complete
+            </p>
+          </div>
+          <div className="flex items-center">
+            {allExpanded ? (
+              <ChevronUp size={20} className="text-slate-400" />
+            ) : (
+              <ChevronDown size={20} className="text-slate-400" />
+            )}
+          </div>
+        </button>
+
+        {/* Rounds */}
+        {allExpanded && (
+          <div className="space-y-4">
+            {Array.from({ length: maxSets }).map((_, roundNumber) => {
+              const roundKey = supersetExercises
+                .map((ex) => `${ex.exercise.id}-${roundNumber}`)
+                .join('-');
+              const roundComplete = isRoundComplete(
+                supersetExercises,
+                roundNumber,
+              );
+
+              return (
+                <div
+                  key={`superset-round-${roundKey}`}
+                  className={`border-2 rounded-lg p-4 ${
+                    roundComplete
+                      ? 'border-green-600/50 bg-green-900/10'
+                      : 'border-slate-700 bg-slate-800/50'
+                  }`}
+                >
+                  {/* Round Header */}
+                  <div className="text-center mb-4 pb-2 border-b border-slate-700">
+                    <span
+                      className={`font-semibold ${
+                        roundComplete ? 'text-green-400' : 'text-purple-400'
+                      }`}
+                    >
+                      Round {roundNumber + 1}
+                      {roundComplete && ' - Complete'}
+                    </span>
+                  </div>
+
+                  {/* Exercises in this round */}
+                  <div className="space-y-4">
+                    {supersetExercises.map((ex) => {
+                      const exerciseIndex = exercisesWithSets.indexOf(ex);
+                      const set = ex.sets[roundNumber];
+
+                      // Skip if this exercise doesn't have this set
+                      if (!set) return null;
+
+                      const exerciseName =
+                        'exercise_name' in ex.exercise
+                          ? ex.exercise.exercise_name
+                          : ex.exercise.name;
+                      const isDuration =
+                        ex.exerciseType === 'duration' ||
+                        ex.exerciseType === 'duration_weight';
+                      const hasWeight =
+                        ex.exerciseType === 'reps_weight' ||
+                        ex.exerciseType === 'duration_weight';
+                      const prevSet = ex.lastPerformance?.[roundNumber];
+
+                      // Format previous set display
+                      const prevDisplay = prevSet
+                        ? prevSet.duration_seconds
+                          ? `${prevSet.duration_seconds}s${prevSet.weight_kg ? ` @ ${prevSet.weight_kg}kg` : ''}`
+                          : `${prevSet.weight_kg || 0}kg × ${prevSet.reps || 0}`
+                        : null;
+
+                      return (
+                        <div
+                          key={`${ex.exercise.id}-round-${roundNumber}`}
+                          className={`p-3 rounded-lg ${
+                            set.completed
+                              ? 'bg-green-900/20'
+                              : 'bg-slate-800/50'
+                          }`}
+                        >
+                          {/* Exercise name and previous */}
+                          <div className="flex justify-between items-center mb-3">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-slate-200">
+                                {exerciseName}
+                              </span>
+                              {getExerciseTypeIcon(ex.exerciseType)}
+                              {set.completed && (
+                                <Check
+                                  size={16}
+                                  className="text-green-400 ml-1"
+                                />
+                              )}
+                            </div>
+                            {prevDisplay && (
+                              <span className="text-slate-500 text-sm">
+                                Prev: {prevDisplay}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Inputs and complete button */}
+                          <div className="flex items-center gap-3 flex-wrap">
+                            {/* Weight input (if applicable) */}
+                            {hasWeight && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-slate-400 text-sm w-8">
+                                  KG
+                                </span>
+                                <Input
+                                  type="number"
+                                  value={set.weight}
+                                  onChange={(e) =>
+                                    handleSetChange(
+                                      exerciseIndex,
+                                      roundNumber,
+                                      'weight',
+                                      e.target.value,
+                                    )
+                                  }
+                                  className="w-20 h-10 text-center"
+                                  disabled={set.completed}
+                                />
+                              </div>
+                            )}
+
+                            {/* Reps or Duration input */}
+                            {isDuration ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-slate-400 text-sm w-8">
+                                  SEC
+                                </span>
+                                <Input
+                                  type="number"
+                                  value={set.durationSeconds}
+                                  onChange={(e) =>
+                                    handleSetChange(
+                                      exerciseIndex,
+                                      roundNumber,
+                                      'durationSeconds',
+                                      e.target.value,
+                                    )
+                                  }
+                                  className="w-20 h-10 text-center"
+                                  disabled={set.completed}
+                                />
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <span className="text-slate-400 text-sm w-10">
+                                  REPS
+                                </span>
+                                <Input
+                                  type="number"
+                                  value={set.reps}
+                                  onChange={(e) =>
+                                    handleSetChange(
+                                      exerciseIndex,
+                                      roundNumber,
+                                      'reps',
+                                      e.target.value,
+                                    )
+                                  }
+                                  className="w-20 h-10 text-center"
+                                  disabled={set.completed}
+                                />
+                              </div>
+                            )}
+
+                            {/* Individual complete button */}
+                            {!set.completed && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleCompleteSet(exerciseIndex, roundNumber)
+                                }
+                                className="ml-auto p-2.5 text-green-400 hover:bg-green-900/30 rounded-lg transition-colors"
+                                title="Complete this exercise"
+                              >
+                                {isDuration ? (
+                                  <Play size={22} />
+                                ) : (
+                                  <Check size={22} />
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Round Actions */}
+                  <div className="flex gap-3 mt-4 pt-4 border-t border-slate-700">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleCompleteRound(exerciseIndices, roundNumber)
+                      }
+                      disabled={roundComplete}
+                      className={`flex-1 h-11 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors ${
+                        roundComplete
+                          ? 'bg-green-900/30 text-green-400 cursor-not-allowed'
+                          : 'bg-green-600 hover:bg-green-700 text-white'
+                      }`}
+                    >
+                      <Check size={18} />
+                      {roundComplete ? 'Round Complete' : 'Complete All'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleDeleteRound(exerciseIndices, roundNumber)
+                      }
+                      className="h-11 px-4 rounded-lg bg-red-600/20 text-red-400 hover:bg-red-600/30 transition-colors flex items-center justify-center"
+                      title="Delete this round"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Add Round Button */}
+            <button
+              type="button"
+              onClick={() => handleAddSetToSuperset(exerciseIndices)}
+              className="w-full h-12 rounded-lg border-2 border-dashed border-purple-500/50 text-purple-400 hover:bg-purple-900/20 transition-colors flex items-center justify-center gap-2 font-medium"
+            >
+              <Plus size={20} />
+              Add Round
+            </button>
+          </div>
+        )}
+      </>
+    );
   };
 
   if (!activeWorkout) {
@@ -679,255 +1329,39 @@ export function WorkoutSession() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {exercisesWithSets.map((exerciseData, exerciseIndex) => {
-            const exerciseName =
-              'exercise_name' in exerciseData.exercise
-                ? exerciseData.exercise.exercise_name
-                : exerciseData.exercise.name;
-            const isDuration =
-              exerciseData.exerciseType === 'duration' ||
-              exerciseData.exerciseType === 'duration_weight';
-            const hasWeight =
-              exerciseData.exerciseType === 'reps_weight' ||
-              exerciseData.exerciseType === 'duration_weight';
-            const targetInfo =
-              'target_rep_min' in exerciseData.exercise
-                ? isDuration
-                  ? `${exerciseData.exercise.target_duration_seconds || 30}s`
-                  : `${exerciseData.exercise.target_rep_min}-${exerciseData.exercise.target_rep_max} reps`
-                : null;
-
-            return (
-              <Card key={`exercise-${exerciseData.exercise.id}`}>
-                <CardContent className="p-4">
-                  {/* Exercise Header */}
-                  <button
-                    type="button"
-                    className="flex items-center justify-between w-full text-left"
-                    onClick={() => toggleExerciseExpand(exerciseIndex)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        toggleExerciseExpand(exerciseIndex);
-                      }
-                    }}
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold text-white">
-                          {exerciseName}
-                        </h3>
-                        {getExerciseTypeIcon(exerciseData.exerciseType)}
+          {groupedExercises.map((item) => {
+            if (Array.isArray(item)) {
+              // SUPERSET GROUP - render with alternating sets
+              const supersetKey = item.map((ex) => ex.exercise.id).join('-');
+              return (
+                <Card
+                  key={`superset-${supersetKey}`}
+                  className="border-2 border-purple-500/50"
+                >
+                  <CardContent className="p-4">
+                    <div className="mb-3 flex items-center gap-2">
+                      <div className="px-2 py-1 bg-purple-600/20 text-purple-400 text-xs rounded font-semibold">
+                        SUPERSET
                       </div>
-                      {targetInfo && (
-                        <p className="text-slate-400 text-sm">
-                          Target: {targetInfo}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
                       <span className="text-slate-400 text-sm">
-                        {exerciseData.sets.filter((s) => s.completed).length}/
-                        {exerciseData.sets.length}
+                        {item.length} exercises
                       </span>
-                      {exerciseData.isExpanded ? (
-                        <ChevronUp size={20} className="text-slate-400" />
-                      ) : (
-                        <ChevronDown size={20} className="text-slate-400" />
-                      )}
                     </div>
-                  </button>
-
-                  {/* Sets */}
-                  {exerciseData.isExpanded && (
-                    <div className="mt-4">
-                      {/* Last Performance */}
-                      {exerciseData.lastPerformance &&
-                        exerciseData.lastPerformance.length > 0 && (
-                          <div className="mb-3 p-2 bg-slate-700/50 rounded text-xs text-slate-400">
-                            Last:{' '}
-                            {exerciseData.lastPerformance
-                              .map((s) =>
-                                s.duration_seconds
-                                  ? `${s.duration_seconds}s${s.weight_kg ? ` @ ${s.weight_kg}kg` : ''}`
-                                  : `${s.weight_kg || 0}kg × ${s.reps || 0}`,
-                              )
-                              .join(' | ')}
-                          </div>
-                        )}
-
-                      {/* Set Headers */}
-                      <div
-                        className={`grid gap-2 mb-2 text-xs text-slate-400 ${
-                          isDuration
-                            ? hasWeight
-                              ? 'grid-cols-10'
-                              : 'grid-cols-8'
-                            : hasWeight
-                              ? 'grid-cols-12'
-                              : 'grid-cols-10'
-                        }`}
-                      >
-                        <div className="col-span-2 text-center">SET</div>
-                        <div className="col-span-2 text-center">PREV</div>
-                        {hasWeight && (
-                          <div className="col-span-2 text-center">KG</div>
-                        )}
-                        {isDuration ? (
-                          <div className="col-span-2 text-center">SEC</div>
-                        ) : (
-                          <div className="col-span-2 text-center">REPS</div>
-                        )}
-                        <div
-                          className={
-                            isDuration && !hasWeight
-                              ? 'col-span-2'
-                              : 'col-span-2'
-                          }
-                        ></div>
-                      </div>
-
-                      {/* Sets List */}
-                      {exerciseData.sets.map((set, setIndex) => {
-                        const prevSet =
-                          exerciseData.lastPerformance?.[setIndex];
-
-                        return (
-                          <div
-                            key={set.tempId}
-                            className={`grid gap-2 items-center py-2 ${
-                              isDuration
-                                ? hasWeight
-                                  ? 'grid-cols-10'
-                                  : 'grid-cols-8'
-                                : hasWeight
-                                  ? 'grid-cols-12'
-                                  : 'grid-cols-10'
-                            } ${set.completed ? 'bg-green-900/20 rounded' : ''}`}
-                          >
-                            <div className="col-span-2 text-center text-slate-300">
-                              {setIndex + 1}
-                            </div>
-                            <div className="col-span-2 text-center text-slate-500 text-sm">
-                              {prevSet
-                                ? prevSet.duration_seconds
-                                  ? `${prevSet.duration_seconds}s`
-                                  : `${prevSet.weight_kg || 0}×${prevSet.reps || 0}`
-                                : '-'}
-                            </div>
-                            {hasWeight && (
-                              <div className="col-span-2">
-                                <Input
-                                  type="number"
-                                  value={set.weight}
-                                  onChange={(e) =>
-                                    handleSetChange(
-                                      exerciseIndex,
-                                      setIndex,
-                                      'weight',
-                                      e.target.value,
-                                    )
-                                  }
-                                  className="text-center p-1 h-8"
-                                  disabled={set.completed}
-                                />
-                              </div>
-                            )}
-                            {isDuration ? (
-                              <div className="col-span-2">
-                                <Input
-                                  type="number"
-                                  value={set.durationSeconds}
-                                  onChange={(e) =>
-                                    handleSetChange(
-                                      exerciseIndex,
-                                      setIndex,
-                                      'durationSeconds',
-                                      e.target.value,
-                                    )
-                                  }
-                                  className="text-center p-1 h-8"
-                                  disabled={set.completed}
-                                  placeholder="sec"
-                                />
-                              </div>
-                            ) : (
-                              <div className="col-span-2">
-                                <Input
-                                  type="number"
-                                  value={set.reps}
-                                  onChange={(e) =>
-                                    handleSetChange(
-                                      exerciseIndex,
-                                      setIndex,
-                                      'reps',
-                                      e.target.value,
-                                    )
-                                  }
-                                  className="text-center p-1 h-8"
-                                  disabled={set.completed}
-                                />
-                              </div>
-                            )}
-                            <div
-                              className={`${isDuration && !hasWeight ? 'col-span-2' : 'col-span-2'} flex justify-end gap-1`}
-                            >
-                              {set.completed ? (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleDeleteSet(exerciseIndex, setIndex)
-                                  }
-                                  className="p-1 text-red-400 hover:text-red-300"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleCompleteSet(exerciseIndex, setIndex)
-                                  }
-                                  className={`p-1 rounded text-white hover:opacity-80 ${
-                                    isDuration ? 'bg-purple-600' : 'bg-blue-600'
-                                  }`}
-                                >
-                                  {isDuration ? (
-                                    <Play size={16} />
-                                  ) : (
-                                    <Check size={16} />
-                                  )}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-
-                      {/* Add Set / Remove Exercise */}
-                      <div className="flex justify-between mt-3 pt-3 border-t border-slate-700">
-                        <button
-                          type="button"
-                          onClick={() => handleAddSet(exerciseIndex)}
-                          className="text-blue-400 text-sm flex items-center gap-1"
-                        >
-                          <Plus size={16} />
-                          Add Set
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveExercise(exerciseIndex)}
-                          className="text-red-400 text-sm flex items-center gap-1"
-                        >
-                          <Trash2 size={16} />
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            );
+                    {renderSupersetContent(item)}
+                  </CardContent>
+                </Card>
+              );
+            } else {
+              // SINGLE EXERCISE - normal card
+              const exerciseIndex = exercisesWithSets.indexOf(item);
+              return (
+                <Card key={`exercise-${item.exercise.id}`}>
+                  <CardContent className="p-4">
+                    {renderExerciseContent(item, exerciseIndex)}
+                  </CardContent>
+                </Card>
+              );
+            }
           })}
         </div>
       )}
@@ -943,9 +1377,9 @@ export function WorkoutSession() {
       </Button>
 
       {/* Finish Workout Button */}
-      <div className="fixed bottom-20 left-0 right-0 p-4 bg-gradient-to-t from-slate-900 to-transparent">
+      <div className="mt-6 mb-24 max-w-lg mx-auto">
         <Button
-          className="w-full max-w-lg mx-auto block"
+          className="w-full"
           onClick={() => setShowEndWorkout(true)}
           disabled={totalSets === 0}
         >

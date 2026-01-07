@@ -12,9 +12,8 @@ import {
   TextArea,
 } from '../components/ui';
 import { useCalories } from '../hooks/useCalories';
-import { useProfile } from '../hooks/useProfile';
 import { useAppStore } from '../hooks/useAppStore';
-import { analyzeFoodImage } from '../services/gemini';
+import { analyzeFoodImage, isGeminiInitialized } from '../services/gemini';
 import { formatDate } from '../utils/date';
 import { recalculateMacros } from '../utils/calculations';
 import { mealScannerSchema, type MealScannerFormData } from '../schemas/forms';
@@ -33,7 +32,6 @@ interface EditableFoodItem extends AIFoodItem {
 
 export function MealScanner() {
   const navigate = useNavigate();
-  const { profile } = useProfile();
   const { addEntry } = useCalories();
   const isOnline = useAppStore((state) => state.isOnline);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -100,7 +98,7 @@ export function MealScanner() {
       return;
     }
 
-    if (!profile?.gemini_api_key) {
+    if (!isGeminiInitialized()) {
       setError('Please add your Gemini API key in Settings');
       return;
     }

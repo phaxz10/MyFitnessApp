@@ -123,6 +123,7 @@ export function ProgramEditor() {
     control,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors, isDirty },
   } = useForm<ProgramFormData>({
     resolver: zodResolver(programFormSchema),
@@ -245,11 +246,14 @@ export function ProgramEditor() {
   ) => {
     const currentSession = watchedSessions[sessionIndex];
     if (currentSession) {
-      updateSessionField(sessionIndex, {
-        ...currentSession,
-        exercises: currentSession.exercises.filter(
-          (_, i) => i !== exerciseIndex,
-        ),
+      const updatedExercises = currentSession.exercises.filter(
+        (_, i) => i !== exerciseIndex,
+      );
+
+      // Properly update the form field to unregister deleted exercise
+      setValue(`sessions.${sessionIndex}.exercises`, updatedExercises, {
+        shouldValidate: true,
+        shouldDirty: true,
       });
     }
     // Clear superset selection if deleted exercise was selected

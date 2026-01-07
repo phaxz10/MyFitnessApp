@@ -68,6 +68,7 @@ async function initSchema(): Promise<void> {
       description TEXT,
       muscle_groups TEXT,
       equipment TEXT,
+      video_url TEXT,
       is_ai_generated BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -150,6 +151,15 @@ async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_program_exercises_session ON program_exercises(session_id);
     CREATE INDEX IF NOT EXISTS idx_workout_sets_log ON workout_sets(workout_log_id);
   `);
+
+  // Migration: Add video_url column to exercises if it doesn't exist
+  try {
+    await db.exec(`
+      ALTER TABLE exercises ADD COLUMN IF NOT EXISTS video_url TEXT;
+    `);
+  } catch {
+    // Column may already exist or table doesn't support IF NOT EXISTS, ignore
+  }
 }
 
 // Helper function to check if onboarding is complete

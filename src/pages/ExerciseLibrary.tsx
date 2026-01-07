@@ -8,6 +8,11 @@ import {
   Edit,
   Sparkles,
   ChevronRight,
+  Video,
+  ListPlus,
+  Loader2,
+  X,
+  Check,
 } from 'lucide-react';
 import {
   Card,
@@ -20,6 +25,7 @@ import {
 import { useExercises } from '../hooks/useExercises';
 import {
   generateExerciseDetails,
+  generateExerciseDetailsBatch,
   isGeminiInitialized,
 } from '../services/gemini';
 import { exerciseFormSchema, type ExerciseFormData } from '../schemas/forms';
@@ -38,11 +44,18 @@ const MUSCLE_GROUPS = [
   'Full Body',
 ];
 
+// Generate YouTube search URL for exercise demo
+function getYouTubeSearchUrl(exerciseName: string): string {
+  const query = encodeURIComponent(`${exerciseName} exercise form tutorial`);
+  return `https://www.youtube.com/results?search_query=${query}`;
+}
+
 export function ExerciseLibrary() {
   const {
     exercises,
     fetchExercises,
     addExercise,
+    addExercisesBatch,
     updateExercise,
     deleteExercise,
     loading,
@@ -55,8 +68,20 @@ export function ExerciseLibrary() {
     null,
   );
   const [showDeleteModal, setShowDeleteModal] = useState<Exercise | null>(null);
+  const [showBatchModal, setShowBatchModal] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
+
+  // Batch add state
+  const [batchInput, setBatchInput] = useState('');
+  const [batchExercises, setBatchExercises] = useState<
+    {
+      name: string;
+      status: 'pending' | 'generating' | 'ready' | 'error';
+      details?: AIExerciseResponse;
+    }[]
+  >([]);
+  const [isBatchGenerating, setIsBatchGenerating] = useState(false);
 
   const {
     register,
@@ -134,12 +159,12 @@ export function ExerciseLibrary() {
     try {
       const details: AIExerciseResponse =
         await generateExerciseDetails(formName);
-      
+
       // Combine description with tips for comprehensive instructions
       const fullDescription = details.tips?.length
         ? `${details.description}\n\nTips:\n${details.tips.map((tip) => `• ${tip}`).join('\n')}`
         : details.description;
-      
+
       setValue('name', details.name);
       setValue('description', fullDescription);
       setValue('muscleGroups', details.muscle_groups.join(', '));
@@ -167,6 +192,7 @@ export function ExerciseLibrary() {
           description: data.description || '',
           muscle_groups: data.muscleGroups || '',
           equipment: data.equipment || '',
+          video_url: null,
           is_ai_generated: false,
         });
       }
@@ -191,6 +217,121 @@ export function ExerciseLibrary() {
     }
   };
 
+  // Batch add handlers
+  const handleParseBatchInput = () => {
+    const names = batchInput
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    if (names.length === 0) {
+      alert('Please enter at least one exercise name');
+      return;
+    }
+
+    setBatchExercises(names.map((name) => ({ name, status: 'pending' })));
+  };
+
+  const handleRemoveBatchExercise = (index: number) => {
+    setBatchExercises((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleGenerateBatchDetails = async () => {
+    if (!isGeminiInitialized()) {
+      alert('Please set up your Gemini API key in Settings');
+      return;
+    }
+
+    const pendingExercises = batchExercises.filter(
+      (ex) => ex.status === 'pending',
+    );
+    if (pendingExercises.length === 0) return;
+
+    setIsBatchGenerating(true);
+
+    // Mark all as generating
+    setBatchExercises((prev) =>
+      prev.map((ex) =>
+        ex.status === 'pending' ? { ...ex, status: 'generating' } : ex,
+      ),
+    );
+
+    try {
+      const names = pendingExercises.map((ex) => ex.name);
+      const details = await generateExerciseDetailsBatch(names);
+
+      // Update with generated details
+      setBatchExercises((prev) => {
+        const updated = [...prev];
+        let detailIndex = 0;
+        for (let i = 0; i < updated.length; i++) {
+          if (updated[i].status === 'generating') {
+            if (details[detailIndex]) {
+              updated[i] = {
+                ...updated[i],
+                status: 'ready',
+                details: details[detailIndex],
+              };
+            } else {
+              updated[i] = { ...updated[i], status: 'error' };
+            }
+            detailIndex++;
+          }
+        }
+        return updated;
+      });
+    } catch (err) {
+      console.error('Failed to generate batch details:', err);
+      setBatchExercises((prev) =>
+        prev.map((ex) =>
+          ex.status === 'generating' ? { ...ex, status: 'error' } : ex,
+        ),
+      );
+    } finally {
+      setIsBatchGenerating(false);
+    }
+  };
+
+  const handleSaveBatchExercises = async () => {
+    const readyExercises = batchExercises.filter((ex) => ex.status === 'ready');
+    if (readyExercises.length === 0) {
+      alert('No exercises ready to save. Generate details first.');
+      return;
+    }
+
+    try {
+      const exercisesToAdd = readyExercises.map((ex) => {
+        const details = ex.details!;
+        const fullDescription = details.tips?.length
+          ? `${details.description}\n\nTips:\n${details.tips.map((tip) => `• ${tip}`).join('\n')}`
+          : details.description;
+
+        return {
+          name: details.name,
+          description: fullDescription,
+          muscle_groups: details.muscle_groups.join(', '),
+          equipment: details.equipment,
+          video_url: null,
+          is_ai_generated: true,
+        };
+      });
+
+      await addExercisesBatch(exercisesToAdd);
+      setShowBatchModal(false);
+      setBatchInput('');
+      setBatchExercises([]);
+    } catch (err) {
+      console.error('Failed to save batch exercises:', err);
+      alert('Failed to save exercises');
+    }
+  };
+
+  const handleCloseBatchModal = () => {
+    setShowBatchModal(false);
+    setBatchInput('');
+    setBatchExercises([]);
+  };
+
   // Group exercises by muscle group for display
   const groupedExercises = filteredExercises.reduce(
     (acc, ex) => {
@@ -207,7 +348,9 @@ export function ExerciseLibrary() {
       {/* Header */}
       <div className="mb-4">
         <h1 className="text-xl font-bold text-white">Exercise Library</h1>
-        <p className="text-slate-400 text-sm">Manage your exercise collection</p>
+        <p className="text-slate-400 text-sm">
+          Manage your exercise collection
+        </p>
       </div>
 
       {/* Search */}
@@ -242,11 +385,17 @@ export function ExerciseLibrary() {
         ))}
       </div>
 
-      {/* Add Exercise Button */}
-      <Button className="w-full mb-4" onClick={() => handleOpenAddModal()}>
-        <Plus size={18} className="mr-2" />
-        Add New Exercise
-      </Button>
+      {/* Action Buttons */}
+      <div className="flex gap-2 mb-4">
+        <Button className="flex-1" onClick={() => handleOpenAddModal()}>
+          <Plus size={18} className="mr-2" />
+          Add Exercise
+        </Button>
+        <Button variant="secondary" onClick={() => setShowBatchModal(true)}>
+          <ListPlus size={18} className="mr-2" />
+          Batch Add
+        </Button>
+      </div>
 
       {/* Exercise List */}
       {filteredExercises.length === 0 ? (
@@ -281,9 +430,7 @@ export function ExerciseLibrary() {
                   >
                     <CardContent className="p-3 flex items-center justify-between">
                       <div className="flex-1 min-w-0">
-                        <p className="text-white font-medium">
-                          {exercise.name}
-                        </p>
+                        <p className="text-white font-medium">{exercise.name}</p>
                         <p className="text-slate-400 text-sm truncate">
                           {exercise.equipment || 'No equipment'}
                         </p>
@@ -360,7 +507,10 @@ export function ExerciseLibrary() {
           </div>
 
           <div>
-            <label htmlFor="description" className="block text-slate-400 text-sm mb-1">
+            <label
+              htmlFor="description"
+              className="block text-slate-400 text-sm mb-1"
+            >
               Description
             </label>
             <TextArea
@@ -372,7 +522,10 @@ export function ExerciseLibrary() {
           </div>
 
           <div>
-            <label htmlFor="muscleGroups" className="block text-slate-400 text-sm mb-1">
+            <label
+              htmlFor="muscleGroups"
+              className="block text-slate-400 text-sm mb-1"
+            >
               Muscle Groups
             </label>
             <Input
@@ -383,7 +536,10 @@ export function ExerciseLibrary() {
           </div>
 
           <div>
-            <label htmlFor="equipment" className="block text-slate-400 text-sm mb-1">
+            <label
+              htmlFor="equipment"
+              className="block text-slate-400 text-sm mb-1"
+            >
               Equipment
             </label>
             <Input
@@ -447,6 +603,17 @@ export function ExerciseLibrary() {
               </div>
             )}
 
+            {/* Video Demo Link */}
+            <a
+              href={getYouTubeSearchUrl(showDetailsModal.name)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-red-400 hover:text-red-300 transition-colors"
+            >
+              <Video size={18} />
+              <span>Watch Demo on YouTube</span>
+            </a>
+
             {showDetailsModal.is_ai_generated && (
               <div className="flex items-center gap-2 text-slate-400 text-sm">
                 <Sparkles size={14} />
@@ -502,6 +669,145 @@ export function ExerciseLibrary() {
           >
             Delete
           </Button>
+        </div>
+      </Modal>
+
+      {/* Batch Add Modal */}
+      <Modal
+        isOpen={showBatchModal}
+        onClose={handleCloseBatchModal}
+        title="Batch Add Exercises"
+      >
+        <div className="space-y-4">
+          {batchExercises.length === 0 ? (
+            <>
+              <p className="text-slate-400 text-sm">
+                Enter exercise names (one per line). AI will generate details
+                for each exercise.
+              </p>
+              <TextArea
+                value={batchInput}
+                onChange={(e) => setBatchInput(e.target.value)}
+                placeholder={`Bench Press\nSquat\nDeadlift\nOverhead Press\nBarbell Row`}
+                rows={8}
+              />
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="flex-1"
+                  onClick={handleCloseBatchModal}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  className="flex-1"
+                  onClick={handleParseBatchInput}
+                  disabled={!batchInput.trim()}
+                >
+                  Continue
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-slate-400 text-sm">
+                {batchExercises.filter((ex) => ex.status === 'ready').length} of{' '}
+                {batchExercises.length} exercises ready
+              </p>
+
+              <div className="max-h-64 overflow-y-auto space-y-2">
+                {batchExercises.map((exercise, index) => (
+                  <div
+                    key={`${exercise.name}-${index}`}
+                    className="flex items-center gap-2 bg-slate-800 rounded-lg p-2"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm truncate">
+                        {exercise.details?.name || exercise.name}
+                      </p>
+                      {exercise.details && (
+                        <p className="text-slate-400 text-xs truncate">
+                          {exercise.details.muscle_groups.join(', ')}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {exercise.status === 'pending' && (
+                        <span className="text-slate-400 text-xs">Pending</span>
+                      )}
+                      {exercise.status === 'generating' && (
+                        <Loader2 size={16} className="text-blue-400 animate-spin" />
+                      )}
+                      {exercise.status === 'ready' && (
+                        <Check size={16} className="text-green-400" />
+                      )}
+                      {exercise.status === 'error' && (
+                        <span className="text-red-400 text-xs">Error</span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveBatchExercise(index)}
+                        className="text-slate-500 hover:text-red-400 transition-colors"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="flex-1"
+                  onClick={() => setBatchExercises([])}
+                >
+                  Back
+                </Button>
+                {batchExercises.some((ex) => ex.status === 'pending') && (
+                  <Button
+                    type="button"
+                    className="flex-1"
+                    onClick={handleGenerateBatchDetails}
+                    disabled={isBatchGenerating || !isGeminiInitialized()}
+                  >
+                    {isBatchGenerating ? (
+                      <>
+                        <Loader2 size={18} className="mr-2 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles size={18} className="mr-2" />
+                        Generate Details
+                      </>
+                    )}
+                  </Button>
+                )}
+                {batchExercises.some((ex) => ex.status === 'ready') && (
+                  <Button
+                    type="button"
+                    className="flex-1"
+                    onClick={handleSaveBatchExercises}
+                    disabled={loading}
+                  >
+                    Save{' '}
+                    {batchExercises.filter((ex) => ex.status === 'ready').length}{' '}
+                    Exercises
+                  </Button>
+                )}
+              </div>
+
+              {!isGeminiInitialized() && (
+                <p className="text-amber-400 text-sm text-center">
+                  Set up your Gemini API key in Settings to use AI generation
+                </p>
+              )}
+            </>
+          )}
         </div>
       </Modal>
     </div>

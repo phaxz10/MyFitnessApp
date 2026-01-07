@@ -48,14 +48,15 @@ export function useExercises() {
       try {
         const db = await getDB();
         const result = await db.query(
-          `INSERT INTO exercises (name, description, muscle_groups, equipment, is_ai_generated)
-         VALUES ($1, $2, $3, $4, $5)
+          `INSERT INTO exercises (name, description, muscle_groups, equipment, video_url, is_ai_generated)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id`,
           [
             exercise.name,
             exercise.description,
             exercise.muscle_groups,
             exercise.equipment,
+            exercise.video_url,
             exercise.is_ai_generated,
           ],
         );
@@ -149,6 +150,46 @@ export function useExercises() {
     [],
   );
 
+  const addExercisesBatch = useCallback(
+    async (
+      exerciseList: Omit<Exercise, 'id' | 'created_at'>[],
+    ): Promise<number[]> => {
+      setLoading(true);
+      setError(null);
+      const ids: number[] = [];
+      try {
+        const db = await getDB();
+        for (const exercise of exerciseList) {
+          const result = await db.query(
+            `INSERT INTO exercises (name, description, muscle_groups, equipment, video_url, is_ai_generated)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id`,
+            [
+              exercise.name,
+              exercise.description,
+              exercise.muscle_groups,
+              exercise.equipment,
+              exercise.video_url,
+              exercise.is_ai_generated,
+            ],
+          );
+          const rows = result.rows as { id: number }[];
+          ids.push(rows[0].id);
+        }
+        await fetchExercises();
+        return ids;
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : 'Failed to add exercises',
+        );
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [fetchExercises],
+  );
+
   return {
     exercises,
     loading,
@@ -156,6 +197,7 @@ export function useExercises() {
     fetchExercises,
     getExerciseById,
     addExercise,
+    addExercisesBatch,
     updateExercise,
     deleteExercise,
     searchExercises,

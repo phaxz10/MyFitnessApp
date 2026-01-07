@@ -160,6 +160,53 @@ Guidelines:
   return JSON.parse(cleanedResponse) as AIExerciseResponse;
 }
 
+// Generate details for multiple exercises at once
+export async function generateExerciseDetailsBatch(
+  exerciseNames: string[],
+): Promise<AIExerciseResponse[]> {
+  if (!genAI) throw new Error('Gemini API not initialized');
+
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+  const prompt = `You are a certified personal trainer and exercise science expert. Generate comprehensive exercise details for the following exercises:
+
+${exerciseNames.map((name, i) => `${i + 1}. ${name}`).join('\n')}
+
+For each exercise, provide detailed, actionable information that helps someone perform it safely and effectively.
+
+Return a JSON array only, no markdown code blocks:
+[
+  {
+    "name": "standardized exercise name",
+    "description": "A comprehensive step-by-step guide on how to perform this exercise. Include: starting position, movement execution (concentric and eccentric phases), and end position. Be specific about body positioning, grip, stance, and range of motion.",
+    "muscle_groups": ["primary muscle group", "secondary muscle groups..."],
+    "equipment": "required equipment (or 'Bodyweight' if none)",
+    "tips": [
+      "Form cue or technique tip",
+      "Common mistake to avoid", 
+      "Breathing instruction",
+      "Safety consideration"
+    ]
+  }
+]
+
+Guidelines:
+- Return an array with one object per exercise, in the same order as the input list
+- Description should be 3-5 sentences covering the full movement pattern
+- Include 4-6 practical tips covering form, breathing, safety, and common errors
+- Muscle groups should list primary muscle first, then secondary/stabilizers
+- Be specific and actionable - avoid vague instructions`;
+
+  const result = await model.generateContent(prompt);
+  const response = result.response.text();
+  const cleanedResponse = response
+    .replace(/```json\n?/g, '')
+    .replace(/```\n?/g, '')
+    .trim();
+
+  return JSON.parse(cleanedResponse) as AIExerciseResponse[];
+}
+
 // Calculate calorie and macro targets
 export async function calculateTargets(profile: {
   age: number;

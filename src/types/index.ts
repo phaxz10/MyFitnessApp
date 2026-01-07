@@ -54,6 +54,7 @@ export interface Exercise {
   description: string;
   muscle_groups: string;
   equipment: string;
+  video_url: string | null;
   is_ai_generated: boolean;
   created_at: string;
 }

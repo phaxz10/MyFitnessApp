@@ -199,19 +199,47 @@ export type ExerciseFormData = z.infer<typeof exerciseFormSchema>;
 
 // ============== Program Editor Schema ==============
 
-export const programExerciseSchema = z.object({
-  exerciseId: z.number(),
-  exerciseName: z.string(),
-  exerciseType: z
-    .enum(['reps_weight', 'reps_only', 'duration', 'duration_weight'])
-    .default('reps_weight'),
-  targetSets: z.number().min(1, 'At least 1 set required'),
-  targetRepMin: z.number().nullable().optional(),
-  targetRepMax: z.number().nullable().optional(),
-  targetDurationSeconds: z.number().nullable().optional(),
-  supersetGroupId: z.string().nullable().optional(),
-  notes: z.string().optional(),
-});
+export const programExerciseSchema = z
+  .object({
+    exerciseId: z.number(),
+    exerciseName: z.string(),
+    exerciseType: z
+      .enum(['reps_weight', 'reps_only', 'duration', 'duration_weight'])
+      .default('reps_weight'),
+    targetSets: z.number().min(1, 'At least 1 set required'),
+    targetRepMin: z.number().nullable().optional(),
+    targetRepMax: z.number().nullable().optional(),
+    targetDurationSeconds: z.number().nullable().optional(),
+    supersetGroupId: z.string().nullable().optional(),
+    notes: z.string().optional(),
+  })
+  .refine(
+    (data) => {
+      // For duration exercises, ensure duration is set
+      if (
+        data.exerciseType === 'duration' ||
+        data.exerciseType === 'duration_weight'
+      ) {
+        return (
+          data.targetDurationSeconds !== null &&
+          data.targetDurationSeconds !== undefined &&
+          data.targetDurationSeconds > 0
+        );
+      }
+      // For rep exercises, ensure reps are set
+      return (
+        data.targetRepMin !== null &&
+        data.targetRepMin !== undefined &&
+        data.targetRepMax !== null &&
+        data.targetRepMax !== undefined &&
+        data.targetRepMin > 0 &&
+        data.targetRepMax >= data.targetRepMin
+      );
+    },
+    {
+      message: 'Please set valid targets for this exercise type',
+    },
+  );
 
 export const programSessionSchema = z.object({
   name: z.string().min(1, 'Session name is required'),

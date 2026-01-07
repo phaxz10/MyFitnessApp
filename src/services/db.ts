@@ -188,6 +188,15 @@ async function initSchema(): Promise<void> {
   // and add duration_seconds to workout_sets
   try {
     await db.exec(`
+      ALTER TABLE program_exercises ALTER COLUMN target_rep_min DROP NOT NULL;
+      ALTER TABLE program_exercises ALTER COLUMN target_rep_max DROP NOT NULL;
+    `);
+  } catch {
+    // Columns may already be nullable, ignore
+  }
+
+  try {
+    await db.exec(`
       ALTER TABLE workout_sets ADD COLUMN IF NOT EXISTS duration_seconds INTEGER;
     `);
   } catch {

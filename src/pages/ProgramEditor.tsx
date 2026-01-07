@@ -511,7 +511,22 @@ export function ProgramEditor() {
       navigate('/workout');
     } catch (err) {
       console.error('Failed to save program:', err);
-      alert('Failed to save program');
+      const errorMessage = err instanceof Error ? err.message : String(err);
+
+      // Check for database schema issue
+      if (
+        errorMessage.includes('not-null constraint') ||
+        errorMessage.includes('target_rep_min')
+      ) {
+        alert(
+          'Database schema needs updating. Please:\n' +
+            '1. Hard refresh the page (Ctrl+Shift+R or Cmd+Shift+R)\n' +
+            '2. If that doesn\'t work, go to Settings and use "Reset Database"\n' +
+            '\nNote: Reset Database will clear all your data.',
+        );
+      } else {
+        alert('Failed to save program: ' + errorMessage);
+      }
     }
   };
 

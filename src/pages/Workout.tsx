@@ -242,7 +242,8 @@ export function Workout() {
           <div className="flex justify-between items-center mb-3">
             <h2 className="text-lg font-semibold text-white">Programs</h2>
             <button
-              onClick={() => navigate('/workout/exercises')}
+              type="button"
+              onClick={() => navigate('/exercises')}
               className="text-blue-400 text-sm"
             >
               Exercise Library

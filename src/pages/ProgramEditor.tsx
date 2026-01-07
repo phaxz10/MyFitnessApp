@@ -608,7 +608,7 @@ export function ProgramEditor() {
         <Button
           variant="secondary"
           className="w-full mt-4"
-          onClick={() => navigate('/workout/exercises')}
+          onClick={() => navigate('/exercises')}
         >
           Manage Exercise Library
         </Button>

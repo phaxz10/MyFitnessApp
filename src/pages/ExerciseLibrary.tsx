@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
-  ArrowLeft,
   Plus,
   Search,
   Trash2,
@@ -41,7 +39,6 @@ const MUSCLE_GROUPS = [
 ];
 
 export function ExerciseLibrary() {
-  const navigate = useNavigate();
   const {
     exercises,
     fetchExercises,
@@ -137,7 +134,14 @@ export function ExerciseLibrary() {
     try {
       const details: AIExerciseResponse =
         await generateExerciseDetails(formName);
-      setValue('description', details.description);
+      
+      // Combine description with tips for comprehensive instructions
+      const fullDescription = details.tips?.length
+        ? `${details.description}\n\nTips:\n${details.tips.map((tip) => `• ${tip}`).join('\n')}`
+        : details.description;
+      
+      setValue('name', details.name);
+      setValue('description', fullDescription);
       setValue('muscleGroups', details.muscle_groups.join(', '));
       setValue('equipment', details.equipment);
     } catch (err) {
@@ -199,17 +203,11 @@ export function ExerciseLibrary() {
   );
 
   return (
-    <div className="p-4 pb-20">
+    <div className="p-4 pb-24">
       {/* Header */}
-      <div className="flex items-center gap-4 mb-4">
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className="p-2 text-slate-400 hover:text-white"
-        >
-          <ArrowLeft size={24} />
-        </button>
+      <div className="mb-4">
         <h1 className="text-xl font-bold text-white">Exercise Library</h1>
+        <p className="text-slate-400 text-sm">Manage your exercise collection</p>
       </div>
 
       {/* Search */}

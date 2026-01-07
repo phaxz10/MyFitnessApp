@@ -126,6 +126,7 @@ function AppRoutes() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/calories" element={<CalorieLog />} />
         <Route path="/workout" element={<Workout />} />
+        <Route path="/exercises" element={<ExerciseLibrary />} />
         <Route path="/weight" element={<WeightTracker />} />
         <Route path="/scanner" element={<MealScanner />} />
         <Route path="/settings" element={<Settings />} />
@@ -136,7 +137,6 @@ function AppRoutes() {
         <Route path="/workout/session" element={<WorkoutSession />} />
         <Route path="/workout/program/new" element={<ProgramEditor />} />
         <Route path="/workout/program/:id" element={<ProgramEditor />} />
-        <Route path="/workout/exercises" element={<ExerciseLibrary />} />
       </Route>
 
       {/* Redirects */}

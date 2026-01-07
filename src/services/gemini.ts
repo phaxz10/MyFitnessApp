@@ -125,16 +125,30 @@ export async function generateExerciseDetails(
 
   const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
-  const prompt = `Generate exercise details for: ${exerciseName}
+  const prompt = `You are a certified personal trainer and exercise science expert. Generate comprehensive exercise details for: "${exerciseName}"
+
+Provide detailed, actionable information that helps someone perform this exercise safely and effectively.
 
 Return JSON format only, no markdown code blocks:
 {
-  "name": "exercise name",
-  "description": "Step-by-step execution instructions",
-  "muscle_groups": ["primary", "secondary"],
-  "equipment": "required equipment",
-  "tips": ["form tip 1", "form tip 2"]
-}`;
+  "name": "standardized exercise name",
+  "description": "A comprehensive step-by-step guide on how to perform this exercise. Include: starting position, movement execution (concentric and eccentric phases), and end position. Be specific about body positioning, grip, stance, and range of motion.",
+  "muscle_groups": ["primary muscle group", "secondary muscle groups..."],
+  "equipment": "required equipment (or 'Bodyweight' if none)",
+  "tips": [
+    "Form cue or technique tip",
+    "Common mistake to avoid",
+    "Breathing instruction (e.g., 'Exhale during the lift, inhale on the descent')",
+    "Safety consideration",
+    "Progression or variation tip"
+  ]
+}
+
+Guidelines:
+- Description should be 3-5 sentences covering the full movement pattern
+- Include 4-6 practical tips covering form, breathing, safety, and common errors
+- Muscle groups should list primary muscle first, then secondary/stabilizers
+- Be specific and actionable - avoid vague instructions`;
 
   const result = await model.generateContent(prompt);
   const response = result.response.text();

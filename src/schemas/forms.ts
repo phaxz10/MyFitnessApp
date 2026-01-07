@@ -161,7 +161,7 @@ export type WeightLogFormData = z.infer<typeof weightLogSchema>;
 
 export const foodEntrySchema = z.object({
   mealType: z.enum(['breakfast', 'lunch', 'dinner', 'snack']),
-  foodDescription: z.string().min(1, 'Food description is required'),
+  foodDescription: z.string().optional(),
   portionGrams: z.string().optional(),
   calories: z.string().min(1, 'Calories is required'),
   protein: z.string().min(1, 'Protein is required'),

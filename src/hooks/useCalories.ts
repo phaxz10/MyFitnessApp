@@ -138,7 +138,7 @@ export function useCalories() {
   const getDailySummary = useCallback(
     (date: string, entriesList?: FoodEntry[]): DailyCalorieSummary => {
       const dayEntries = (entriesList || entries).filter(
-        (e) => e.date === date,
+        (e) => formatDate(e.date) === date,
       );
 
       const meals: Record<MealType, FoodEntry[]> = {

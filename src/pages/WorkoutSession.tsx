@@ -453,7 +453,7 @@ export function WorkoutSession() {
                 : null;
 
             return (
-              <Card key={exerciseIndex}>
+              <Card key={exerciseData.exercise.id}>
                 <CardContent className="p-4">
                   {/* Exercise Header */}
                   <div

@@ -69,7 +69,7 @@ export function CalorieLog() {
     },
   });
 
-  const foodDescription = watch('foodDescription');
+  const foodDescription = watch('foodDescription') || '';
   const calories = watch('calories');
 
   useEffect(() => {
@@ -171,7 +171,7 @@ export function CalorieLog() {
         setValue('carbs', total.carbs_g.toString());
         setValue('fat', total.fat_g.toString());
       }
-    } catch (err) {
+    } catch {
       setError('Failed to analyze food. Please enter values manually.');
       setUseAI(false);
     } finally {
@@ -183,11 +183,14 @@ export function CalorieLog() {
     setIsLoading(true);
     setError(null);
 
+    // Provide default description if empty
+    const foodDesc = data.foodDescription?.trim() || 'Food entry';
+
     try {
       if (isEditMode && editingEntry) {
         await updateEntry(editingEntry.id, {
           meal_type: data.mealType,
-          food_description: data.foodDescription,
+          food_description: foodDesc,
           portion_grams: parseFloat(data.portionGrams || '0'),
           calories: parseInt(data.calories),
           protein_g: parseFloat(data.protein),
@@ -199,7 +202,7 @@ export function CalorieLog() {
         await addEntry({
           date: currentDate,
           meal_type: data.mealType,
-          food_description: data.foodDescription,
+          food_description: foodDesc,
           portion_grams: parseFloat(data.portionGrams || '0'),
           calories: parseInt(data.calories),
           protein_g: parseFloat(data.protein),
@@ -210,6 +213,7 @@ export function CalorieLog() {
       }
       handleCloseModal();
     } catch (err) {
+      console.error('Failed to save entry:', err);
       setError('Failed to save entry');
     } finally {
       setIsLoading(false);

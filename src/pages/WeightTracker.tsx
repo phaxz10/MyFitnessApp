@@ -65,7 +65,7 @@ export function WeightTracker() {
 
   // Check if there's already an entry for today
   const todayStr = formatDate(new Date());
-  const todayLog = logs.find((log) => log.date === todayStr);
+  const todayLog = logs.find((log) => formatDate(log.date) === todayStr);
 
   // Auto-populate form when modal opens if there's a today entry
   const handleOpenModal = useCallback(() => {
@@ -151,7 +151,7 @@ export function WeightTracker() {
       });
 
       handleCloseModal();
-    } catch (err) {
+    } catch {
       setError('Failed to save weight log');
     } finally {
       setIsLoading(false);

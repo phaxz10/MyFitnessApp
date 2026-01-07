@@ -11,11 +11,11 @@ interface RestTimerProps {
 
 const PRESET_TIMES = [30, 60, 90, 120, 180];
 
-export function RestTimer({ 
-  defaultSeconds = 90, 
+export function RestTimer({
+  defaultSeconds = 90,
   onClose,
   isMinimized = false,
-  onToggleMinimize
+  onToggleMinimize,
 }: RestTimerProps) {
   const [seconds, setSeconds] = useState(defaultSeconds);
   const [initialSeconds, setInitialSeconds] = useState(defaultSeconds);
@@ -48,20 +48,24 @@ export function RestTimer({
 
   const playBeep = useCallback(() => {
     try {
-      const audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      const audioContext = new (
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext
+      )();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
-      
+
       oscillator.connect(gainNode);
       gainNode.connect(audioContext.destination);
-      
+
       oscillator.frequency.value = 800;
       oscillator.type = 'sine';
       gainNode.gain.value = 0.3;
-      
+
       oscillator.start();
       oscillator.stop(audioContext.currentTime + 0.3);
-      
+
       // Play 3 beeps
       setTimeout(() => {
         const osc2 = audioContext.createOscillator();
@@ -71,7 +75,7 @@ export function RestTimer({
         osc2.start();
         osc2.stop(audioContext.currentTime + 0.3);
       }, 400);
-      
+
       setTimeout(() => {
         const osc3 = audioContext.createOscillator();
         osc3.connect(gainNode);
@@ -112,12 +116,14 @@ export function RestTimer({
   // Minimized view
   if (isMinimized) {
     return (
-      <div 
+      <div
         className={`fixed bottom-20 right-4 z-50 px-4 py-2 rounded-full shadow-lg cursor-pointer
           ${isFinished ? 'bg-green-600 animate-pulse' : isRunning ? 'bg-blue-600' : 'bg-slate-700'}`}
         onClick={onToggleMinimize}
       >
-        <span className="text-white font-mono font-bold">{formatTime(seconds)}</span>
+        <span className="text-white font-mono font-bold">
+          {formatTime(seconds)}
+        </span>
       </div>
     );
   }
@@ -153,7 +159,9 @@ export function RestTimer({
       </div>
 
       {/* Timer Display */}
-      <div className={`relative flex items-center justify-center mb-4 ${isFinished ? 'animate-pulse' : ''}`}>
+      <div
+        className={`relative flex items-center justify-center mb-4 ${isFinished ? 'animate-pulse' : ''}`}
+      >
         <div className="w-32 h-32 relative">
           {/* Background circle */}
           <svg className="w-full h-full transform -rotate-90">
@@ -180,7 +188,9 @@ export function RestTimer({
             />
           </svg>
           <div className="absolute inset-0 flex items-center justify-center">
-            <span className={`text-3xl font-mono font-bold ${isFinished ? 'text-green-400' : 'text-white'}`}>
+            <span
+              className={`text-3xl font-mono font-bold ${isFinished ? 'text-green-400' : 'text-white'}`}
+            >
               {formatTime(seconds)}
             </span>
           </div>
@@ -209,12 +219,15 @@ export function RestTimer({
             key={time}
             onClick={() => setPresetTime(time)}
             className={`px-3 py-1 rounded-full text-sm transition-colors
-              ${initialSeconds === time && !isFinished
-                ? 'bg-blue-600 text-white'
-                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              ${
+                initialSeconds === time && !isFinished
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
               }`}
           >
-            {time < 60 ? `${time}s` : `${time / 60}m${time % 60 > 0 ? ` ${time % 60}s` : ''}`}
+            {time < 60
+              ? `${time}s`
+              : `${time / 60}m${time % 60 > 0 ? ` ${time % 60}s` : ''}`}
           </button>
         ))}
       </div>

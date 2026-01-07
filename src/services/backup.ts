@@ -38,7 +38,9 @@ export async function exportData(): Promise<string> {
     db.query('SELECT * FROM exercises ORDER BY id'),
     db.query('SELECT * FROM workout_programs ORDER BY id'),
     db.query('SELECT * FROM program_sessions ORDER BY program_id, order_index'),
-    db.query('SELECT * FROM program_exercises ORDER BY session_id, order_index'),
+    db.query(
+      'SELECT * FROM program_exercises ORDER BY session_id, order_index',
+    ),
     db.query('SELECT * FROM workout_logs ORDER BY date'),
     db.query('SELECT * FROM workout_sets ORDER BY workout_log_id, set_number'),
     db.query('SELECT * FROM ai_goal_reviews ORDER BY review_date'),
@@ -101,7 +103,22 @@ export async function importData(jsonString: string): Promise<void> {
     await db.query(
       `INSERT INTO user_profile (id, age, gender, height_cm, activity_level, goal, target_rate_kg_per_week, calorie_target, protein_target_g, carbs_target_g, fat_target_g, gemini_api_key, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-      [row.id, row.age, row.gender, row.height_cm, row.activity_level, row.goal, row.target_rate_kg_per_week, row.calorie_target, row.protein_target_g, row.carbs_target_g, row.fat_target_g, row.gemini_api_key, row.created_at, row.updated_at]
+      [
+        row.id,
+        row.age,
+        row.gender,
+        row.height_cm,
+        row.activity_level,
+        row.goal,
+        row.target_rate_kg_per_week,
+        row.calorie_target,
+        row.protein_target_g,
+        row.carbs_target_g,
+        row.fat_target_g,
+        row.gemini_api_key,
+        row.created_at,
+        row.updated_at,
+      ],
     );
   }
 
@@ -110,7 +127,17 @@ export async function importData(jsonString: string): Promise<void> {
     await db.query(
       `INSERT INTO weight_logs (id, date, weight_kg, waist_cm, neck_cm, arm_cm, body_fat_pct, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [row.id, row.date, row.weight_kg, row.waist_cm, row.neck_cm, row.arm_cm, row.body_fat_pct, row.created_at, row.updated_at]
+      [
+        row.id,
+        row.date,
+        row.weight_kg,
+        row.waist_cm,
+        row.neck_cm,
+        row.arm_cm,
+        row.body_fat_pct,
+        row.created_at,
+        row.updated_at,
+      ],
     );
   }
 
@@ -119,7 +146,20 @@ export async function importData(jsonString: string): Promise<void> {
     await db.query(
       `INSERT INTO food_entries (id, date, meal_type, food_description, portion_grams, calories, protein_g, carbs_g, fat_g, is_ai_generated, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-      [row.id, row.date, row.meal_type, row.food_description, row.portion_grams, row.calories, row.protein_g, row.carbs_g, row.fat_g, row.is_ai_generated, row.created_at, row.updated_at]
+      [
+        row.id,
+        row.date,
+        row.meal_type,
+        row.food_description,
+        row.portion_grams,
+        row.calories,
+        row.protein_g,
+        row.carbs_g,
+        row.fat_g,
+        row.is_ai_generated,
+        row.created_at,
+        row.updated_at,
+      ],
     );
   }
 
@@ -128,7 +168,15 @@ export async function importData(jsonString: string): Promise<void> {
     await db.query(
       `INSERT INTO exercises (id, name, description, muscle_groups, equipment, is_ai_generated, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [row.id, row.name, row.description, row.muscle_groups, row.equipment, row.is_ai_generated, row.created_at]
+      [
+        row.id,
+        row.name,
+        row.description,
+        row.muscle_groups,
+        row.equipment,
+        row.is_ai_generated,
+        row.created_at,
+      ],
     );
   }
 
@@ -137,7 +185,15 @@ export async function importData(jsonString: string): Promise<void> {
     await db.query(
       `INSERT INTO workout_programs (id, name, description, sessions_per_week, is_active, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [row.id, row.name, row.description, row.sessions_per_week, row.is_active, row.created_at, row.updated_at]
+      [
+        row.id,
+        row.name,
+        row.description,
+        row.sessions_per_week,
+        row.is_active,
+        row.created_at,
+        row.updated_at,
+      ],
     );
   }
 
@@ -146,7 +202,14 @@ export async function importData(jsonString: string): Promise<void> {
     await db.query(
       `INSERT INTO program_sessions (id, program_id, name, day_of_week, order_index, created_at)
        VALUES ($1, $2, $3, $4, $5, $6)`,
-      [row.id, row.program_id, row.name, row.day_of_week, row.order_index, row.created_at]
+      [
+        row.id,
+        row.program_id,
+        row.name,
+        row.day_of_week,
+        row.order_index,
+        row.created_at,
+      ],
     );
   }
 
@@ -155,7 +218,16 @@ export async function importData(jsonString: string): Promise<void> {
     await db.query(
       `INSERT INTO program_exercises (id, session_id, exercise_id, target_sets, target_rep_min, target_rep_max, order_index, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [row.id, row.session_id, row.exercise_id, row.target_sets, row.target_rep_min, row.target_rep_max, row.order_index, row.notes]
+      [
+        row.id,
+        row.session_id,
+        row.exercise_id,
+        row.target_sets,
+        row.target_rep_min,
+        row.target_rep_max,
+        row.order_index,
+        row.notes,
+      ],
     );
   }
 
@@ -164,7 +236,16 @@ export async function importData(jsonString: string): Promise<void> {
     await db.query(
       `INSERT INTO workout_logs (id, program_id, session_id, date, started_at, ended_at, notes, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [row.id, row.program_id, row.session_id, row.date, row.started_at, row.ended_at, row.notes, row.created_at]
+      [
+        row.id,
+        row.program_id,
+        row.session_id,
+        row.date,
+        row.started_at,
+        row.ended_at,
+        row.notes,
+        row.created_at,
+      ],
     );
   }
 
@@ -173,7 +254,16 @@ export async function importData(jsonString: string): Promise<void> {
     await db.query(
       `INSERT INTO workout_sets (id, workout_log_id, exercise_id, set_number, reps, weight_kg, notes, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [row.id, row.workout_log_id, row.exercise_id, row.set_number, row.reps, row.weight_kg, row.notes, row.created_at]
+      [
+        row.id,
+        row.workout_log_id,
+        row.exercise_id,
+        row.set_number,
+        row.reps,
+        row.weight_kg,
+        row.notes,
+        row.created_at,
+      ],
     );
   }
 
@@ -182,7 +272,17 @@ export async function importData(jsonString: string): Promise<void> {
     await db.query(
       `INSERT INTO ai_goal_reviews (id, review_date, previous_calorie_target, new_calorie_target, previous_goal, new_goal_suggestion, ai_analysis, was_accepted, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [row.id, row.review_date, row.previous_calorie_target, row.new_calorie_target, row.previous_goal, row.new_goal_suggestion, row.ai_analysis, row.was_accepted, row.created_at]
+      [
+        row.id,
+        row.review_date,
+        row.previous_calorie_target,
+        row.new_calorie_target,
+        row.previous_goal,
+        row.new_goal_suggestion,
+        row.ai_analysis,
+        row.was_accepted,
+        row.created_at,
+      ],
     );
   }
 
@@ -203,10 +303,10 @@ export async function importData(jsonString: string): Promise<void> {
 export function downloadBackup(jsonString: string): void {
   const date = new Date().toISOString().split('T')[0];
   const filename = `mypersonalfitness-backup-${date}.json`;
-  
+
   const blob = new Blob([jsonString], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
-  
+
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;

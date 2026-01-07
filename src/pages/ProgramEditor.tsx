@@ -1,16 +1,23 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { 
+import {
   ArrowLeft,
-  Plus, 
+  Plus,
   Trash2,
   GripVertical,
   ChevronDown,
   ChevronUp,
   Save,
-  X
+  X,
 } from 'lucide-react';
-import { Card, CardContent, Button, Input, Modal, TextArea } from '../components/ui';
+import {
+  Card,
+  CardContent,
+  Button,
+  Input,
+  Modal,
+  TextArea,
+} from '../components/ui';
 import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
 import { useExercises } from '../hooks/useExercises';
 import type { Exercise } from '../types';
@@ -51,7 +58,7 @@ export function ProgramEditor() {
   const navigate = useNavigate();
   const isEditing = !!id && id !== 'new';
 
-  const { 
+  const {
     getProgramById,
     createProgram,
     updateProgram,
@@ -61,7 +68,7 @@ export function ProgramEditor() {
     addProgramExercise,
     updateProgramExercise,
     deleteProgramExercise,
-    loading 
+    loading,
   } = useWorkoutPrograms();
   const { exercises: allExercises, fetchExercises } = useExercises();
 
@@ -75,7 +82,7 @@ export function ProgramEditor() {
 
   useEffect(() => {
     fetchExercises();
-    
+
     if (isEditing) {
       loadProgram(parseInt(id));
     }
@@ -86,23 +93,25 @@ export function ProgramEditor() {
     if (program) {
       setProgramName(program.name);
       setProgramDescription(program.description || '');
-      setSessions(program.sessions.map(session => ({
-        id: session.id,
-        name: session.name,
-        day_of_week: session.day_of_week,
-        order_index: session.order_index,
-        exercises: session.exercises.map(ex => ({
-          id: ex.id,
-          exercise_id: ex.exercise_id,
-          exercise_name: ex.exercise_name,
-          target_sets: ex.target_sets,
-          target_rep_min: ex.target_rep_min,
-          target_rep_max: ex.target_rep_max,
-          order_index: ex.order_index,
-          notes: ex.notes || '',
+      setSessions(
+        program.sessions.map((session) => ({
+          id: session.id,
+          name: session.name,
+          day_of_week: session.day_of_week,
+          order_index: session.order_index,
+          exercises: session.exercises.map((ex) => ({
+            id: ex.id,
+            exercise_id: ex.exercise_id,
+            exercise_name: ex.exercise_name,
+            target_sets: ex.target_sets,
+            target_rep_min: ex.target_rep_min,
+            target_rep_max: ex.target_rep_max,
+            order_index: ex.order_index,
+            notes: ex.notes || '',
+          })),
+          isExpanded: true,
         })),
-        isExpanded: true,
-      })));
+      );
     }
   };
 
@@ -126,15 +135,18 @@ export function ProgramEditor() {
     setHasChanges(true);
   };
 
-  const handleUpdateSession = (index: number, updates: Partial<SessionFormData>) => {
-    setSessions(prev => prev.map((s, i) => 
-      i === index ? { ...s, ...updates } : s
-    ));
+  const handleUpdateSession = (
+    index: number,
+    updates: Partial<SessionFormData>,
+  ) => {
+    setSessions((prev) =>
+      prev.map((s, i) => (i === index ? { ...s, ...updates } : s)),
+    );
     setHasChanges(true);
   };
 
   const handleDeleteSession = (index: number) => {
-    setSessions(prev => prev.filter((_, i) => i !== index));
+    setSessions((prev) => prev.filter((_, i) => i !== index));
     setHasChanges(true);
   };
 
@@ -149,40 +161,52 @@ export function ProgramEditor() {
       notes: '',
     };
 
-    setSessions(prev => prev.map((s, i) => 
-      i === sessionIndex 
-        ? { ...s, exercises: [...s.exercises, newExercise] }
-        : s
-    ));
+    setSessions((prev) =>
+      prev.map((s, i) =>
+        i === sessionIndex
+          ? { ...s, exercises: [...s.exercises, newExercise] }
+          : s,
+      ),
+    );
     setShowAddExercise(null);
     setSearchQuery('');
     setHasChanges(true);
   };
 
   const handleUpdateExercise = (
-    sessionIndex: number, 
-    exerciseIndex: number, 
-    updates: Partial<ExerciseFormData>
+    sessionIndex: number,
+    exerciseIndex: number,
+    updates: Partial<ExerciseFormData>,
   ) => {
-    setSessions(prev => prev.map((s, i) => 
-      i === sessionIndex 
-        ? { 
-            ...s, 
-            exercises: s.exercises.map((ex, j) => 
-              j === exerciseIndex ? { ...ex, ...updates } : ex
-            )
-          }
-        : s
-    ));
+    setSessions((prev) =>
+      prev.map((s, i) =>
+        i === sessionIndex
+          ? {
+              ...s,
+              exercises: s.exercises.map((ex, j) =>
+                j === exerciseIndex ? { ...ex, ...updates } : ex,
+              ),
+            }
+          : s,
+      ),
+    );
     setHasChanges(true);
   };
 
-  const handleDeleteExercise = (sessionIndex: number, exerciseIndex: number) => {
-    setSessions(prev => prev.map((s, i) => 
-      i === sessionIndex 
-        ? { ...s, exercises: s.exercises.filter((_, j) => j !== exerciseIndex) }
-        : s
-    ));
+  const handleDeleteExercise = (
+    sessionIndex: number,
+    exerciseIndex: number,
+  ) => {
+    setSessions((prev) =>
+      prev.map((s, i) =>
+        i === sessionIndex
+          ? {
+              ...s,
+              exercises: s.exercises.filter((_, j) => j !== exerciseIndex),
+            }
+          : s,
+      ),
+    );
     setHasChanges(true);
   };
 
@@ -210,8 +234,11 @@ export function ProgramEditor() {
 
         // Handle sessions
         const existingProgram = await getProgramById(programId);
-        const existingSessionIds = existingProgram?.sessions.map(s => s.id) || [];
-        const currentSessionIds = sessions.filter(s => s.id).map(s => s.id!);
+        const existingSessionIds =
+          existingProgram?.sessions.map((s) => s.id) || [];
+        const currentSessionIds = sessions
+          .filter((s) => s.id)
+          .map((s) => s.id!);
 
         // Delete removed sessions
         for (const sessionId of existingSessionIds) {
@@ -234,9 +261,14 @@ export function ProgramEditor() {
             sessionId = session.id;
 
             // Handle exercises for existing session
-            const existingSession = existingProgram?.sessions.find(s => s.id === session.id);
-            const existingExerciseIds = existingSession?.exercises.map(e => e.id) || [];
-            const currentExerciseIds = session.exercises.filter(e => e.id).map(e => e.id!);
+            const existingSession = existingProgram?.sessions.find(
+              (s) => s.id === session.id,
+            );
+            const existingExerciseIds =
+              existingSession?.exercises.map((e) => e.id) || [];
+            const currentExerciseIds = session.exercises
+              .filter((e) => e.id)
+              .map((e) => e.id!);
 
             // Delete removed exercises
             for (const exerciseId of existingExerciseIds) {
@@ -326,16 +358,20 @@ export function ProgramEditor() {
     }
   };
 
-  const filteredExercises = allExercises.filter(ex => 
-    ex.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    ex.muscle_groups?.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredExercises = allExercises.filter(
+    (ex) =>
+      ex.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ex.muscle_groups?.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   return (
     <div className="p-4 pb-24">
       {/* Header */}
       <div className="flex items-center gap-4 mb-6">
-        <button onClick={handleBack} className="p-2 text-slate-400 hover:text-white">
+        <button
+          onClick={handleBack}
+          className="p-2 text-slate-400 hover:text-white"
+        >
           <ArrowLeft size={24} />
         </button>
         <h1 className="text-xl font-bold text-white">
@@ -347,7 +383,9 @@ export function ProgramEditor() {
       <Card className="mb-4">
         <CardContent className="p-4 space-y-4">
           <div>
-            <label className="block text-slate-400 text-sm mb-1">Program Name</label>
+            <label className="block text-slate-400 text-sm mb-1">
+              Program Name
+            </label>
             <Input
               value={programName}
               onChange={(e) => {
@@ -358,7 +396,9 @@ export function ProgramEditor() {
             />
           </div>
           <div>
-            <label className="block text-slate-400 text-sm mb-1">Description (optional)</label>
+            <label className="block text-slate-400 text-sm mb-1">
+              Description (optional)
+            </label>
             <TextArea
               value={programDescription}
               onChange={(e) => {
@@ -376,7 +416,9 @@ export function ProgramEditor() {
       <div className="mb-4">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg font-semibold text-white">Sessions</h2>
-          <span className="text-slate-400 text-sm">{sessions.length} sessions/week</span>
+          <span className="text-slate-400 text-sm">
+            {sessions.length} sessions/week
+          </span>
         </div>
 
         {sessions.length === 0 ? (
@@ -399,26 +441,45 @@ export function ProgramEditor() {
                     <GripVertical size={18} className="text-slate-500" />
                     <Input
                       value={session.name}
-                      onChange={(e) => handleUpdateSession(sessionIndex, { name: e.target.value })}
+                      onChange={(e) =>
+                        handleUpdateSession(sessionIndex, {
+                          name: e.target.value,
+                        })
+                      }
                       className="flex-1"
                       placeholder="Session name"
                     />
                     <select
                       value={session.day_of_week ?? ''}
-                      onChange={(e) => handleUpdateSession(sessionIndex, { 
-                        day_of_week: e.target.value === '' ? null : parseInt(e.target.value)
-                      })}
+                      onChange={(e) =>
+                        handleUpdateSession(sessionIndex, {
+                          day_of_week:
+                            e.target.value === ''
+                              ? null
+                              : parseInt(e.target.value),
+                        })
+                      }
                       className="bg-slate-700 text-white rounded-lg px-3 py-2 text-sm"
                     >
-                      {DAY_OPTIONS.map(opt => (
-                        <option key={opt.label} value={opt.value ?? ''}>{opt.label}</option>
+                      {DAY_OPTIONS.map((opt) => (
+                        <option key={opt.label} value={opt.value ?? ''}>
+                          {opt.label}
+                        </option>
                       ))}
                     </select>
                     <button
-                      onClick={() => handleUpdateSession(sessionIndex, { isExpanded: !session.isExpanded })}
+                      onClick={() =>
+                        handleUpdateSession(sessionIndex, {
+                          isExpanded: !session.isExpanded,
+                        })
+                      }
                       className="p-2 text-slate-400 hover:text-white"
                     >
-                      {session.isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                      {session.isExpanded ? (
+                        <ChevronUp size={18} />
+                      ) : (
+                        <ChevronDown size={18} />
+                      )}
                     </button>
                     <button
                       onClick={() => handleDeleteSession(sessionIndex)}
@@ -432,24 +493,38 @@ export function ProgramEditor() {
                   {session.isExpanded && (
                     <div className="space-y-2 ml-6">
                       {session.exercises.length === 0 ? (
-                        <p className="text-slate-500 text-sm py-2">No exercises added</p>
+                        <p className="text-slate-500 text-sm py-2">
+                          No exercises added
+                        </p>
                       ) : (
                         session.exercises.map((exercise, exerciseIndex) => (
-                          <div 
+                          <div
                             key={exerciseIndex}
                             className="flex items-center gap-2 p-2 bg-slate-700/50 rounded-lg"
                           >
-                            <GripVertical size={16} className="text-slate-500" />
+                            <GripVertical
+                              size={16}
+                              className="text-slate-500"
+                            />
                             <div className="flex-1 min-w-0">
-                              <p className="text-white text-sm truncate">{exercise.exercise_name}</p>
+                              <p className="text-white text-sm truncate">
+                                {exercise.exercise_name}
+                              </p>
                             </div>
                             <div className="flex items-center gap-1">
                               <Input
                                 type="number"
                                 value={exercise.target_sets}
-                                onChange={(e) => handleUpdateExercise(sessionIndex, exerciseIndex, {
-                                  target_sets: parseInt(e.target.value) || 1
-                                })}
+                                onChange={(e) =>
+                                  handleUpdateExercise(
+                                    sessionIndex,
+                                    exerciseIndex,
+                                    {
+                                      target_sets:
+                                        parseInt(e.target.value) || 1,
+                                    },
+                                  )
+                                }
                                 className="w-12 text-center p-1 h-8 text-sm"
                                 min={1}
                               />
@@ -457,9 +532,16 @@ export function ProgramEditor() {
                               <Input
                                 type="number"
                                 value={exercise.target_rep_min}
-                                onChange={(e) => handleUpdateExercise(sessionIndex, exerciseIndex, {
-                                  target_rep_min: parseInt(e.target.value) || 1
-                                })}
+                                onChange={(e) =>
+                                  handleUpdateExercise(
+                                    sessionIndex,
+                                    exerciseIndex,
+                                    {
+                                      target_rep_min:
+                                        parseInt(e.target.value) || 1,
+                                    },
+                                  )
+                                }
                                 className="w-12 text-center p-1 h-8 text-sm"
                                 min={1}
                               />
@@ -467,15 +549,27 @@ export function ProgramEditor() {
                               <Input
                                 type="number"
                                 value={exercise.target_rep_max}
-                                onChange={(e) => handleUpdateExercise(sessionIndex, exerciseIndex, {
-                                  target_rep_max: parseInt(e.target.value) || 1
-                                })}
+                                onChange={(e) =>
+                                  handleUpdateExercise(
+                                    sessionIndex,
+                                    exerciseIndex,
+                                    {
+                                      target_rep_max:
+                                        parseInt(e.target.value) || 1,
+                                    },
+                                  )
+                                }
                                 className="w-12 text-center p-1 h-8 text-sm"
                                 min={1}
                               />
                             </div>
                             <button
-                              onClick={() => handleDeleteExercise(sessionIndex, exerciseIndex)}
+                              onClick={() =>
+                                handleDeleteExercise(
+                                  sessionIndex,
+                                  exerciseIndex,
+                                )
+                              }
                               className="p-1 text-red-400 hover:text-red-300"
                             >
                               <X size={16} />
@@ -497,8 +591,8 @@ export function ProgramEditor() {
               </Card>
             ))}
 
-            <Button 
-              variant="secondary" 
+            <Button
+              variant="secondary"
               className="w-full"
               onClick={handleAddSession}
             >
@@ -511,7 +605,7 @@ export function ProgramEditor() {
 
       {/* Save Button */}
       <div className="fixed bottom-20 left-0 right-0 p-4 bg-gradient-to-t from-slate-900 to-transparent">
-        <Button 
+        <Button
           className="w-full max-w-lg mx-auto block"
           onClick={handleSave}
           disabled={loading || !programName.trim()}
@@ -536,7 +630,7 @@ export function ProgramEditor() {
           onChange={(e) => setSearchQuery(e.target.value)}
           className="mb-4"
         />
-        
+
         <div className="max-h-[50vh] overflow-y-auto space-y-2">
           {filteredExercises.length === 0 ? (
             <p className="text-slate-400 text-center py-4">
@@ -546,12 +640,17 @@ export function ProgramEditor() {
             filteredExercises.map((exercise) => (
               <button
                 key={exercise.id}
-                onClick={() => showAddExercise !== null && handleAddExercise(showAddExercise, exercise)}
+                onClick={() =>
+                  showAddExercise !== null &&
+                  handleAddExercise(showAddExercise, exercise)
+                }
                 className="w-full p-3 bg-slate-700 rounded-lg text-left hover:bg-slate-600 transition-colors"
               >
                 <p className="text-white font-medium">{exercise.name}</p>
                 {exercise.muscle_groups && (
-                  <p className="text-slate-400 text-sm">{exercise.muscle_groups}</p>
+                  <p className="text-slate-400 text-sm">
+                    {exercise.muscle_groups}
+                  </p>
                 )}
               </button>
             ))

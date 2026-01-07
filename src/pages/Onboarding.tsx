@@ -9,7 +9,17 @@ import { initGemini } from '../services/gemini';
 import { calculateTargets } from '../services/gemini';
 import { formatDate } from '../utils/date';
 
-type Step = 'welcome' | 'basic' | 'weight' | 'activity' | 'goal' | 'rate' | 'api' | 'calculating' | 'targets' | 'ready';
+type Step =
+  | 'welcome'
+  | 'basic'
+  | 'weight'
+  | 'activity'
+  | 'goal'
+  | 'rate'
+  | 'api'
+  | 'calculating'
+  | 'targets'
+  | 'ready';
 
 const activityOptions = [
   { value: 'sedentary', label: 'Sedentary (little or no exercise)' },
@@ -28,7 +38,9 @@ const goalOptions = [
 
 export function Onboarding() {
   const navigate = useNavigate();
-  const setOnboardingComplete = useAppStore((state) => state.setOnboardingComplete);
+  const setOnboardingComplete = useAppStore(
+    (state) => state.setOnboardingComplete,
+  );
   const { createProfile } = useProfile();
   const { addLog } = useWeight();
 
@@ -40,8 +52,12 @@ export function Onboarding() {
   const [gender, setGender] = useState<'male' | 'female'>('male');
   const [heightCm, setHeightCm] = useState('');
   const [weightKg, setWeightKg] = useState('');
-  const [activityLevel, setActivityLevel] = useState<'sedentary' | 'light' | 'moderate' | 'active'>('moderate');
-  const [goal, setGoal] = useState<'bulk' | 'lean_bulk' | 'recomp' | 'cut' | 'maintain'>('lean_bulk');
+  const [activityLevel, setActivityLevel] = useState<
+    'sedentary' | 'light' | 'moderate' | 'active'
+  >('moderate');
+  const [goal, setGoal] = useState<
+    'bulk' | 'lean_bulk' | 'recomp' | 'cut' | 'maintain'
+  >('lean_bulk');
   const [targetRate, setTargetRate] = useState('0.25');
   const [apiKey, setApiKey] = useState('');
 
@@ -124,12 +140,16 @@ export function Onboarding() {
           moderate: 1.55,
           active: 1.725,
         };
-        const bmr = gender === 'male'
-          ? 10 * weight + 6.25 * parseFloat(heightCm) - 5 * parseInt(age) + 5
-          : 10 * weight + 6.25 * parseFloat(heightCm) - 5 * parseInt(age) - 161;
-        
-        let tdee = bmr * multipliers[activityLevel];
-        
+        const bmr =
+          gender === 'male'
+            ? 10 * weight + 6.25 * parseFloat(heightCm) - 5 * parseInt(age) + 5
+            : 10 * weight +
+              6.25 * parseFloat(heightCm) -
+              5 * parseInt(age) -
+              161;
+
+        const tdee = bmr * multipliers[activityLevel];
+
         const goalAdjustments: Record<string, number> = {
           bulk: 500,
           lean_bulk: 250,
@@ -137,12 +157,12 @@ export function Onboarding() {
           cut: -500,
           maintain: 0,
         };
-        
+
         const calories = Math.round(tdee + goalAdjustments[goal]);
         const protein = Math.round(weight * 2); // 2g per kg
         const fat = Math.round((calories * 0.25) / 9);
         const carbs = Math.round((calories - protein * 4 - fat * 9) / 4);
-        
+
         setTargets({ calories, protein, carbs, fat });
       }
       setStep('targets');
@@ -206,8 +226,12 @@ export function Onboarding() {
             <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-6">
               <Dumbbell size={40} className="text-white" />
             </div>
-            <h1 className="text-3xl font-bold text-white mb-2">MyPersonalFitness</h1>
-            <p className="text-slate-400 mb-8">Your AI-powered fitness companion</p>
+            <h1 className="text-3xl font-bold text-white mb-2">
+              MyPersonalFitness
+            </h1>
+            <p className="text-slate-400 mb-8">
+              Your AI-powered fitness companion
+            </p>
             <Button onClick={handleNext} size="lg" className="w-full">
               Get Started
             </Button>
@@ -217,7 +241,9 @@ export function Onboarding() {
         {/* Basic Info Step */}
         {step === 'basic' && (
           <div>
-            <h2 className="text-2xl font-bold text-white mb-6">Basic Information</h2>
+            <h2 className="text-2xl font-bold text-white mb-6">
+              Basic Information
+            </h2>
             <div className="space-y-4">
               <Input
                 label="Age"
@@ -227,7 +253,9 @@ export function Onboarding() {
                 placeholder="Enter your age"
               />
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Gender</label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Gender
+                </label>
                 <div className="flex gap-2">
                   <Button
                     variant={gender === 'male' ? 'primary' : 'secondary'}
@@ -263,7 +291,9 @@ export function Onboarding() {
         {/* Weight Step */}
         {step === 'weight' && (
           <div>
-            <h2 className="text-2xl font-bold text-white mb-6">Current Weight</h2>
+            <h2 className="text-2xl font-bold text-white mb-6">
+              Current Weight
+            </h2>
             <Input
               label="Weight (kg)"
               type="number"
@@ -285,12 +315,16 @@ export function Onboarding() {
         {/* Activity Level Step */}
         {step === 'activity' && (
           <div>
-            <h2 className="text-2xl font-bold text-white mb-6">Activity Level</h2>
+            <h2 className="text-2xl font-bold text-white mb-6">
+              Activity Level
+            </h2>
             <div className="space-y-2">
               {activityOptions.map((option) => (
                 <button
                   key={option.value}
-                  onClick={() => setActivityLevel(option.value as typeof activityLevel)}
+                  onClick={() =>
+                    setActivityLevel(option.value as typeof activityLevel)
+                  }
                   className={`w-full p-4 rounded-lg border text-left transition-colors ${
                     activityLevel === option.value
                       ? 'border-blue-500 bg-blue-500/10 text-white'
@@ -364,7 +398,8 @@ export function Onboarding() {
           <div>
             <h2 className="text-2xl font-bold text-white mb-6">AI Setup</h2>
             <p className="text-slate-400 mb-4">
-              Enter your Gemini API key to enable AI features like food analysis and smart recommendations.
+              Enter your Gemini API key to enable AI features like food analysis
+              and smart recommendations.
             </p>
             <Input
               label="Gemini API Key"
@@ -386,10 +421,18 @@ export function Onboarding() {
             </p>
             {error && <p className="text-red-400 text-sm mt-4">{error}</p>}
             <div className="flex gap-2 mt-6">
-              <Button variant="secondary" onClick={handleNext} className="flex-1">
+              <Button
+                variant="secondary"
+                onClick={handleNext}
+                className="flex-1"
+              >
                 Skip for now
               </Button>
-              <Button onClick={handleNext} className="flex-1" disabled={!apiKey}>
+              <Button
+                onClick={handleNext}
+                className="flex-1"
+                disabled={!apiKey}
+              >
                 Continue
               </Button>
             </div>
@@ -400,8 +443,12 @@ export function Onboarding() {
         {step === 'calculating' && (
           <div className="text-center">
             <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-6" />
-            <h2 className="text-2xl font-bold text-white mb-2">Calculating...</h2>
-            <p className="text-slate-400">Setting up your personalized targets</p>
+            <h2 className="text-2xl font-bold text-white mb-2">
+              Calculating...
+            </h2>
+            <p className="text-slate-400">
+              Setting up your personalized targets
+            </p>
           </div>
         )}
 
@@ -415,7 +462,12 @@ export function Onboarding() {
                 <Input
                   type="number"
                   value={targets.calories}
-                  onChange={(e) => setTargets({ ...targets, calories: parseInt(e.target.value) || 0 })}
+                  onChange={(e) =>
+                    setTargets({
+                      ...targets,
+                      calories: parseInt(e.target.value) || 0,
+                    })
+                  }
                   className="w-24 text-right"
                 />
               </div>
@@ -424,7 +476,12 @@ export function Onboarding() {
                 <Input
                   type="number"
                   value={targets.protein}
-                  onChange={(e) => setTargets({ ...targets, protein: parseInt(e.target.value) || 0 })}
+                  onChange={(e) =>
+                    setTargets({
+                      ...targets,
+                      protein: parseInt(e.target.value) || 0,
+                    })
+                  }
                   className="w-24 text-right"
                 />
               </div>
@@ -433,7 +490,12 @@ export function Onboarding() {
                 <Input
                   type="number"
                   value={targets.carbs}
-                  onChange={(e) => setTargets({ ...targets, carbs: parseInt(e.target.value) || 0 })}
+                  onChange={(e) =>
+                    setTargets({
+                      ...targets,
+                      carbs: parseInt(e.target.value) || 0,
+                    })
+                  }
                   className="w-24 text-right"
                 />
               </div>
@@ -442,7 +504,12 @@ export function Onboarding() {
                 <Input
                   type="number"
                   value={targets.fat}
-                  onChange={(e) => setTargets({ ...targets, fat: parseInt(e.target.value) || 0 })}
+                  onChange={(e) =>
+                    setTargets({
+                      ...targets,
+                      fat: parseInt(e.target.value) || 0,
+                    })
+                  }
                   className="w-24 text-right"
                 />
               </div>
@@ -461,12 +528,26 @@ export function Onboarding() {
         {step === 'ready' && (
           <div className="text-center">
             <div className="w-20 h-20 bg-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
-              <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              <svg
+                className="w-10 h-10 text-white"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 13l4 4L19 7"
+                />
               </svg>
             </div>
-            <h2 className="text-2xl font-bold text-white mb-2">You're All Set!</h2>
-            <p className="text-slate-400 mb-8">Your fitness journey starts now.</p>
+            <h2 className="text-2xl font-bold text-white mb-2">
+              You're All Set!
+            </h2>
+            <p className="text-slate-400 mb-8">
+              Your fitness journey starts now.
+            </p>
             <Button onClick={goToDashboard} size="lg" className="w-full">
               Go to Dashboard
             </Button>

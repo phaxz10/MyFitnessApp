@@ -1,17 +1,27 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
+import {
   ArrowLeft,
-  Plus, 
+  Plus,
   Search,
   Trash2,
   Edit,
   Sparkles,
-  ChevronRight
+  ChevronRight,
 } from 'lucide-react';
-import { Card, CardContent, Button, Input, Modal, TextArea } from '../components/ui';
+import {
+  Card,
+  CardContent,
+  Button,
+  Input,
+  Modal,
+  TextArea,
+} from '../components/ui';
 import { useExercises } from '../hooks/useExercises';
-import { generateExerciseDetails, isGeminiInitialized } from '../services/gemini';
+import {
+  generateExerciseDetails,
+  isGeminiInitialized,
+} from '../services/gemini';
 import type { Exercise, AIExerciseResponse } from '../types';
 
 const MUSCLE_GROUPS = [
@@ -29,19 +39,21 @@ const MUSCLE_GROUPS = [
 
 export function ExerciseLibrary() {
   const navigate = useNavigate();
-  const { 
-    exercises, 
-    fetchExercises, 
-    addExercise, 
-    updateExercise, 
+  const {
+    exercises,
+    fetchExercises,
+    addExercise,
+    updateExercise,
     deleteExercise,
-    loading 
+    loading,
   } = useExercises();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMuscle, setSelectedMuscle] = useState('All');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showDetailsModal, setShowDetailsModal] = useState<Exercise | null>(null);
+  const [showDetailsModal, setShowDetailsModal] = useState<Exercise | null>(
+    null,
+  );
   const [showDeleteModal, setShowDeleteModal] = useState<Exercise | null>(null);
 
   // Form state
@@ -56,14 +68,14 @@ export function ExerciseLibrary() {
     fetchExercises();
   }, [fetchExercises]);
 
-  const filteredExercises = exercises.filter(ex => {
-    const matchesSearch = 
+  const filteredExercises = exercises.filter((ex) => {
+    const matchesSearch =
       ex.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       ex.muscle_groups?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       ex.equipment?.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesMuscle = 
-      selectedMuscle === 'All' || 
+
+    const matchesMuscle =
+      selectedMuscle === 'All' ||
       ex.muscle_groups?.toLowerCase().includes(selectedMuscle.toLowerCase());
 
     return matchesSearch && matchesMuscle;
@@ -103,7 +115,8 @@ export function ExerciseLibrary() {
 
     setIsGenerating(true);
     try {
-      const details: AIExerciseResponse = await generateExerciseDetails(formName);
+      const details: AIExerciseResponse =
+        await generateExerciseDetails(formName);
       setFormDescription(details.description);
       setFormMuscleGroups(details.muscle_groups.join(', '));
       setFormEquipment(details.equipment);
@@ -160,18 +173,24 @@ export function ExerciseLibrary() {
   };
 
   // Group exercises by muscle group for display
-  const groupedExercises = filteredExercises.reduce((acc, ex) => {
-    const group = ex.muscle_groups?.split(',')[0]?.trim() || 'Other';
-    if (!acc[group]) acc[group] = [];
-    acc[group].push(ex);
-    return acc;
-  }, {} as Record<string, Exercise[]>);
+  const groupedExercises = filteredExercises.reduce(
+    (acc, ex) => {
+      const group = ex.muscle_groups?.split(',')[0]?.trim() || 'Other';
+      if (!acc[group]) acc[group] = [];
+      acc[group].push(ex);
+      return acc;
+    },
+    {} as Record<string, Exercise[]>,
+  );
 
   return (
     <div className="p-4 pb-20">
       {/* Header */}
       <div className="flex items-center gap-4 mb-4">
-        <button onClick={() => navigate(-1)} className="p-2 text-slate-400 hover:text-white">
+        <button
+          onClick={() => navigate(-1)}
+          className="p-2 text-slate-400 hover:text-white"
+        >
           <ArrowLeft size={24} />
         </button>
         <h1 className="text-xl font-bold text-white">Exercise Library</h1>
@@ -179,7 +198,10 @@ export function ExerciseLibrary() {
 
       {/* Search */}
       <div className="relative mb-4">
-        <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <Search
+          size={18}
+          className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+        />
         <Input
           placeholder="Search exercises..."
           value={searchQuery}
@@ -206,10 +228,7 @@ export function ExerciseLibrary() {
       </div>
 
       {/* Add Exercise Button */}
-      <Button 
-        className="w-full mb-4"
-        onClick={() => handleOpenAddModal()}
-      >
+      <Button className="w-full mb-4" onClick={() => handleOpenAddModal()}>
         <Plus size={18} className="mr-2" />
         Add New Exercise
       </Button>
@@ -235,17 +254,21 @@ export function ExerciseLibrary() {
         <div className="space-y-4">
           {Object.entries(groupedExercises).map(([group, exs]) => (
             <div key={group}>
-              <h3 className="text-sm font-semibold text-slate-400 mb-2">{group}</h3>
+              <h3 className="text-sm font-semibold text-slate-400 mb-2">
+                {group}
+              </h3>
               <div className="space-y-2">
                 {exs.map((exercise) => (
-                  <Card 
+                  <Card
                     key={exercise.id}
                     className="cursor-pointer hover:border-slate-600 transition-colors"
                     onClick={() => setShowDetailsModal(exercise)}
                   >
                     <CardContent className="p-3 flex items-center justify-between">
                       <div className="flex-1 min-w-0">
-                        <p className="text-white font-medium">{exercise.name}</p>
+                        <p className="text-white font-medium">
+                          {exercise.name}
+                        </p>
                         <p className="text-slate-400 text-sm truncate">
                           {exercise.equipment || 'No equipment'}
                         </p>
@@ -262,7 +285,7 @@ export function ExerciseLibrary() {
         // Flat list view
         <div className="space-y-2">
           {filteredExercises.map((exercise) => (
-            <Card 
+            <Card
               key={exercise.id}
               className="cursor-pointer hover:border-slate-600 transition-colors"
               onClick={() => setShowDetailsModal(exercise)}
@@ -271,7 +294,8 @@ export function ExerciseLibrary() {
                 <div className="flex-1 min-w-0">
                   <p className="text-white font-medium">{exercise.name}</p>
                   <p className="text-slate-400 text-sm">
-                    {exercise.muscle_groups || 'No muscle groups'} • {exercise.equipment || 'No equipment'}
+                    {exercise.muscle_groups || 'No muscle groups'} •{' '}
+                    {exercise.equipment || 'No equipment'}
                   </p>
                 </div>
                 <ChevronRight size={18} className="text-slate-500" />
@@ -292,7 +316,9 @@ export function ExerciseLibrary() {
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-slate-400 text-sm mb-1">Exercise Name *</label>
+            <label className="block text-slate-400 text-sm mb-1">
+              Exercise Name *
+            </label>
             <div className="flex gap-2">
               <Input
                 value={formName}
@@ -307,14 +333,19 @@ export function ExerciseLibrary() {
                   disabled={isGenerating || !formName.trim()}
                   title="Generate details with AI"
                 >
-                  <Sparkles size={18} className={isGenerating ? 'animate-spin' : ''} />
+                  <Sparkles
+                    size={18}
+                    className={isGenerating ? 'animate-spin' : ''}
+                  />
                 </Button>
               )}
             </div>
           </div>
 
           <div>
-            <label className="block text-slate-400 text-sm mb-1">Description</label>
+            <label className="block text-slate-400 text-sm mb-1">
+              Description
+            </label>
             <TextArea
               value={formDescription}
               onChange={(e) => setFormDescription(e.target.value)}
@@ -324,7 +355,9 @@ export function ExerciseLibrary() {
           </div>
 
           <div>
-            <label className="block text-slate-400 text-sm mb-1">Muscle Groups</label>
+            <label className="block text-slate-400 text-sm mb-1">
+              Muscle Groups
+            </label>
             <Input
               value={formMuscleGroups}
               onChange={(e) => setFormMuscleGroups(e.target.value)}
@@ -333,7 +366,9 @@ export function ExerciseLibrary() {
           </div>
 
           <div>
-            <label className="block text-slate-400 text-sm mb-1">Equipment</label>
+            <label className="block text-slate-400 text-sm mb-1">
+              Equipment
+            </label>
             <Input
               value={formEquipment}
               onChange={(e) => setFormEquipment(e.target.value)}
@@ -388,7 +423,9 @@ export function ExerciseLibrary() {
             {showDetailsModal.description && (
               <div>
                 <p className="text-slate-400 text-sm">Instructions</p>
-                <p className="text-white whitespace-pre-wrap">{showDetailsModal.description}</p>
+                <p className="text-white whitespace-pre-wrap">
+                  {showDetailsModal.description}
+                </p>
               </div>
             )}
 
@@ -430,8 +467,8 @@ export function ExerciseLibrary() {
         title="Delete Exercise"
       >
         <p className="text-slate-300 mb-6">
-          Are you sure you want to delete "{showDeleteModal?.name}"? 
-          This may affect programs that use this exercise.
+          Are you sure you want to delete "{showDeleteModal?.name}"? This may
+          affect programs that use this exercise.
         </p>
         <div className="flex gap-3">
           <Button

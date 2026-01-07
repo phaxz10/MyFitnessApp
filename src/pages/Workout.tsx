@@ -1,43 +1,44 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Dumbbell, 
-  Plus, 
-  Play, 
-  Calendar, 
-  ChevronRight, 
+import {
+  Dumbbell,
+  Plus,
+  Play,
+  Calendar,
+  ChevronRight,
   MoreVertical,
   Trash2,
   Edit,
   CheckCircle2,
-  Clock
+  Clock,
 } from 'lucide-react';
 import { Card, CardContent, Button, Modal } from '../components/ui';
 import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
-import { useWorkoutLogs, type WorkoutLogWithSets } from '../hooks/useWorkoutLogs';
+import {
+  useWorkoutLogs,
+  type WorkoutLogWithSets,
+} from '../hooks/useWorkoutLogs';
 import type { WorkoutProgram, ProgramSessionWithExercises } from '../types';
 
 export function Workout() {
   const navigate = useNavigate();
-  const { 
-    programs, 
-    activeProgram, 
-    fetchPrograms, 
+  const {
+    programs,
+    activeProgram,
+    fetchPrograms,
     fetchActiveProgram,
     setActiveProgramById,
-    deleteProgram 
+    deleteProgram,
   } = useWorkoutPrograms();
-  const { 
-    logs, 
-    activeWorkout, 
-    fetchLogs, 
-    resumeWorkout,
-    startWorkout 
-  } = useWorkoutLogs();
+  const { logs, activeWorkout, fetchLogs, resumeWorkout, startWorkout } =
+    useWorkoutLogs();
 
   const [showProgramMenu, setShowProgramMenu] = useState<number | null>(null);
-  const [showDeleteModal, setShowDeleteModal] = useState<WorkoutProgram | null>(null);
-  const [todaySession, setTodaySession] = useState<ProgramSessionWithExercises | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState<WorkoutProgram | null>(
+    null,
+  );
+  const [todaySession, setTodaySession] =
+    useState<ProgramSessionWithExercises | null>(null);
 
   useEffect(() => {
     fetchPrograms();
@@ -50,7 +51,9 @@ export function Workout() {
   useEffect(() => {
     if (activeProgram) {
       const today = new Date().getDay();
-      const session = activeProgram.sessions.find(s => s.day_of_week === today);
+      const session = activeProgram.sessions.find(
+        (s) => s.day_of_week === today,
+      );
       setTodaySession(session || null);
     } else {
       setTodaySession(null);
@@ -103,8 +106,12 @@ export function Workout() {
 
     if (date.toDateString() === today.toDateString()) return 'Today';
     if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-    
-    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+    return date.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    });
   };
 
   return (
@@ -127,7 +134,9 @@ export function Workout() {
                   <Dumbbell size={20} className="text-white" />
                 </div>
                 <div>
-                  <p className="text-white font-semibold">Workout in Progress</p>
+                  <p className="text-white font-semibold">
+                    Workout in Progress
+                  </p>
                   <p className="text-slate-400 text-sm">
                     Started {formatDuration(activeWorkout.started_at, null)} ago
                   </p>
@@ -150,15 +159,22 @@ export function Workout() {
                 <Calendar size={18} className="text-blue-400" />
                 <span className="text-slate-400 text-sm">Today's Workout</span>
               </div>
-              <span className="text-xs text-slate-500">{activeProgram.name}</span>
+              <span className="text-xs text-slate-500">
+                {activeProgram.name}
+              </span>
             </div>
-            
+
             {todaySession ? (
               <>
-                <h3 className="text-lg font-semibold text-white mb-2">{todaySession.name}</h3>
+                <h3 className="text-lg font-semibold text-white mb-2">
+                  {todaySession.name}
+                </h3>
                 <div className="flex flex-wrap gap-2 mb-4">
                   {todaySession.exercises.slice(0, 4).map((ex) => (
-                    <span key={ex.id} className="text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded">
+                    <span
+                      key={ex.id}
+                      className="text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded"
+                    >
                       {ex.exercise_name}
                     </span>
                   ))}
@@ -168,8 +184,8 @@ export function Workout() {
                     </span>
                   )}
                 </div>
-                <Button 
-                  className="w-full" 
+                <Button
+                  className="w-full"
                   onClick={() => handleStartWorkout(todaySession)}
                 >
                   <Play size={18} className="mr-2" />
@@ -179,9 +195,11 @@ export function Workout() {
             ) : (
               <div className="text-center py-4">
                 <p className="text-slate-400 mb-2">Rest Day</p>
-                <p className="text-slate-500 text-sm">No workout scheduled for today</p>
-                <Button 
-                  variant="secondary" 
+                <p className="text-slate-500 text-sm">
+                  No workout scheduled for today
+                </p>
+                <Button
+                  variant="secondary"
                   className="mt-3"
                   onClick={() => handleStartWorkout()}
                 >
@@ -200,7 +218,9 @@ export function Workout() {
             <div className="w-16 h-16 bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-4">
               <Dumbbell size={32} className="text-slate-400" />
             </div>
-            <h3 className="text-lg font-semibold text-white mb-2">No Active Program</h3>
+            <h3 className="text-lg font-semibold text-white mb-2">
+              No Active Program
+            </h3>
             <p className="text-slate-400 text-sm mb-4">
               Create or activate a workout program to schedule your sessions.
             </p>
@@ -221,28 +241,30 @@ export function Workout() {
         <div className="mb-4">
           <div className="flex justify-between items-center mb-3">
             <h2 className="text-lg font-semibold text-white">Programs</h2>
-            <button 
+            <button
               onClick={() => navigate('/workout/exercises')}
               className="text-blue-400 text-sm"
             >
               Exercise Library
             </button>
           </div>
-          
+
           <div className="space-y-2">
             {programs.map((program) => (
-              <Card 
-                key={program.id} 
+              <Card
+                key={program.id}
                 className={program.is_active ? 'border-blue-500' : ''}
               >
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
-                    <div 
+                    <div
                       className="flex-1 cursor-pointer"
                       onClick={() => navigate(`/workout/program/${program.id}`)}
                     >
                       <div className="flex items-center gap-2">
-                        <h3 className="font-semibold text-white">{program.name}</h3>
+                        <h3 className="font-semibold text-white">
+                          {program.name}
+                        </h3>
                         {program.is_active && (
                           <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded">
                             Active
@@ -253,20 +275,24 @@ export function Workout() {
                         {program.sessions_per_week}x per week
                       </p>
                     </div>
-                    
+
                     <div className="flex items-center gap-2">
                       <ChevronRight size={20} className="text-slate-500" />
                       <div className="relative">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            setShowProgramMenu(showProgramMenu === program.id ? null : program.id);
+                            setShowProgramMenu(
+                              showProgramMenu === program.id
+                                ? null
+                                : program.id,
+                            );
                           }}
                           className="p-2 text-slate-400 hover:text-white"
                         >
                           <MoreVertical size={18} />
                         </button>
-                        
+
                         {showProgramMenu === program.id && (
                           <div className="absolute right-0 top-full mt-1 bg-slate-700 rounded-lg shadow-lg z-10 overflow-hidden min-w-[150px]">
                             {!program.is_active && (
@@ -313,8 +339,10 @@ export function Workout() {
       {/* Recent Workouts */}
       <Card>
         <CardContent className="p-4">
-          <h3 className="text-lg font-semibold text-white mb-4">Recent Workouts</h3>
-          
+          <h3 className="text-lg font-semibold text-white mb-4">
+            Recent Workouts
+          </h3>
+
           {logs.length === 0 ? (
             <p className="text-slate-500 text-center py-8">
               No workout history yet. Start your first session!
@@ -322,7 +350,7 @@ export function Workout() {
           ) : (
             <div className="space-y-3">
               {logs.map((log: WorkoutLogWithSets) => (
-                <div 
+                <div
                   key={log.id}
                   className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg"
                 >
@@ -340,12 +368,10 @@ export function Workout() {
                     <div className="flex items-center gap-3 text-slate-400 text-sm mt-1">
                       <span>{formatDate(log.date)}</span>
                       {log.ended_at && (
-                        <>
-                          <span className="flex items-center gap-1">
-                            <Clock size={14} />
-                            {formatDuration(log.started_at, log.ended_at)}
-                          </span>
-                        </>
+                        <span className="flex items-center gap-1">
+                          <Clock size={14} />
+                          {formatDuration(log.started_at, log.ended_at)}
+                        </span>
                       )}
                       <span>{log.sets.length} sets</span>
                     </div>
@@ -365,7 +391,8 @@ export function Workout() {
         title="Delete Program"
       >
         <p className="text-slate-300 mb-6">
-          Are you sure you want to delete "{showDeleteModal?.name}"? This action cannot be undone.
+          Are you sure you want to delete "{showDeleteModal?.name}"? This action
+          cannot be undone.
         </p>
         <div className="flex gap-3">
           <Button
@@ -386,9 +413,9 @@ export function Workout() {
 
       {/* Click outside to close menu */}
       {showProgramMenu && (
-        <div 
-          className="fixed inset-0 z-0" 
-          onClick={() => setShowProgramMenu(null)} 
+        <div
+          className="fixed inset-0 z-0"
+          onClick={() => setShowProgramMenu(null)}
         />
       )}
     </div>

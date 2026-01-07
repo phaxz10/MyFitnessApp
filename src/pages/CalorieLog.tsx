@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Plus, ChevronLeft, ChevronRight, Trash2, Edit2 } from 'lucide-react';
-import { Card, CardContent, Button, Modal, Input, Select, TextArea } from '../components/ui';
+import {
+  Card,
+  CardContent,
+  Button,
+  Modal,
+  Input,
+  Select,
+  TextArea,
+} from '../components/ui';
 import { useCalories } from '../hooks/useCalories';
 import { useProfile } from '../hooks/useProfile';
 import { useAppStore } from '../hooks/useAppStore';
@@ -20,7 +28,13 @@ const mealTypes: { value: MealType; label: string }[] = [
 export function CalorieLog() {
   const [searchParams] = useSearchParams();
   const { profile, fetchProfile } = useProfile();
-  const { fetchEntriesByDate, addEntry, updateEntry, deleteEntry, getDailySummary } = useCalories();
+  const {
+    fetchEntriesByDate,
+    addEntry,
+    updateEntry,
+    deleteEntry,
+    getDailySummary,
+  } = useCalories();
   const isOnline = useAppStore((state) => state.isOnline);
 
   const [currentDate, setCurrentDate] = useState(formatDate(new Date()));
@@ -114,7 +128,10 @@ export function CalorieLog() {
       const result = await analyzeFoodText(foodDescription);
       if (result.items.length > 0) {
         const total = result.total;
-        const totalPortion = result.items.reduce((sum, item) => sum + item.portion_grams, 0);
+        const totalPortion = result.items.reduce(
+          (sum, item) => sum + item.portion_grams,
+          0,
+        );
         setPortionGrams(totalPortion.toString());
         setCalories(total.calories.toString());
         setProtein(total.protein_g.toString());
@@ -187,16 +204,24 @@ export function CalorieLog() {
     <div className="p-4 pb-20">
       {/* Date Navigation */}
       <div className="flex items-center justify-between mb-6">
-        <button onClick={goToPreviousDay} className="p-2 text-slate-400 hover:text-white">
+        <button
+          onClick={goToPreviousDay}
+          className="p-2 text-slate-400 hover:text-white"
+        >
           <ChevronLeft size={24} />
         </button>
         <div className="text-center">
-          <h2 className="text-xl font-semibold text-white">{formatDisplayDate(currentDate)}</h2>
+          <h2 className="text-xl font-semibold text-white">
+            {formatDisplayDate(currentDate)}
+          </h2>
           {currentDate === formatDate(new Date()) && (
             <span className="text-blue-400 text-sm">Today</span>
           )}
         </div>
-        <button onClick={goToNextDay} className="p-2 text-slate-400 hover:text-white">
+        <button
+          onClick={goToNextDay}
+          className="p-2 text-slate-400 hover:text-white"
+        >
           <ChevronRight size={24} />
         </button>
       </div>
@@ -207,24 +232,34 @@ export function CalorieLog() {
           <div className="flex justify-between items-center">
             <div>
               <p className="text-slate-400 text-sm">Total Calories</p>
-              <p className="text-2xl font-bold text-white">{formatCalories(summary.total_calories)}</p>
+              <p className="text-2xl font-bold text-white">
+                {formatCalories(summary.total_calories)}
+              </p>
             </div>
             <div className="text-right">
               <p className="text-slate-400 text-sm">Target</p>
-              <p className="text-xl text-slate-300">{formatCalories(profile?.calorie_target || 0)}</p>
+              <p className="text-xl text-slate-300">
+                {formatCalories(profile?.calorie_target || 0)}
+              </p>
             </div>
           </div>
           <div className="mt-4 grid grid-cols-3 gap-2 text-center text-sm">
             <div className="bg-slate-700/50 rounded-lg p-2">
-              <p className="text-blue-400 font-semibold">{summary.total_protein_g.toFixed(0)}g</p>
+              <p className="text-blue-400 font-semibold">
+                {summary.total_protein_g.toFixed(0)}g
+              </p>
               <p className="text-slate-400 text-xs">Protein</p>
             </div>
             <div className="bg-slate-700/50 rounded-lg p-2">
-              <p className="text-green-400 font-semibold">{summary.total_carbs_g.toFixed(0)}g</p>
+              <p className="text-green-400 font-semibold">
+                {summary.total_carbs_g.toFixed(0)}g
+              </p>
               <p className="text-slate-400 text-xs">Carbs</p>
             </div>
             <div className="bg-slate-700/50 rounded-lg p-2">
-              <p className="text-yellow-400 font-semibold">{summary.total_fat_g.toFixed(0)}g</p>
+              <p className="text-yellow-400 font-semibold">
+                {summary.total_fat_g.toFixed(0)}g
+              </p>
               <p className="text-slate-400 text-xs">Fat</p>
             </div>
           </div>
@@ -234,7 +269,10 @@ export function CalorieLog() {
       {/* Meal Sections */}
       {mealTypes.map(({ value, label }) => {
         const mealEntries = summary.meals[value];
-        const mealCalories = mealEntries.reduce((sum, e) => sum + e.calories, 0);
+        const mealCalories = mealEntries.reduce(
+          (sum, e) => sum + e.calories,
+          0,
+        );
 
         return (
           <Card key={value} className="mb-3">
@@ -249,11 +287,17 @@ export function CalorieLog() {
               ) : (
                 <div className="space-y-2">
                   {mealEntries.map((entry) => (
-                    <div key={entry.id} className="flex items-center justify-between bg-slate-700/30 rounded-lg p-3">
+                    <div
+                      key={entry.id}
+                      className="flex items-center justify-between bg-slate-700/30 rounded-lg p-3"
+                    >
                       <div className="flex-1">
-                        <p className="text-white text-sm">{entry.food_description}</p>
+                        <p className="text-white text-sm">
+                          {entry.food_description}
+                        </p>
                         <p className="text-slate-400 text-xs">
-                          {entry.calories} kcal | P: {entry.protein_g}g | C: {entry.carbs_g}g | F: {entry.fat_g}g
+                          {entry.calories} kcal | P: {entry.protein_g}g | C:{' '}
+                          {entry.carbs_g}g | F: {entry.fat_g}g
                         </p>
                       </div>
                       <div className="flex gap-1">
@@ -323,10 +367,7 @@ export function CalorieLog() {
               >
                 Analyze with AI
               </Button>
-              <Button
-                variant="secondary"
-                onClick={() => setUseAI(false)}
-              >
+              <Button variant="secondary" onClick={() => setUseAI(false)}>
                 Manual
               </Button>
             </div>
@@ -381,10 +422,18 @@ export function CalorieLog() {
           {error && <p className="text-red-400 text-sm">{error}</p>}
 
           <div className="flex gap-2 pt-4">
-            <Button variant="secondary" onClick={() => setIsModalOpen(false)} className="flex-1">
+            <Button
+              variant="secondary"
+              onClick={() => setIsModalOpen(false)}
+              className="flex-1"
+            >
               Cancel
             </Button>
-            <Button onClick={handleSave} isLoading={isLoading} className="flex-1">
+            <Button
+              onClick={handleSave}
+              isLoading={isLoading}
+              className="flex-1"
+            >
               {isEditMode ? 'Update' : 'Save'}
             </Button>
           </div>

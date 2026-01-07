@@ -1,13 +1,24 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Plus, TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  ResponsiveContainer,
+  Tooltip,
+} from 'recharts';
 import { Card, CardContent, Button, Modal, Input } from '../components/ui';
 import { useWeight } from '../hooks/useWeight';
 import { useProfile } from '../hooks/useProfile';
 import { formatDate, formatShortDate, formatDisplayDate } from '../utils/date';
-import { calculateBodyFatPercentage, calculateWeeklyWeightChange, isOnTrackWithGoal, formatWeight } from '../utils/calculations';
-
+import {
+  calculateBodyFatPercentage,
+  calculateWeeklyWeightChange,
+  isOnTrackWithGoal,
+  formatWeight,
+} from '../utils/calculations';
 
 export function WeightTracker() {
   const [searchParams] = useSearchParams();
@@ -17,7 +28,9 @@ export function WeightTracker() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d');
+  const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | 'all'>(
+    '30d',
+  );
 
   // Form state
   const [weight, setWeight] = useState('');
@@ -39,7 +52,7 @@ export function WeightTracker() {
 
   // Check if there's already an entry for today and auto-populate
   const todayStr = formatDate(new Date());
-  const todayLog = logs.find(log => log.date === todayStr);
+  const todayLog = logs.find((log) => log.date === todayStr);
 
   // Auto-populate form when modal opens if there's a today entry
   useEffect(() => {
@@ -56,22 +69,24 @@ export function WeightTracker() {
 
   const getFilteredLogs = () => {
     if (timeRange === 'all') return [...logs].reverse();
-    
+
     const now = new Date();
     const daysMap = { '7d': 7, '30d': 30, '90d': 90 };
-    const cutoff = new Date(now.getTime() - daysMap[timeRange] * 24 * 60 * 60 * 1000);
-    
-    return logs
-      .filter(log => new Date(log.date) >= cutoff)
-      .reverse();
+    const cutoff = new Date(
+      now.getTime() - daysMap[timeRange] * 24 * 60 * 60 * 1000,
+    );
+
+    return logs.filter((log) => new Date(log.date) >= cutoff).reverse();
   };
 
   const filteredLogs = getFilteredLogs();
   const latestLog = logs.length > 0 ? logs[0] : null;
   const weeklyChange = calculateWeeklyWeightChange(filteredLogs);
-  const onTrack = profile ? isOnTrackWithGoal(profile.goal, weeklyChange) : true;
+  const onTrack = profile
+    ? isOnTrackWithGoal(profile.goal, weeklyChange)
+    : true;
 
-  const chartData = filteredLogs.map(log => ({
+  const chartData = filteredLogs.map((log) => ({
     date: formatShortDate(log.date),
     weight: log.weight_kg,
     bodyFat: log.body_fat_pct,
@@ -96,13 +111,13 @@ export function WeightTracker() {
 
     try {
       let bodyFatPct: number | null = null;
-      
+
       if (waist && neck && profile?.height_cm) {
         bodyFatPct = calculateBodyFatPercentage(
           profile.gender,
           parseFloat(waist),
           parseFloat(neck),
-          profile.height_cm
+          profile.height_cm,
         );
       }
 
@@ -125,8 +140,10 @@ export function WeightTracker() {
   };
 
   const getTrendIcon = () => {
-    if (weeklyChange > 0.1) return <TrendingUp className="text-green-400" size={20} />;
-    if (weeklyChange < -0.1) return <TrendingDown className="text-red-400" size={20} />;
+    if (weeklyChange > 0.1)
+      return <TrendingUp className="text-green-400" size={20} />;
+    if (weeklyChange < -0.1)
+      return <TrendingDown className="text-red-400" size={20} />;
     return <Minus className="text-slate-400" size={20} />;
   };
 
@@ -154,7 +171,9 @@ export function WeightTracker() {
           <CardContent className="p-4 text-center">
             <p className="text-slate-400 text-sm">Body Fat</p>
             <p className="text-2xl font-bold text-white">
-              {latestLog?.body_fat_pct ? `${latestLog.body_fat_pct.toFixed(1)}%` : '--'}
+              {latestLog?.body_fat_pct
+                ? `${latestLog.body_fat_pct.toFixed(1)}%`
+                : '--'}
             </p>
           </CardContent>
         </Card>
@@ -168,16 +187,27 @@ export function WeightTracker() {
               <p className="text-slate-400 text-sm">Weekly Change</p>
               <div className="flex items-center gap-2">
                 {getTrendIcon()}
-                <span className={`text-xl font-semibold ${
-                  weeklyChange > 0 ? 'text-green-400' : weeklyChange < 0 ? 'text-red-400' : 'text-white'
-                }`}>
-                  {weeklyChange > 0 ? '+' : ''}{formatWeight(weeklyChange)} kg/week
+                <span
+                  className={`text-xl font-semibold ${
+                    weeklyChange > 0
+                      ? 'text-green-400'
+                      : weeklyChange < 0
+                        ? 'text-red-400'
+                        : 'text-white'
+                  }`}
+                >
+                  {weeklyChange > 0 ? '+' : ''}
+                  {formatWeight(weeklyChange)} kg/week
                 </span>
               </div>
             </div>
-            <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-              onTrack ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-            }`}>
+            <div
+              className={`px-3 py-1 rounded-full text-sm font-medium ${
+                onTrack
+                  ? 'bg-green-500/20 text-green-400'
+                  : 'bg-red-500/20 text-red-400'
+              }`}
+            >
               {onTrack ? 'On Track' : 'Off Track'}
             </div>
           </div>
@@ -254,19 +284,27 @@ export function WeightTracker() {
         <CardContent className="p-4">
           <h3 className="text-lg font-semibold text-white mb-4">Recent Logs</h3>
           {logs.length === 0 ? (
-            <p className="text-slate-500 text-center py-4">No weight logs yet</p>
+            <p className="text-slate-500 text-center py-4">
+              No weight logs yet
+            </p>
           ) : (
             <div className="space-y-2">
               {logs.slice(0, 10).map((log) => (
-                <div key={log.id} className="flex justify-between items-center py-2 border-b border-slate-700 last:border-0">
+                <div
+                  key={log.id}
+                  className="flex justify-between items-center py-2 border-b border-slate-700 last:border-0"
+                >
                   <div>
                     <p className="text-white">{formatDisplayDate(log.date)}</p>
                     <p className="text-slate-400 text-sm">
-                      {log.body_fat_pct && `BF: ${log.body_fat_pct.toFixed(1)}%`}
+                      {log.body_fat_pct &&
+                        `BF: ${log.body_fat_pct.toFixed(1)}%`}
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-white font-semibold">{formatWeight(log.weight_kg)} kg</p>
+                    <p className="text-white font-semibold">
+                      {formatWeight(log.weight_kg)} kg
+                    </p>
                   </div>
                 </div>
               ))}
@@ -282,12 +320,13 @@ export function WeightTracker() {
           setIsModalOpen(false);
           resetForm();
         }}
-        title={isEditingToday ? "Update Today's Weight" : "Log Weight"}
+        title={isEditingToday ? "Update Today's Weight" : 'Log Weight'}
       >
         <div className="space-y-4">
           {isEditingToday && (
             <p className="text-slate-400 text-sm bg-slate-700/50 p-2 rounded">
-              You already logged weight today. This will update your existing entry.
+              You already logged weight today. This will update your existing
+              entry.
             </p>
           )}
           <Input
@@ -300,7 +339,9 @@ export function WeightTracker() {
           />
 
           <div className="border-t border-slate-700 pt-4">
-            <p className="text-slate-400 text-sm mb-3">Body Measurements (optional)</p>
+            <p className="text-slate-400 text-sm mb-3">
+              Body Measurements (optional)
+            </p>
             <div className="grid grid-cols-3 gap-3">
               <Input
                 label="Waist (cm)"
@@ -335,10 +376,18 @@ export function WeightTracker() {
           {error && <p className="text-red-400 text-sm">{error}</p>}
 
           <div className="flex gap-2 pt-4">
-            <Button variant="secondary" onClick={() => setIsModalOpen(false)} className="flex-1">
+            <Button
+              variant="secondary"
+              onClick={() => setIsModalOpen(false)}
+              className="flex-1"
+            >
               Cancel
             </Button>
-            <Button onClick={handleSave} isLoading={isLoading} className="flex-1">
+            <Button
+              onClick={handleSave}
+              isLoading={isLoading}
+              className="flex-1"
+            >
               Save
             </Button>
           </div>

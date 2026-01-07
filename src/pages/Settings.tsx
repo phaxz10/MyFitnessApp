@@ -1,11 +1,25 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, User, Target, Key, Download, Upload, Trash2, RefreshCw } from 'lucide-react';
+import {
+  ChevronRight,
+  User,
+  Target,
+  Key,
+  Download,
+  Upload,
+  Trash2,
+  RefreshCw,
+} from 'lucide-react';
 import { Card, CardContent, Button, Input, Select } from '../components/ui';
 import { useProfile } from '../hooks/useProfile';
 import { useAppStore } from '../hooks/useAppStore';
 import { initGemini, calculateTargets } from '../services/gemini';
-import { exportData, importData, downloadBackup, readBackupFile } from '../services/backup';
+import {
+  exportData,
+  importData,
+  downloadBackup,
+  readBackupFile,
+} from '../services/backup';
 import { resetDatabase } from '../services/db';
 
 const activityOptions = [
@@ -26,7 +40,9 @@ const goalOptions = [
 export function Settings() {
   const navigate = useNavigate();
   const { profile, fetchProfile, updateProfile } = useProfile();
-  const setOnboardingComplete = useAppStore((state) => state.setOnboardingComplete);
+  const setOnboardingComplete = useAppStore(
+    (state) => state.setOnboardingComplete,
+  );
   const isOnline = useAppStore((state) => state.isOnline);
 
   const [activeSection, setActiveSection] = useState<string | null>(null);
@@ -190,7 +206,11 @@ export function Settings() {
   };
 
   const handleClearData = async () => {
-    if (!confirm('Are you sure you want to clear all data? This cannot be undone.')) {
+    if (
+      !confirm(
+        'Are you sure you want to clear all data? This cannot be undone.',
+      )
+    ) {
       return;
     }
 
@@ -225,17 +245,24 @@ export function Settings() {
       <Card className="mb-3">
         <CardContent className="p-0">
           <button
-            onClick={() => setActiveSection(activeSection === 'profile' ? null : 'profile')}
+            onClick={() =>
+              setActiveSection(activeSection === 'profile' ? null : 'profile')
+            }
             className="w-full p-4 flex items-center justify-between text-left"
           >
             <div className="flex items-center gap-3">
               <User size={20} className="text-blue-400" />
               <div>
                 <p className="text-white font-medium">Profile</p>
-                <p className="text-slate-400 text-sm">Age, height, activity level</p>
+                <p className="text-slate-400 text-sm">
+                  Age, height, activity level
+                </p>
               </div>
             </div>
-            <ChevronRight size={20} className={`text-slate-400 transition-transform ${activeSection === 'profile' ? 'rotate-90' : ''}`} />
+            <ChevronRight
+              size={20}
+              className={`text-slate-400 transition-transform ${activeSection === 'profile' ? 'rotate-90' : ''}`}
+            />
           </button>
 
           {activeSection === 'profile' && (
@@ -258,7 +285,11 @@ export function Settings() {
                 onChange={(e) => setActivityLevel(e.target.value)}
                 options={activityOptions}
               />
-              <Button onClick={handleUpdateProfile} isLoading={isLoading} className="w-full">
+              <Button
+                onClick={handleUpdateProfile}
+                isLoading={isLoading}
+                className="w-full"
+              >
                 Save Changes
               </Button>
             </div>
@@ -270,17 +301,24 @@ export function Settings() {
       <Card className="mb-3">
         <CardContent className="p-0">
           <button
-            onClick={() => setActiveSection(activeSection === 'goals' ? null : 'goals')}
+            onClick={() =>
+              setActiveSection(activeSection === 'goals' ? null : 'goals')
+            }
             className="w-full p-4 flex items-center justify-between text-left"
           >
             <div className="flex items-center gap-3">
               <Target size={20} className="text-green-400" />
               <div>
                 <p className="text-white font-medium">Goals & Targets</p>
-                <p className="text-slate-400 text-sm">Calories, macros, goal type</p>
+                <p className="text-slate-400 text-sm">
+                  Calories, macros, goal type
+                </p>
               </div>
             </div>
-            <ChevronRight size={20} className={`text-slate-400 transition-transform ${activeSection === 'goals' ? 'rotate-90' : ''}`} />
+            <ChevronRight
+              size={20}
+              className={`text-slate-400 transition-transform ${activeSection === 'goals' ? 'rotate-90' : ''}`}
+            />
           </button>
 
           {activeSection === 'goals' && (
@@ -325,7 +363,11 @@ export function Settings() {
                 />
               </div>
               <div className="flex gap-2">
-                <Button onClick={handleUpdateTargets} isLoading={isLoading} className="flex-1">
+                <Button
+                  onClick={handleUpdateTargets}
+                  isLoading={isLoading}
+                  className="flex-1"
+                >
                   Save Changes
                 </Button>
                 <Button
@@ -346,7 +388,9 @@ export function Settings() {
       <Card className="mb-3">
         <CardContent className="p-0">
           <button
-            onClick={() => setActiveSection(activeSection === 'api' ? null : 'api')}
+            onClick={() =>
+              setActiveSection(activeSection === 'api' ? null : 'api')
+            }
             className="w-full p-4 flex items-center justify-between text-left"
           >
             <div className="flex items-center gap-3">
@@ -356,7 +400,10 @@ export function Settings() {
                 <p className="text-slate-400 text-sm">Gemini API key</p>
               </div>
             </div>
-            <ChevronRight size={20} className={`text-slate-400 transition-transform ${activeSection === 'api' ? 'rotate-90' : ''}`} />
+            <ChevronRight
+              size={20}
+              className={`text-slate-400 transition-transform ${activeSection === 'api' ? 'rotate-90' : ''}`}
+            />
           </button>
 
           {activeSection === 'api' && (
@@ -376,7 +423,11 @@ export function Settings() {
               >
                 Get your free API key
               </a>
-              <Button onClick={handleUpdateApiKey} isLoading={isLoading} className="w-full">
+              <Button
+                onClick={handleUpdateApiKey}
+                isLoading={isLoading}
+                className="w-full"
+              >
                 Save API Key
               </Button>
             </div>
@@ -388,8 +439,12 @@ export function Settings() {
       <Card className="mb-3">
         <CardContent className="p-4 space-y-3">
           <h3 className="text-white font-medium mb-2">Data Management</h3>
-          
-          <Button variant="secondary" onClick={handleExport} className="w-full justify-start">
+
+          <Button
+            variant="secondary"
+            onClick={handleExport}
+            className="w-full justify-start"
+          >
             <Download size={18} className="mr-2" />
             Export Data (JSON)
           </Button>
@@ -407,7 +462,11 @@ export function Settings() {
             />
           </label>
 
-          <Button variant="danger" onClick={handleClearData} className="w-full justify-start">
+          <Button
+            variant="danger"
+            onClick={handleClearData}
+            className="w-full justify-start"
+          >
             <Trash2 size={18} className="mr-2" />
             Clear All Data
           </Button>

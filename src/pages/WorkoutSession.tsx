@@ -1,25 +1,25 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
+import {
   ArrowLeft,
-  Plus, 
+  Plus,
   Check,
   Trash2,
   Timer,
   ChevronDown,
   ChevronUp,
   X,
-  Save
+  Save,
 } from 'lucide-react';
 import { Card, CardContent, Button, Input, Modal } from '../components/ui';
 import { RestTimer } from '../components/workout';
 import { useWorkoutLogs } from '../hooks/useWorkoutLogs';
 import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
 import { useExercises } from '../hooks/useExercises';
-import type { 
-  Exercise, 
+import type {
+  Exercise,
   ProgramExerciseWithDetails,
-  WorkoutSet 
+  WorkoutSet,
 } from '../types';
 
 interface ExerciseWithSets {
@@ -36,20 +36,22 @@ interface ExerciseWithSets {
 
 export function WorkoutSession() {
   const navigate = useNavigate();
-  const { 
-    activeWorkout, 
+  const {
+    activeWorkout,
     activeWorkoutSets,
     resumeWorkout,
     endWorkout,
     cancelWorkout,
     addSet,
-    deleteSet 
+    deleteSet,
   } = useWorkoutLogs();
   const { activeProgram, fetchActiveProgram } = useWorkoutPrograms();
   const { exercises: allExercises, fetchExercises } = useExercises();
   const { getLastPerformance } = useWorkoutLogs();
 
-  const [exercisesWithSets, setExercisesWithSets] = useState<ExerciseWithSets[]>([]);
+  const [exercisesWithSets, setExercisesWithSets] = useState<
+    ExerciseWithSets[]
+  >([]);
   const [showTimer, setShowTimer] = useState(false);
   const [timerMinimized, setTimerMinimized] = useState(false);
   const [showAddExercise, setShowAddExercise] = useState(false);
@@ -76,7 +78,9 @@ export function WorkoutSession() {
 
       // If workout has a session, load those exercises
       if (activeWorkout.session_id && activeProgram) {
-        const session = activeProgram.sessions.find(s => s.id === activeWorkout.session_id);
+        const session = activeProgram.sessions.find(
+          (s) => s.id === activeWorkout.session_id,
+        );
         if (session) {
           const exercisesData: ExerciseWithSets[] = await Promise.all(
             session.exercises.map(async (ex) => {
@@ -86,7 +90,8 @@ export function WorkoutSession() {
                 // Pre-fill from last performance if available
                 const lastSet = lastPerf?.[i];
                 return {
-                  reps: lastSet?.reps?.toString() || ex.target_rep_min.toString(),
+                  reps:
+                    lastSet?.reps?.toString() || ex.target_rep_min.toString(),
                   weight: lastSet?.weight_kg?.toString() || '0',
                   completed: false,
                 };
@@ -97,31 +102,37 @@ export function WorkoutSession() {
                 lastPerformance: lastPerf,
                 isExpanded: true,
               };
-            })
+            }),
           );
           setExercisesWithSets(exercisesData);
         }
       }
-      
+
       // Load any already logged sets
       if (activeWorkoutSets.length > 0) {
         // Group sets by exercise
-        const setsByExercise = activeWorkoutSets.reduce((acc, set) => {
-          if (!acc[set.exercise_id]) {
-            acc[set.exercise_id] = [];
-          }
-          acc[set.exercise_id].push(set);
-          return acc;
-        }, {} as Record<number, typeof activeWorkoutSets>);
+        const setsByExercise = activeWorkoutSets.reduce(
+          (acc, set) => {
+            if (!acc[set.exercise_id]) {
+              acc[set.exercise_id] = [];
+            }
+            acc[set.exercise_id].push(set);
+            return acc;
+          },
+          {} as Record<number, typeof activeWorkoutSets>,
+        );
 
-        setExercisesWithSets(prev => {
-          return prev.map(ex => {
-            const exerciseId = 'exercise_id' in ex.exercise ? ex.exercise.exercise_id : ex.exercise.id;
+        setExercisesWithSets((prev) => {
+          return prev.map((ex) => {
+            const exerciseId =
+              'exercise_id' in ex.exercise
+                ? ex.exercise.exercise_id
+                : ex.exercise.id;
             const loggedSets = setsByExercise[exerciseId];
             if (loggedSets) {
               return {
                 ...ex,
-                sets: loggedSets.map(s => ({
+                sets: loggedSets.map((s) => ({
                   id: s.id,
                   reps: s.reps.toString(),
                   weight: s.weight_kg.toString(),
@@ -143,7 +154,7 @@ export function WorkoutSession() {
     if (!activeWorkout) return;
 
     const startTime = new Date(activeWorkout.started_at).getTime();
-    
+
     const interval = setInterval(() => {
       const now = Date.now();
       setElapsedTime(Math.floor((now - startTime) / 1000));
@@ -156,20 +167,25 @@ export function WorkoutSession() {
     const hours = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    
+
     if (hours > 0) {
       return `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleSetChange = (exerciseIndex: number, setIndex: number, field: 'reps' | 'weight', value: string) => {
-    setExercisesWithSets(prev => {
+  const handleSetChange = (
+    exerciseIndex: number,
+    setIndex: number,
+    field: 'reps' | 'weight',
+    value: string,
+  ) => {
+    setExercisesWithSets((prev) => {
       const updated = [...prev];
       updated[exerciseIndex] = {
         ...updated[exerciseIndex],
-        sets: updated[exerciseIndex].sets.map((set, i) => 
-          i === setIndex ? { ...set, [field]: value } : set
+        sets: updated[exerciseIndex].sets.map((set, i) =>
+          i === setIndex ? { ...set, [field]: value } : set,
         ),
       };
       return updated;
@@ -181,9 +197,10 @@ export function WorkoutSession() {
 
     const exerciseData = exercisesWithSets[exerciseIndex];
     const setData = exerciseData.sets[setIndex];
-    const exerciseId = 'exercise_id' in exerciseData.exercise 
-      ? exerciseData.exercise.exercise_id 
-      : exerciseData.exercise.id;
+    const exerciseId =
+      'exercise_id' in exerciseData.exercise
+        ? exerciseData.exercise.exercise_id
+        : exerciseData.exercise.id;
 
     const reps = parseInt(setData.reps) || 0;
     const weight = parseFloat(setData.weight) || 0;
@@ -192,13 +209,13 @@ export function WorkoutSession() {
 
     try {
       const newSet = await addSet(activeWorkout.id, exerciseId, reps, weight);
-      
-      setExercisesWithSets(prev => {
+
+      setExercisesWithSets((prev) => {
         const updated = [...prev];
         updated[exerciseIndex] = {
           ...updated[exerciseIndex],
-          sets: updated[exerciseIndex].sets.map((set, i) => 
-            i === setIndex ? { ...set, id: newSet.id, completed: true } : set
+          sets: updated[exerciseIndex].sets.map((set, i) =>
+            i === setIndex ? { ...set, id: newSet.id, completed: true } : set,
           ),
         };
         return updated;
@@ -213,12 +230,12 @@ export function WorkoutSession() {
 
   const handleDeleteSet = async (exerciseIndex: number, setIndex: number) => {
     const setData = exercisesWithSets[exerciseIndex].sets[setIndex];
-    
+
     if (setData.id) {
       await deleteSet(setData.id);
     }
 
-    setExercisesWithSets(prev => {
+    setExercisesWithSets((prev) => {
       const updated = [...prev];
       updated[exerciseIndex] = {
         ...updated[exerciseIndex],
@@ -229,9 +246,10 @@ export function WorkoutSession() {
   };
 
   const handleAddSet = (exerciseIndex: number) => {
-    setExercisesWithSets(prev => {
+    setExercisesWithSets((prev) => {
       const updated = [...prev];
-      const lastSet = updated[exerciseIndex].sets[updated[exerciseIndex].sets.length - 1];
+      const lastSet =
+        updated[exerciseIndex].sets[updated[exerciseIndex].sets.length - 1];
       updated[exerciseIndex] = {
         ...updated[exerciseIndex],
         sets: [
@@ -247,25 +265,30 @@ export function WorkoutSession() {
     });
   };
 
-  const handleAddExercise = useCallback(async (exercise: Exercise) => {
-    const lastPerf = await getLastPerformance(exercise.id);
-    
-    setExercisesWithSets(prev => [
-      ...prev,
-      {
-        exercise,
-        sets: [{
-          reps: lastPerf?.[0]?.reps?.toString() || '10',
-          weight: lastPerf?.[0]?.weight_kg?.toString() || '0',
-          completed: false,
-        }],
-        lastPerformance: lastPerf,
-        isExpanded: true,
-      },
-    ]);
-    setShowAddExercise(false);
-    setSearchQuery('');
-  }, [getLastPerformance]);
+  const handleAddExercise = useCallback(
+    async (exercise: Exercise) => {
+      const lastPerf = await getLastPerformance(exercise.id);
+
+      setExercisesWithSets((prev) => [
+        ...prev,
+        {
+          exercise,
+          sets: [
+            {
+              reps: lastPerf?.[0]?.reps?.toString() || '10',
+              weight: lastPerf?.[0]?.weight_kg?.toString() || '0',
+              completed: false,
+            },
+          ],
+          lastPerformance: lastPerf,
+          isExpanded: true,
+        },
+      ]);
+      setShowAddExercise(false);
+      setSearchQuery('');
+    },
+    [getLastPerformance],
+  );
 
   const handleRemoveExercise = (exerciseIndex: number) => {
     // Delete all logged sets for this exercise
@@ -276,14 +299,14 @@ export function WorkoutSession() {
       }
     });
 
-    setExercisesWithSets(prev => prev.filter((_, i) => i !== exerciseIndex));
+    setExercisesWithSets((prev) => prev.filter((_, i) => i !== exerciseIndex));
   };
 
   const toggleExerciseExpand = (index: number) => {
-    setExercisesWithSets(prev => 
-      prev.map((ex, i) => 
-        i === index ? { ...ex, isExpanded: !ex.isExpanded } : ex
-      )
+    setExercisesWithSets((prev) =>
+      prev.map((ex, i) =>
+        i === index ? { ...ex, isExpanded: !ex.isExpanded } : ex,
+      ),
     );
   };
 
@@ -299,13 +322,15 @@ export function WorkoutSession() {
     navigate('/workout');
   };
 
-  const filteredExercises = allExercises.filter(ex => 
-    ex.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    ex.muscle_groups?.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredExercises = allExercises.filter(
+    (ex) =>
+      ex.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ex.muscle_groups?.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
-  const totalSets = exercisesWithSets.reduce((sum, ex) => 
-    sum + ex.sets.filter(s => s.completed).length, 0
+  const totalSets = exercisesWithSets.reduce(
+    (sum, ex) => sum + ex.sets.filter((s) => s.completed).length,
+    0,
   );
 
   if (!activeWorkout) {
@@ -313,9 +338,7 @@ export function WorkoutSession() {
       <div className="p-4 flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
           <p className="text-slate-400 mb-4">No active workout</p>
-          <Button onClick={() => navigate('/workout')}>
-            Go to Workouts
-          </Button>
+          <Button onClick={() => navigate('/workout')}>Go to Workouts</Button>
         </div>
       </div>
     );
@@ -325,16 +348,18 @@ export function WorkoutSession() {
     <div className="p-4 pb-32">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <button 
+        <button
           onClick={() => setShowCancelWorkout(true)}
           className="p-2 text-slate-400 hover:text-white"
         >
           <ArrowLeft size={24} />
         </button>
-        
+
         <div className="text-center">
           <p className="text-slate-400 text-sm">Workout Time</p>
-          <p className="text-white font-mono text-xl">{formatElapsedTime(elapsedTime)}</p>
+          <p className="text-white font-mono text-xl">
+            {formatElapsedTime(elapsedTime)}
+          </p>
         </div>
 
         <button
@@ -348,7 +373,9 @@ export function WorkoutSession() {
       {/* Stats Bar */}
       <div className="flex justify-around mb-6 p-3 bg-slate-800 rounded-lg">
         <div className="text-center">
-          <p className="text-2xl font-bold text-white">{exercisesWithSets.length}</p>
+          <p className="text-2xl font-bold text-white">
+            {exercisesWithSets.length}
+          </p>
           <p className="text-xs text-slate-400">Exercises</p>
         </div>
         <div className="text-center">
@@ -357,11 +384,21 @@ export function WorkoutSession() {
         </div>
         <div className="text-center">
           <p className="text-2xl font-bold text-white">
-            {exercisesWithSets.reduce((sum, ex) => 
-              sum + ex.sets.filter(s => s.completed).reduce((setSum, s) => 
-                setSum + (parseFloat(s.weight) || 0) * (parseInt(s.reps) || 0), 0
-              ), 0
-            ).toFixed(0)}
+            {exercisesWithSets
+              .reduce(
+                (sum, ex) =>
+                  sum +
+                  ex.sets
+                    .filter((s) => s.completed)
+                    .reduce(
+                      (setSum, s) =>
+                        setSum +
+                        (parseFloat(s.weight) || 0) * (parseInt(s.reps) || 0),
+                      0,
+                    ),
+                0,
+              )
+              .toFixed(0)}
           </p>
           <p className="text-xs text-slate-400">Volume (kg)</p>
         </div>
@@ -381,30 +418,37 @@ export function WorkoutSession() {
       ) : (
         <div className="space-y-4">
           {exercisesWithSets.map((exerciseData, exerciseIndex) => {
-            const exerciseName = 'exercise_name' in exerciseData.exercise 
-              ? exerciseData.exercise.exercise_name 
-              : exerciseData.exercise.name;
-            const targetReps = 'target_rep_min' in exerciseData.exercise
-              ? `${exerciseData.exercise.target_rep_min}-${exerciseData.exercise.target_rep_max}`
-              : null;
+            const exerciseName =
+              'exercise_name' in exerciseData.exercise
+                ? exerciseData.exercise.exercise_name
+                : exerciseData.exercise.name;
+            const targetReps =
+              'target_rep_min' in exerciseData.exercise
+                ? `${exerciseData.exercise.target_rep_min}-${exerciseData.exercise.target_rep_max}`
+                : null;
 
             return (
               <Card key={exerciseIndex}>
                 <CardContent className="p-4">
                   {/* Exercise Header */}
-                  <div 
+                  <div
                     className="flex items-center justify-between cursor-pointer"
                     onClick={() => toggleExerciseExpand(exerciseIndex)}
                   >
                     <div className="flex-1">
-                      <h3 className="font-semibold text-white">{exerciseName}</h3>
+                      <h3 className="font-semibold text-white">
+                        {exerciseName}
+                      </h3>
                       {targetReps && (
-                        <p className="text-slate-400 text-sm">Target: {targetReps} reps</p>
+                        <p className="text-slate-400 text-sm">
+                          Target: {targetReps} reps
+                        </p>
                       )}
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-slate-400 text-sm">
-                        {exerciseData.sets.filter(s => s.completed).length}/{exerciseData.sets.length}
+                        {exerciseData.sets.filter((s) => s.completed).length}/
+                        {exerciseData.sets.length}
                       </span>
                       {exerciseData.isExpanded ? (
                         <ChevronUp size={20} className="text-slate-400" />
@@ -418,13 +462,15 @@ export function WorkoutSession() {
                   {exerciseData.isExpanded && (
                     <div className="mt-4">
                       {/* Last Performance */}
-                      {exerciseData.lastPerformance && exerciseData.lastPerformance.length > 0 && (
-                        <div className="mb-3 p-2 bg-slate-700/50 rounded text-xs text-slate-400">
-                          Last: {exerciseData.lastPerformance.map(s => 
-                            `${s.weight_kg}kg × ${s.reps}`
-                          ).join(' | ')}
-                        </div>
-                      )}
+                      {exerciseData.lastPerformance &&
+                        exerciseData.lastPerformance.length > 0 && (
+                          <div className="mb-3 p-2 bg-slate-700/50 rounded text-xs text-slate-400">
+                            Last:{' '}
+                            {exerciseData.lastPerformance
+                              .map((s) => `${s.weight_kg}kg × ${s.reps}`)
+                              .join(' | ')}
+                          </div>
+                        )}
 
                       {/* Set Headers */}
                       <div className="grid grid-cols-12 gap-2 mb-2 text-xs text-slate-400">
@@ -437,10 +483,11 @@ export function WorkoutSession() {
 
                       {/* Sets List */}
                       {exerciseData.sets.map((set, setIndex) => {
-                        const prevSet = exerciseData.lastPerformance?.[setIndex];
-                        
+                        const prevSet =
+                          exerciseData.lastPerformance?.[setIndex];
+
                         return (
-                          <div 
+                          <div
                             key={setIndex}
                             className={`grid grid-cols-12 gap-2 items-center py-2 ${
                               set.completed ? 'bg-green-900/20 rounded' : ''
@@ -450,13 +497,22 @@ export function WorkoutSession() {
                               {setIndex + 1}
                             </div>
                             <div className="col-span-3 text-center text-slate-500 text-sm">
-                              {prevSet ? `${prevSet.weight_kg}×${prevSet.reps}` : '-'}
+                              {prevSet
+                                ? `${prevSet.weight_kg}×${prevSet.reps}`
+                                : '-'}
                             </div>
                             <div className="col-span-2">
                               <Input
                                 type="number"
                                 value={set.weight}
-                                onChange={(e) => handleSetChange(exerciseIndex, setIndex, 'weight', e.target.value)}
+                                onChange={(e) =>
+                                  handleSetChange(
+                                    exerciseIndex,
+                                    setIndex,
+                                    'weight',
+                                    e.target.value,
+                                  )
+                                }
                                 className="text-center p-1 h-8"
                                 disabled={set.completed}
                               />
@@ -465,7 +521,14 @@ export function WorkoutSession() {
                               <Input
                                 type="number"
                                 value={set.reps}
-                                onChange={(e) => handleSetChange(exerciseIndex, setIndex, 'reps', e.target.value)}
+                                onChange={(e) =>
+                                  handleSetChange(
+                                    exerciseIndex,
+                                    setIndex,
+                                    'reps',
+                                    e.target.value,
+                                  )
+                                }
                                 className="text-center p-1 h-8"
                                 disabled={set.completed}
                               />
@@ -473,14 +536,18 @@ export function WorkoutSession() {
                             <div className="col-span-3 flex justify-end gap-1">
                               {set.completed ? (
                                 <button
-                                  onClick={() => handleDeleteSet(exerciseIndex, setIndex)}
+                                  onClick={() =>
+                                    handleDeleteSet(exerciseIndex, setIndex)
+                                  }
                                   className="p-1 text-red-400 hover:text-red-300"
                                 >
                                   <Trash2 size={16} />
                                 </button>
                               ) : (
                                 <button
-                                  onClick={() => handleCompleteSet(exerciseIndex, setIndex)}
+                                  onClick={() =>
+                                    handleCompleteSet(exerciseIndex, setIndex)
+                                  }
                                   className="p-1 bg-blue-600 rounded text-white hover:bg-blue-500"
                                 >
                                   <Check size={16} />
@@ -518,8 +585,8 @@ export function WorkoutSession() {
       )}
 
       {/* Add Exercise Button */}
-      <Button 
-        variant="secondary" 
+      <Button
+        variant="secondary"
         className="w-full mt-4"
         onClick={() => setShowAddExercise(true)}
       >
@@ -529,7 +596,7 @@ export function WorkoutSession() {
 
       {/* Finish Workout Button */}
       <div className="fixed bottom-20 left-0 right-0 p-4 bg-gradient-to-t from-slate-900 to-transparent">
-        <Button 
+        <Button
           className="w-full max-w-lg mx-auto block"
           onClick={() => setShowEndWorkout(true)}
           disabled={totalSets === 0}
@@ -575,7 +642,7 @@ export function WorkoutSession() {
           onChange={(e) => setSearchQuery(e.target.value)}
           className="mb-4"
         />
-        
+
         <div className="max-h-[50vh] overflow-y-auto space-y-2">
           {filteredExercises.length === 0 ? (
             <p className="text-slate-400 text-center py-4">
@@ -590,7 +657,9 @@ export function WorkoutSession() {
               >
                 <p className="text-white font-medium">{exercise.name}</p>
                 {exercise.muscle_groups && (
-                  <p className="text-slate-400 text-sm">{exercise.muscle_groups}</p>
+                  <p className="text-slate-400 text-sm">
+                    {exercise.muscle_groups}
+                  </p>
                 )}
               </button>
             ))
@@ -616,11 +685,15 @@ export function WorkoutSession() {
           <p className="text-slate-300 mb-2">Workout Summary</p>
           <div className="grid grid-cols-3 gap-4 p-4 bg-slate-700 rounded-lg">
             <div className="text-center">
-              <p className="text-2xl font-bold text-white">{formatElapsedTime(elapsedTime)}</p>
+              <p className="text-2xl font-bold text-white">
+                {formatElapsedTime(elapsedTime)}
+              </p>
               <p className="text-xs text-slate-400">Duration</p>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-bold text-white">{exercisesWithSets.length}</p>
+              <p className="text-2xl font-bold text-white">
+                {exercisesWithSets.length}
+              </p>
               <p className="text-xs text-slate-400">Exercises</p>
             </div>
             <div className="text-center">
@@ -631,7 +704,9 @@ export function WorkoutSession() {
         </div>
 
         <div className="mb-4">
-          <label className="block text-slate-400 text-sm mb-2">Notes (optional)</label>
+          <label className="block text-slate-400 text-sm mb-2">
+            Notes (optional)
+          </label>
           <textarea
             value={workoutNotes}
             onChange={(e) => setWorkoutNotes(e.target.value)}
@@ -649,10 +724,7 @@ export function WorkoutSession() {
           >
             Continue
           </Button>
-          <Button
-            className="flex-1"
-            onClick={handleEndWorkout}
-          >
+          <Button className="flex-1" onClick={handleEndWorkout}>
             Save Workout
           </Button>
         </div>
@@ -665,7 +737,8 @@ export function WorkoutSession() {
         title="Cancel Workout?"
       >
         <p className="text-slate-300 mb-6">
-          Are you sure you want to cancel this workout? All logged sets will be deleted.
+          Are you sure you want to cancel this workout? All logged sets will be
+          deleted.
         </p>
         <div className="flex gap-3">
           <Button

@@ -18,7 +18,7 @@ export function Card({ children, className = '', onClick }: CardProps) {
       </button>
     );
   }
-  
+
   return (
     <div
       className={`bg-slate-800 rounded-xl border border-slate-700 ${className}`}

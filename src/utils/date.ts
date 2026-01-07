@@ -1,4 +1,11 @@
-import { format, parseISO, startOfWeek, endOfWeek, subDays, isValid } from 'date-fns';
+import {
+  format,
+  parseISO,
+  startOfWeek,
+  endOfWeek,
+  subDays,
+  isValid,
+} from 'date-fns';
 
 export function formatDate(date: Date | string): string {
   const d = typeof date === 'string' ? parseISO(date) : date;
@@ -24,7 +31,10 @@ export function getToday(): string {
   return formatDate(new Date());
 }
 
-export function getWeekRange(date: Date = new Date()): { start: Date; end: Date } {
+export function getWeekRange(date: Date = new Date()): {
+  start: Date;
+  end: Date;
+} {
   return {
     start: startOfWeek(date, { weekStartsOn: 1 }), // Monday
     end: endOfWeek(date, { weekStartsOn: 1 }),

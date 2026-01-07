@@ -51,9 +51,7 @@ export function Select({
           </option>
         ))}
       </select>
-      {error && (
-        <p className="mt-1 text-sm text-red-400">{error}</p>
-      )}
+      {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
     </div>
   );
 }

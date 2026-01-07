@@ -1,7 +1,14 @@
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Camera, Upload, X, Plus, Minus } from 'lucide-react';
-import { Card, CardContent, Button, Input, Select, TextArea } from '../components/ui';
+import {
+  Card,
+  CardContent,
+  Button,
+  Input,
+  Select,
+  TextArea,
+} from '../components/ui';
 import { useCalories } from '../hooks/useCalories';
 import { useProfile } from '../hooks/useProfile';
 import { useAppStore } from '../hooks/useAppStore';
@@ -28,11 +35,16 @@ export function MealScanner() {
   const isOnline = useAppStore((state) => state.isOnline);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [step, setStep] = useState<'capture' | 'analyzing' | 'results'>('capture');
+  const [step, setStep] = useState<'capture' | 'analyzing' | 'results'>(
+    'capture',
+  );
   const [mealType, setMealType] = useState<MealType>('lunch');
   const [description, setDescription] = useState('');
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [imageData, setImageData] = useState<{ base64: string; mimeType: string } | null>(null);
+  const [imageData, setImageData] = useState<{
+    base64: string;
+    mimeType: string;
+  } | null>(null);
   const [results, setResults] = useState<EditableFoodItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +64,7 @@ export function MealScanner() {
     reader.onload = (event) => {
       const result = event.target?.result as string;
       setImagePreview(result);
-      
+
       // Extract base64 data
       const base64 = result.split(',')[1];
       setImageData({ base64, mimeType: file.type });
@@ -88,14 +100,14 @@ export function MealScanner() {
       const result = await analyzeFoodImage(
         imageData.base64,
         imageData.mimeType,
-        description || undefined
+        description || undefined,
       );
 
       setResults(
         result.items.map((item) => ({
           ...item,
           originalPortion: item.portion_grams,
-        }))
+        })),
       );
       setStep('results');
     } catch (err) {
@@ -111,12 +123,18 @@ export function MealScanner() {
       prev.map((item, i) => {
         if (i !== index) return item;
 
-        const recalculated = recalculateMacros(item.originalPortion, newPortion, {
-          calories: item.calories * (item.originalPortion / item.portion_grams),
-          protein_g: item.protein_g * (item.originalPortion / item.portion_grams),
-          carbs_g: item.carbs_g * (item.originalPortion / item.portion_grams),
-          fat_g: item.fat_g * (item.originalPortion / item.portion_grams),
-        });
+        const recalculated = recalculateMacros(
+          item.originalPortion,
+          newPortion,
+          {
+            calories:
+              item.calories * (item.originalPortion / item.portion_grams),
+            protein_g:
+              item.protein_g * (item.originalPortion / item.portion_grams),
+            carbs_g: item.carbs_g * (item.originalPortion / item.portion_grams),
+            fat_g: item.fat_g * (item.originalPortion / item.portion_grams),
+          },
+        );
 
         return {
           ...item,
@@ -126,7 +144,7 @@ export function MealScanner() {
           carbs_g: recalculated.carbs_g,
           fat_g: recalculated.fat_g,
         };
-      })
+      }),
     );
   };
 
@@ -189,11 +207,16 @@ export function MealScanner() {
             <div className="w-16 h-16 bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-4">
               <Camera size={32} className="text-slate-400" />
             </div>
-            <h3 className="text-lg font-semibold text-white mb-2">Offline Mode</h3>
+            <h3 className="text-lg font-semibold text-white mb-2">
+              Offline Mode
+            </h3>
             <p className="text-slate-400 text-sm mb-4">
               Meal scanner requires an internet connection for AI analysis.
             </p>
-            <Button variant="secondary" onClick={() => navigate('/calories?action=add')}>
+            <Button
+              variant="secondary"
+              onClick={() => navigate('/calories?action=add')}
+            >
               Add Food Manually
             </Button>
           </CardContent>
@@ -270,7 +293,11 @@ export function MealScanner() {
               )}
 
               <div className="flex gap-2 mt-4">
-                <Button variant="secondary" onClick={handleCapture} className="flex-1">
+                <Button
+                  variant="secondary"
+                  onClick={handleCapture}
+                  className="flex-1"
+                >
                   <Camera size={18} className="mr-2" />
                   Camera
                 </Button>
@@ -315,7 +342,9 @@ export function MealScanner() {
       {step === 'analyzing' && (
         <div className="text-center py-12">
           <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-6" />
-          <h2 className="text-xl font-semibold text-white mb-2">Analyzing...</h2>
+          <h2 className="text-xl font-semibold text-white mb-2">
+            Analyzing...
+          </h2>
           <p className="text-slate-400">AI is identifying your food</p>
         </div>
       )}
@@ -333,10 +362,14 @@ export function MealScanner() {
 
           <Card>
             <CardContent className="p-4">
-              <h3 className="text-lg font-semibold text-white mb-4">Identified Items</h3>
-              
+              <h3 className="text-lg font-semibold text-white mb-4">
+                Identified Items
+              </h3>
+
               {results.length === 0 ? (
-                <p className="text-slate-400 text-center py-4">No items identified</p>
+                <p className="text-slate-400 text-center py-4">
+                  No items identified
+                </p>
               ) : (
                 <div className="space-y-4">
                   {results.map((item, index) => (
@@ -353,7 +386,12 @@ export function MealScanner() {
 
                       <div className="flex items-center gap-2 mb-2">
                         <button
-                          onClick={() => handlePortionChange(index, Math.max(10, item.portion_grams - 10))}
+                          onClick={() =>
+                            handlePortionChange(
+                              index,
+                              Math.max(10, item.portion_grams - 10),
+                            )
+                          }
                           className="p-1 bg-slate-600 rounded hover:bg-slate-500"
                         >
                           <Minus size={14} />
@@ -361,12 +399,19 @@ export function MealScanner() {
                         <Input
                           type="number"
                           value={item.portion_grams}
-                          onChange={(e) => handlePortionChange(index, parseInt(e.target.value) || 0)}
+                          onChange={(e) =>
+                            handlePortionChange(
+                              index,
+                              parseInt(e.target.value) || 0,
+                            )
+                          }
                           className="w-20 text-center"
                         />
                         <span className="text-slate-400 text-sm">g</span>
                         <button
-                          onClick={() => handlePortionChange(index, item.portion_grams + 10)}
+                          onClick={() =>
+                            handlePortionChange(index, item.portion_grams + 10)
+                          }
                           className="p-1 bg-slate-600 rounded hover:bg-slate-500"
                         >
                           <Plus size={14} />
@@ -375,19 +420,27 @@ export function MealScanner() {
 
                       <div className="grid grid-cols-4 gap-2 text-xs text-center">
                         <div className="bg-slate-700 rounded p-1">
-                          <p className="text-white font-semibold">{item.calories}</p>
+                          <p className="text-white font-semibold">
+                            {item.calories}
+                          </p>
                           <p className="text-slate-400">kcal</p>
                         </div>
                         <div className="bg-slate-700 rounded p-1">
-                          <p className="text-blue-400 font-semibold">{item.protein_g.toFixed(1)}</p>
+                          <p className="text-blue-400 font-semibold">
+                            {item.protein_g.toFixed(1)}
+                          </p>
                           <p className="text-slate-400">P</p>
                         </div>
                         <div className="bg-slate-700 rounded p-1">
-                          <p className="text-green-400 font-semibold">{item.carbs_g.toFixed(1)}</p>
+                          <p className="text-green-400 font-semibold">
+                            {item.carbs_g.toFixed(1)}
+                          </p>
                           <p className="text-slate-400">C</p>
                         </div>
                         <div className="bg-slate-700 rounded p-1">
-                          <p className="text-yellow-400 font-semibold">{item.fat_g.toFixed(1)}</p>
+                          <p className="text-yellow-400 font-semibold">
+                            {item.fat_g.toFixed(1)}
+                          </p>
                           <p className="text-slate-400">F</p>
                         </div>
                       </div>
@@ -404,19 +457,27 @@ export function MealScanner() {
               <h3 className="text-lg font-semibold text-white mb-3">Total</h3>
               <div className="grid grid-cols-4 gap-2 text-center">
                 <div>
-                  <p className="text-2xl font-bold text-white">{totalCalories}</p>
+                  <p className="text-2xl font-bold text-white">
+                    {totalCalories}
+                  </p>
                   <p className="text-slate-400 text-xs">kcal</p>
                 </div>
                 <div>
-                  <p className="text-xl font-semibold text-blue-400">{totalProtein.toFixed(1)}g</p>
+                  <p className="text-xl font-semibold text-blue-400">
+                    {totalProtein.toFixed(1)}g
+                  </p>
                   <p className="text-slate-400 text-xs">Protein</p>
                 </div>
                 <div>
-                  <p className="text-xl font-semibold text-green-400">{totalCarbs.toFixed(1)}g</p>
+                  <p className="text-xl font-semibold text-green-400">
+                    {totalCarbs.toFixed(1)}g
+                  </p>
                   <p className="text-slate-400 text-xs">Carbs</p>
                 </div>
                 <div>
-                  <p className="text-xl font-semibold text-yellow-400">{totalFat.toFixed(1)}g</p>
+                  <p className="text-xl font-semibold text-yellow-400">
+                    {totalFat.toFixed(1)}g
+                  </p>
                   <p className="text-slate-400 text-xs">Fat</p>
                 </div>
               </div>
@@ -424,10 +485,18 @@ export function MealScanner() {
           </Card>
 
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={handleReset} className="flex-1">
+            <Button
+              variant="secondary"
+              onClick={handleReset}
+              className="flex-1"
+            >
               Retake
             </Button>
-            <Button onClick={handleSave} isLoading={isLoading} className="flex-1">
+            <Button
+              onClick={handleSave}
+              isLoading={isLoading}
+              className="flex-1"
+            >
               Save to {mealType}
             </Button>
           </div>

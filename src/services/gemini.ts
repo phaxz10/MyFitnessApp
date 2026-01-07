@@ -19,7 +19,9 @@ export function isGeminiInitialized(): boolean {
 }
 
 // Analyze food from text description
-export async function analyzeFoodText(foodDescription: string): Promise<AIFoodAnalysisResponse> {
+export async function analyzeFoodText(
+  foodDescription: string,
+): Promise<AIFoodAnalysisResponse> {
   if (!genAI) throw new Error('Gemini API not initialized');
 
   const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
@@ -51,7 +53,7 @@ Return format:
 
   const result = await model.generateContent(prompt);
   const response = result.response.text();
-  
+
   // Clean up response - remove markdown code blocks if present
   const cleanedResponse = response
     .replace(/```json\n?/g, '')
@@ -65,7 +67,7 @@ Return format:
 export async function analyzeFoodImage(
   imageBase64: string,
   mimeType: string,
-  textDescription?: string
+  textDescription?: string,
 ): Promise<AIFoodAnalysisResponse> {
   if (!genAI) throw new Error('Gemini API not initialized');
 
@@ -116,7 +118,9 @@ Return JSON format only, no markdown code blocks:
 }
 
 // Generate exercise details
-export async function generateExerciseDetails(exerciseName: string): Promise<AIExerciseResponse> {
+export async function generateExerciseDetails(
+  exerciseName: string,
+): Promise<AIExerciseResponse> {
   if (!genAI) throw new Error('Gemini API not initialized');
 
   const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
@@ -194,22 +198,30 @@ export async function reviewGoals(
   weightHistory: WeightLog[],
   avgCalories: number,
   daysLogged: number,
-  adherencePct: number
+  adherencePct: number,
 ): Promise<AIGoalReviewResponse> {
   if (!genAI) throw new Error('Gemini API not initialized');
 
   const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
   const startWeight = weightHistory.length > 0 ? weightHistory[0].weight_kg : 0;
-  const currentWeight = weightHistory.length > 0 ? weightHistory[weightHistory.length - 1].weight_kg : 0;
+  const currentWeight =
+    weightHistory.length > 0
+      ? weightHistory[weightHistory.length - 1].weight_kg
+      : 0;
   const weightChange = currentWeight - startWeight;
-  const periodDays = weightHistory.length > 1 
-    ? Math.ceil((new Date(weightHistory[weightHistory.length - 1].date).getTime() - new Date(weightHistory[0].date).getTime()) / (1000 * 60 * 60 * 24))
-    : 0;
+  const periodDays =
+    weightHistory.length > 1
+      ? Math.ceil(
+          (new Date(weightHistory[weightHistory.length - 1].date).getTime() -
+            new Date(weightHistory[0].date).getTime()) /
+            (1000 * 60 * 60 * 24),
+        )
+      : 0;
 
   const weightDataSummary = weightHistory
     .slice(-30)
-    .map(w => `${w.date}: ${w.weight_kg}kg`)
+    .map((w) => `${w.date}: ${w.weight_kg}kg`)
     .join('\n');
 
   const prompt = `Review my fitness progress and provide recommendations.

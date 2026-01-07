@@ -17,7 +17,8 @@ export const useAppStore = create<AppState>()(
       isOnboardingComplete: false,
       isOnline: navigator.onLine,
       userProfile: null,
-      setOnboardingComplete: (complete) => set({ isOnboardingComplete: complete }),
+      setOnboardingComplete: (complete) =>
+        set({ isOnboardingComplete: complete }),
       setOnline: (online) => set({ isOnline: online }),
       setUserProfile: (profile) => set({ userProfile: profile }),
     }),
@@ -26,6 +27,6 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         isOnboardingComplete: state.isOnboardingComplete,
       }),
-    }
-  )
+    },
+  ),
 );

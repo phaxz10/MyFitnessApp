@@ -33,9 +33,7 @@ export function Input({
         } ${className}`}
         {...props}
       />
-      {error && (
-        <p className="mt-1 text-sm text-red-400">{error}</p>
-      )}
+      {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
       {helperText && !error && (
         <p className="mt-1 text-sm text-slate-500">{helperText}</p>
       )}

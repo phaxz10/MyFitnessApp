@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  Outlet,
+} from 'react-router-dom';
 import { Header, BottomNav } from './components/ui';
 import { useAppStore } from './hooks/useAppStore';
 import { useProfile } from './hooks/useProfile';
@@ -42,7 +48,12 @@ function SessionLayout() {
 }
 
 function AppRoutes() {
-  const { isOnboardingComplete: storeOnboardingComplete, setOnboardingComplete, setOnline, setUserProfile } = useAppStore();
+  const {
+    isOnboardingComplete: storeOnboardingComplete,
+    setOnboardingComplete,
+    setOnline,
+    setUserProfile,
+  } = useAppStore();
   const { profile, fetchProfile } = useProfile();
   const [isLoading, setIsLoading] = useState(true);
 
@@ -51,7 +62,7 @@ function AppRoutes() {
       try {
         // Initialize database
         await getDB();
-        
+
         // Check if onboarding is complete
         const complete = await isOnboardingComplete();
         setOnboardingComplete(complete);

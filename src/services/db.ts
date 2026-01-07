@@ -155,7 +155,9 @@ async function initSchema(): Promise<void> {
 // Helper function to check if onboarding is complete
 export async function isOnboardingComplete(): Promise<boolean> {
   const database = await getDB();
-  const result = await database.query('SELECT COUNT(*) as count FROM user_profile');
+  const result = await database.query(
+    'SELECT COUNT(*) as count FROM user_profile',
+  );
   const rows = result.rows as { count: number }[];
   return rows[0].count > 0;
 }

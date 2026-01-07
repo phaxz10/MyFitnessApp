@@ -48,6 +48,12 @@ export interface FoodEntry {
 }
 
 // Exercise Types
+export type ExerciseType =
+  | 'reps_weight'
+  | 'reps_only'
+  | 'duration'
+  | 'duration_weight';
+
 export interface Exercise {
   id: number;
   name: string;
@@ -55,6 +61,7 @@ export interface Exercise {
   muscle_groups: string;
   equipment: string;
   video_url: string | null;
+  exercise_type: ExerciseType;
   is_ai_generated: boolean;
   created_at: string;
 }
@@ -84,9 +91,11 @@ export interface ProgramExercise {
   session_id: number;
   exercise_id: number;
   target_sets: number;
-  target_rep_min: number;
-  target_rep_max: number;
+  target_rep_min: number | null;
+  target_rep_max: number | null;
+  target_duration_seconds: number | null;
   order_index: number;
+  superset_group_id: string | null;
   notes: string | null;
 }
 
@@ -107,8 +116,9 @@ export interface WorkoutSet {
   workout_log_id: number;
   exercise_id: number;
   set_number: number;
-  reps: number;
-  weight_kg: number;
+  reps: number | null;
+  weight_kg: number | null;
+  duration_seconds: number | null;
   notes: string | null;
   created_at: string;
 }
@@ -152,6 +162,7 @@ export interface AIExerciseResponse {
   muscle_groups: string[];
   equipment: string;
   tips: string[];
+  exercise_type: ExerciseType;
 }
 
 export interface AITargetResponse {
@@ -182,6 +193,7 @@ export interface ProgramExerciseWithDetails extends ProgramExercise {
   exercise_description: string;
   muscle_groups: string;
   equipment: string;
+  exercise_type: ExerciseType;
 }
 
 export interface ProgramSessionWithExercises extends ProgramSession {

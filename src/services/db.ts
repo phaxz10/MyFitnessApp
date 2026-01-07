@@ -69,6 +69,7 @@ async function initSchema(): Promise<void> {
       muscle_groups TEXT,
       equipment TEXT,
       video_url TEXT,
+      exercise_type TEXT NOT NULL DEFAULT 'reps_weight' CHECK (exercise_type IN ('reps_weight', 'reps_only', 'duration', 'duration_weight')),
       is_ai_generated BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -100,9 +101,11 @@ async function initSchema(): Promise<void> {
       session_id INTEGER NOT NULL REFERENCES program_sessions(id) ON DELETE CASCADE,
       exercise_id INTEGER NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
       target_sets INTEGER NOT NULL,
-      target_rep_min INTEGER NOT NULL,
-      target_rep_max INTEGER NOT NULL,
+      target_rep_min INTEGER,
+      target_rep_max INTEGER,
+      target_duration_seconds INTEGER,
       order_index INTEGER NOT NULL,
+      superset_group_id TEXT,
       notes TEXT
     );
 
@@ -124,8 +127,9 @@ async function initSchema(): Promise<void> {
       workout_log_id INTEGER NOT NULL REFERENCES workout_logs(id) ON DELETE CASCADE,
       exercise_id INTEGER NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
       set_number INTEGER NOT NULL,
-      reps INTEGER NOT NULL,
-      weight_kg REAL NOT NULL,
+      reps INTEGER,
+      weight_kg REAL,
+      duration_seconds INTEGER,
       notes TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -159,6 +163,35 @@ async function initSchema(): Promise<void> {
     `);
   } catch {
     // Column may already exist or table doesn't support IF NOT EXISTS, ignore
+  }
+
+  // Migration: Add exercise_type column to exercises
+  try {
+    await db.exec(`
+      ALTER TABLE exercises ADD COLUMN IF NOT EXISTS exercise_type TEXT DEFAULT 'reps_weight';
+    `);
+  } catch {
+    // Column may already exist, ignore
+  }
+
+  // Migration: Add target_duration_seconds and superset_group_id to program_exercises
+  try {
+    await db.exec(`
+      ALTER TABLE program_exercises ADD COLUMN IF NOT EXISTS target_duration_seconds INTEGER;
+      ALTER TABLE program_exercises ADD COLUMN IF NOT EXISTS superset_group_id TEXT;
+    `);
+  } catch {
+    // Columns may already exist, ignore
+  }
+
+  // Migration: Make target_rep_min and target_rep_max nullable for duration exercises
+  // and add duration_seconds to workout_sets
+  try {
+    await db.exec(`
+      ALTER TABLE workout_sets ADD COLUMN IF NOT EXISTS duration_seconds INTEGER;
+    `);
+  } catch {
+    // Column may already exist, ignore
   }
 }
 

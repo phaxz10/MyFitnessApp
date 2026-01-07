@@ -147,12 +147,19 @@ IMPORTANT: For muscle_groups, you MUST ONLY use values from this list: ${MUSCLE_
 - List primary muscle group first
 - For compound movements targeting many areas, you can include "Full Body"
 
+IMPORTANT: For exercise_type, determine which type this exercise is:
+- "reps_weight": Exercise performed with reps and external weight (e.g., Bench Press, Squat, Bicep Curl)
+- "reps_only": Exercise performed with reps but no weight (e.g., Pull-ups, Push-ups, Air Squats)
+- "duration": Exercise held for time without weight (e.g., Plank, Dead Hang, Wall Sit)
+- "duration_weight": Exercise held for time with weight (e.g., Weighted Plank, Farmer's Carry)
+
 Return JSON format only, no markdown code blocks:
 {
   "name": "standardized exercise name",
   "description": "A comprehensive step-by-step guide on how to perform this exercise. Include: starting position, movement execution (concentric and eccentric phases), and end position. Be specific about body positioning, grip, stance, and range of motion.",
   "muscle_groups": ["Primary category", "Secondary category"],
   "equipment": "required equipment (or 'Bodyweight' if none)",
+  "exercise_type": "reps_weight|reps_only|duration|duration_weight",
   "tips": [
     "Form cue or technique tip",
     "Common mistake to avoid",
@@ -191,6 +198,12 @@ ${exerciseNames.map((name, i) => `${i + 1}. ${name}`).join('\n')}
 
 For each exercise, provide detailed, actionable information that helps someone perform it safely and effectively.
 
+IMPORTANT: For exercise_type, determine which type each exercise is:
+- "reps_weight": Exercise performed with reps and external weight (e.g., Bench Press, Squat, Bicep Curl)
+- "reps_only": Exercise performed with reps but no weight (e.g., Pull-ups, Push-ups, Air Squats)
+- "duration": Exercise held for time without weight (e.g., Plank, Dead Hang, Wall Sit)
+- "duration_weight": Exercise held for time with weight (e.g., Weighted Plank, Farmer's Carry)
+
 Return a JSON array only, no markdown code blocks:
 [
   {
@@ -198,6 +211,7 @@ Return a JSON array only, no markdown code blocks:
     "description": "A comprehensive step-by-step guide on how to perform this exercise. Include: starting position, movement execution (concentric and eccentric phases), and end position. Be specific about body positioning, grip, stance, and range of motion.",
     "muscle_groups": ["primary muscle group", "secondary muscle groups..."],
     "equipment": "required equipment (or 'Bodyweight' if none)",
+    "exercise_type": "reps_weight|reps_only|duration|duration_weight",
     "tips": [
       "Form cue or technique tip",
       "Common mistake to avoid", 

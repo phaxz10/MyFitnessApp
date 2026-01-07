@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -12,6 +12,11 @@ import {
   ChevronUp,
   X,
   Save,
+  Play,
+  Pause,
+  RotateCcw,
+  Dumbbell,
+  Clock,
 } from 'lucide-react';
 import {
   Card,
@@ -33,18 +38,134 @@ import type {
   Exercise,
   ProgramExerciseWithDetails,
   WorkoutSet,
+  ExerciseType,
 } from '../types';
+
+interface SetData {
+  id?: number;
+  tempId: string;
+  reps: string;
+  weight: string;
+  durationSeconds: string;
+  completed: boolean;
+}
 
 interface ExerciseWithSets {
   exercise: Exercise | ProgramExerciseWithDetails;
-  sets: {
-    id?: number;
-    reps: string;
-    weight: string;
-    completed: boolean;
-  }[];
+  exerciseType: ExerciseType;
+  sets: SetData[];
   lastPerformance: WorkoutSet[] | null;
   isExpanded: boolean;
+  supersetGroupId?: string | null;
+}
+
+// Duration Timer Component
+function DurationTimer({
+  targetSeconds,
+  onComplete,
+  onCancel,
+}: {
+  targetSeconds: number;
+  onComplete: (actualSeconds: number) => void;
+  onCancel: () => void;
+}) {
+  const [seconds, setSeconds] = useState(0);
+  const [isRunning, setIsRunning] = useState(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (isRunning) {
+      intervalRef.current = setInterval(() => {
+        setSeconds((s) => s + 1);
+      }, 1000);
+    } else if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [isRunning]);
+
+  const formatTime = (secs: number) => {
+    const mins = Math.floor(secs / 60);
+    const remainingSecs = secs % 60;
+    return `${mins}:${remainingSecs.toString().padStart(2, '0')}`;
+  };
+
+  const progress = Math.min((seconds / targetSeconds) * 100, 100);
+  const isOverTarget = seconds >= targetSeconds;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
+      <div className="w-full max-w-sm bg-slate-800 rounded-2xl p-6">
+        <div className="text-center mb-6">
+          <p className="text-slate-400 text-sm mb-2">
+            Target: {formatTime(targetSeconds)}
+          </p>
+          <p
+            className={`text-5xl font-mono font-bold ${isOverTarget ? 'text-green-400' : 'text-white'}`}
+          >
+            {formatTime(seconds)}
+          </p>
+        </div>
+
+        {/* Progress bar */}
+        <div className="h-2 bg-slate-700 rounded-full mb-6 overflow-hidden">
+          <div
+            className={`h-full transition-all duration-300 ${isOverTarget ? 'bg-green-500' : 'bg-blue-500'}`}
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+
+        <div className="flex gap-3">
+          <Button
+            variant="secondary"
+            className="flex-1"
+            onClick={() => {
+              setIsRunning(false);
+              setSeconds(0);
+            }}
+          >
+            <RotateCcw size={18} className="mr-2" />
+            Reset
+          </Button>
+
+          {!isRunning ? (
+            <Button className="flex-1" onClick={() => setIsRunning(true)}>
+              <Play size={18} className="mr-2" />
+              {seconds > 0 ? 'Resume' : 'Start'}
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              className="flex-1"
+              onClick={() => setIsRunning(false)}
+            >
+              <Pause size={18} className="mr-2" />
+              Pause
+            </Button>
+          )}
+        </div>
+
+        <div className="flex gap-3 mt-3">
+          <Button variant="secondary" className="flex-1" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            className="flex-1 bg-green-600 hover:bg-green-700"
+            onClick={() => {
+              setIsRunning(false);
+              onComplete(seconds);
+            }}
+            disabled={seconds === 0}
+          >
+            <Check size={18} className="mr-2" />
+            Complete
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function WorkoutSession() {
@@ -72,6 +193,11 @@ export function WorkoutSession() {
   const [showCancelWorkout, setShowCancelWorkout] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [durationTimerData, setDurationTimerData] = useState<{
+    exerciseIndex: number;
+    setIndex: number;
+    targetSeconds: number;
+  } | null>(null);
 
   // Form for workout notes
   const {
@@ -109,22 +235,34 @@ export function WorkoutSession() {
           const exercisesData: ExerciseWithSets[] = await Promise.all(
             session.exercises.map(async (ex) => {
               const lastPerf = await getLastPerformance(ex.exercise_id);
+              const exerciseType = ex.exercise_type || 'reps_weight';
+              const isDuration =
+                exerciseType === 'duration' ||
+                exerciseType === 'duration_weight';
+
               // Create empty sets based on target
               const sets = Array.from({ length: ex.target_sets }, (_, i) => {
-                // Pre-fill from last performance if available
                 const lastSet = lastPerf?.[i];
                 return {
-                  reps:
-                    lastSet?.reps?.toString() || ex.target_rep_min.toString(),
+                  tempId: `${ex.id}-${i}-${Date.now()}`,
+                  reps: isDuration
+                    ? ''
+                    : lastSet?.reps?.toString() ||
+                      (ex.target_rep_min?.toString() ?? '8'),
                   weight: lastSet?.weight_kg?.toString() || '0',
+                  durationSeconds: isDuration
+                    ? ex.target_duration_seconds?.toString() || '30'
+                    : '',
                   completed: false,
                 };
               });
               return {
                 exercise: ex,
+                exerciseType,
                 sets,
                 lastPerformance: lastPerf,
                 isExpanded: true,
+                supersetGroupId: ex.superset_group_id,
               };
             }),
           );
@@ -156,10 +294,12 @@ export function WorkoutSession() {
             if (loggedSets) {
               return {
                 ...ex,
-                sets: loggedSets.map((s) => ({
+                sets: loggedSets.map((s, i) => ({
                   id: s.id,
-                  reps: s.reps.toString(),
-                  weight: s.weight_kg.toString(),
+                  tempId: `logged-${s.id}-${i}`,
+                  reps: s.reps?.toString() || '',
+                  weight: s.weight_kg?.toString() || '',
+                  durationSeconds: s.duration_seconds?.toString() || '',
                   completed: true,
                 })),
               };
@@ -201,7 +341,7 @@ export function WorkoutSession() {
   const handleSetChange = (
     exerciseIndex: number,
     setIndex: number,
-    field: 'reps' | 'weight',
+    field: 'reps' | 'weight' | 'durationSeconds',
     value: string,
   ) => {
     setExercisesWithSets((prev) => {
@@ -216,6 +356,65 @@ export function WorkoutSession() {
     });
   };
 
+  const handleStartDurationTimer = (
+    exerciseIndex: number,
+    setIndex: number,
+  ) => {
+    const exerciseData = exercisesWithSets[exerciseIndex];
+    const targetSeconds =
+      parseInt(exerciseData.sets[setIndex].durationSeconds) || 30;
+    setDurationTimerData({ exerciseIndex, setIndex, targetSeconds });
+  };
+
+  const handleDurationComplete = async (actualSeconds: number) => {
+    if (!activeWorkout || !durationTimerData) return;
+
+    const { exerciseIndex, setIndex } = durationTimerData;
+    const exerciseData = exercisesWithSets[exerciseIndex];
+    const setData = exerciseData.sets[setIndex];
+    const exerciseId =
+      'exercise_id' in exerciseData.exercise
+        ? exerciseData.exercise.exercise_id
+        : exerciseData.exercise.id;
+
+    const weight = parseFloat(setData.weight) || null;
+    const hasWeight = exerciseData.exerciseType === 'duration_weight';
+
+    try {
+      const newSet = await addSet(
+        activeWorkout.id,
+        exerciseId,
+        null,
+        hasWeight ? weight : null,
+        actualSeconds,
+      );
+
+      setExercisesWithSets((prev) => {
+        const updated = [...prev];
+        updated[exerciseIndex] = {
+          ...updated[exerciseIndex],
+          sets: updated[exerciseIndex].sets.map((set, i) =>
+            i === setIndex
+              ? {
+                  ...set,
+                  id: newSet.id,
+                  durationSeconds: actualSeconds.toString(),
+                  completed: true,
+                }
+              : set,
+          ),
+        };
+        return updated;
+      });
+
+      setDurationTimerData(null);
+      setShowTimer(true);
+    } catch (err) {
+      console.error('Failed to log set:', err);
+      setDurationTimerData(null);
+    }
+  };
+
   const handleCompleteSet = async (exerciseIndex: number, setIndex: number) => {
     if (!activeWorkout) return;
 
@@ -226,13 +425,29 @@ export function WorkoutSession() {
         ? exerciseData.exercise.exercise_id
         : exerciseData.exercise.id;
 
+    const isDuration =
+      exerciseData.exerciseType === 'duration' ||
+      exerciseData.exerciseType === 'duration_weight';
+
+    if (isDuration) {
+      handleStartDurationTimer(exerciseIndex, setIndex);
+      return;
+    }
+
     const reps = parseInt(setData.reps) || 0;
     const weight = parseFloat(setData.weight) || 0;
+    const hasWeight = exerciseData.exerciseType === 'reps_weight';
 
     if (reps === 0) return;
 
     try {
-      const newSet = await addSet(activeWorkout.id, exerciseId, reps, weight);
+      const newSet = await addSet(
+        activeWorkout.id,
+        exerciseId,
+        reps,
+        hasWeight ? weight : null,
+        null,
+      );
 
       setExercisesWithSets((prev) => {
         const updated = [...prev];
@@ -272,15 +487,21 @@ export function WorkoutSession() {
   const handleAddSet = (exerciseIndex: number) => {
     setExercisesWithSets((prev) => {
       const updated = [...prev];
-      const lastSet =
-        updated[exerciseIndex].sets[updated[exerciseIndex].sets.length - 1];
+      const exerciseData = updated[exerciseIndex];
+      const lastSet = exerciseData.sets[exerciseData.sets.length - 1];
+      const isDuration =
+        exerciseData.exerciseType === 'duration' ||
+        exerciseData.exerciseType === 'duration_weight';
+
       updated[exerciseIndex] = {
-        ...updated[exerciseIndex],
+        ...exerciseData,
         sets: [
-          ...updated[exerciseIndex].sets,
+          ...exerciseData.sets,
           {
-            reps: lastSet?.reps || '0',
+            tempId: `new-${exerciseData.exercise.id}-${exerciseData.sets.length}-${Date.now()}`,
+            reps: isDuration ? '' : lastSet?.reps || '0',
             weight: lastSet?.weight || '0',
+            durationSeconds: isDuration ? lastSet?.durationSeconds || '30' : '',
             completed: false,
           },
         ],
@@ -292,15 +513,21 @@ export function WorkoutSession() {
   const handleAddExercise = useCallback(
     async (exercise: Exercise) => {
       const lastPerf = await getLastPerformance(exercise.id);
+      const exerciseType = exercise.exercise_type || 'reps_weight';
+      const isDuration =
+        exerciseType === 'duration' || exerciseType === 'duration_weight';
 
       setExercisesWithSets((prev) => [
         ...prev,
         {
           exercise,
+          exerciseType,
           sets: [
             {
-              reps: lastPerf?.[0]?.reps?.toString() || '10',
+              tempId: `new-${exercise.id}-0-${Date.now()}`,
+              reps: isDuration ? '' : lastPerf?.[0]?.reps?.toString() || '10',
               weight: lastPerf?.[0]?.weight_kg?.toString() || '0',
+              durationSeconds: isDuration ? '30' : '',
               completed: false,
             },
           ],
@@ -358,6 +585,14 @@ export function WorkoutSession() {
     0,
   );
 
+  // Get exercise type icon
+  const getExerciseTypeIcon = (type: ExerciseType) => {
+    if (type === 'duration' || type === 'duration_weight') {
+      return <Clock size={14} className="text-slate-400" />;
+    }
+    return <Dumbbell size={14} className="text-slate-400" />;
+  };
+
   if (!activeWorkout) {
     return (
       <div className="p-4 flex items-center justify-center min-h-[60vh]">
@@ -374,6 +609,7 @@ export function WorkoutSession() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <button
+          type="button"
           onClick={() => setShowCancelWorkout(true)}
           className="p-2 text-slate-400 hover:text-white"
         >
@@ -388,6 +624,7 @@ export function WorkoutSession() {
         </div>
 
         <button
+          type="button"
           onClick={() => setShowTimer(true)}
           className="p-2 text-slate-400 hover:text-white"
         >
@@ -418,7 +655,7 @@ export function WorkoutSession() {
                     .reduce(
                       (setSum, s) =>
                         setSum +
-                        (parseFloat(s.weight) || 0) * (parseInt(s.reps) || 0),
+                        (parseFloat(s.weight) || 0) * (parseInt(s.reps) || 1),
                       0,
                     ),
                 0,
@@ -447,26 +684,44 @@ export function WorkoutSession() {
               'exercise_name' in exerciseData.exercise
                 ? exerciseData.exercise.exercise_name
                 : exerciseData.exercise.name;
-            const targetReps =
+            const isDuration =
+              exerciseData.exerciseType === 'duration' ||
+              exerciseData.exerciseType === 'duration_weight';
+            const hasWeight =
+              exerciseData.exerciseType === 'reps_weight' ||
+              exerciseData.exerciseType === 'duration_weight';
+            const targetInfo =
               'target_rep_min' in exerciseData.exercise
-                ? `${exerciseData.exercise.target_rep_min}-${exerciseData.exercise.target_rep_max}`
+                ? isDuration
+                  ? `${exerciseData.exercise.target_duration_seconds || 30}s`
+                  : `${exerciseData.exercise.target_rep_min}-${exerciseData.exercise.target_rep_max} reps`
                 : null;
 
             return (
-              <Card key={exerciseData.exercise.id}>
+              <Card key={`exercise-${exerciseData.exercise.id}`}>
                 <CardContent className="p-4">
                   {/* Exercise Header */}
-                  <div
-                    className="flex items-center justify-between cursor-pointer"
+                  <button
+                    type="button"
+                    className="flex items-center justify-between w-full text-left"
                     onClick={() => toggleExerciseExpand(exerciseIndex)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleExerciseExpand(exerciseIndex);
+                      }
+                    }}
                   >
                     <div className="flex-1">
-                      <h3 className="font-semibold text-white">
-                        {exerciseName}
-                      </h3>
-                      {targetReps && (
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-white">
+                          {exerciseName}
+                        </h3>
+                        {getExerciseTypeIcon(exerciseData.exerciseType)}
+                      </div>
+                      {targetInfo && (
                         <p className="text-slate-400 text-sm">
-                          Target: {targetReps} reps
+                          Target: {targetInfo}
                         </p>
                       )}
                     </div>
@@ -481,7 +736,7 @@ export function WorkoutSession() {
                         <ChevronDown size={20} className="text-slate-400" />
                       )}
                     </div>
-                  </div>
+                  </button>
 
                   {/* Sets */}
                   {exerciseData.isExpanded && (
@@ -492,18 +747,44 @@ export function WorkoutSession() {
                           <div className="mb-3 p-2 bg-slate-700/50 rounded text-xs text-slate-400">
                             Last:{' '}
                             {exerciseData.lastPerformance
-                              .map((s) => `${s.weight_kg}kg × ${s.reps}`)
+                              .map((s) =>
+                                s.duration_seconds
+                                  ? `${s.duration_seconds}s${s.weight_kg ? ` @ ${s.weight_kg}kg` : ''}`
+                                  : `${s.weight_kg || 0}kg × ${s.reps || 0}`,
+                              )
                               .join(' | ')}
                           </div>
                         )}
 
                       {/* Set Headers */}
-                      <div className="grid grid-cols-12 gap-2 mb-2 text-xs text-slate-400">
+                      <div
+                        className={`grid gap-2 mb-2 text-xs text-slate-400 ${
+                          isDuration
+                            ? hasWeight
+                              ? 'grid-cols-10'
+                              : 'grid-cols-8'
+                            : hasWeight
+                              ? 'grid-cols-12'
+                              : 'grid-cols-10'
+                        }`}
+                      >
                         <div className="col-span-2 text-center">SET</div>
-                        <div className="col-span-3 text-center">PREV</div>
-                        <div className="col-span-2 text-center">KG</div>
-                        <div className="col-span-2 text-center">REPS</div>
-                        <div className="col-span-3"></div>
+                        <div className="col-span-2 text-center">PREV</div>
+                        {hasWeight && (
+                          <div className="col-span-2 text-center">KG</div>
+                        )}
+                        {isDuration ? (
+                          <div className="col-span-2 text-center">SEC</div>
+                        ) : (
+                          <div className="col-span-2 text-center">REPS</div>
+                        )}
+                        <div
+                          className={
+                            isDuration && !hasWeight
+                              ? 'col-span-2'
+                              : 'col-span-2'
+                          }
+                        ></div>
                       </div>
 
                       {/* Sets List */}
@@ -513,54 +794,87 @@ export function WorkoutSession() {
 
                         return (
                           <div
-                            key={setIndex}
-                            className={`grid grid-cols-12 gap-2 items-center py-2 ${
-                              set.completed ? 'bg-green-900/20 rounded' : ''
-                            }`}
+                            key={set.tempId}
+                            className={`grid gap-2 items-center py-2 ${
+                              isDuration
+                                ? hasWeight
+                                  ? 'grid-cols-10'
+                                  : 'grid-cols-8'
+                                : hasWeight
+                                  ? 'grid-cols-12'
+                                  : 'grid-cols-10'
+                            } ${set.completed ? 'bg-green-900/20 rounded' : ''}`}
                           >
                             <div className="col-span-2 text-center text-slate-300">
                               {setIndex + 1}
                             </div>
-                            <div className="col-span-3 text-center text-slate-500 text-sm">
+                            <div className="col-span-2 text-center text-slate-500 text-sm">
                               {prevSet
-                                ? `${prevSet.weight_kg}×${prevSet.reps}`
+                                ? prevSet.duration_seconds
+                                  ? `${prevSet.duration_seconds}s`
+                                  : `${prevSet.weight_kg || 0}×${prevSet.reps || 0}`
                                 : '-'}
                             </div>
-                            <div className="col-span-2">
-                              <Input
-                                type="number"
-                                value={set.weight}
-                                onChange={(e) =>
-                                  handleSetChange(
-                                    exerciseIndex,
-                                    setIndex,
-                                    'weight',
-                                    e.target.value,
-                                  )
-                                }
-                                className="text-center p-1 h-8"
-                                disabled={set.completed}
-                              />
-                            </div>
-                            <div className="col-span-2">
-                              <Input
-                                type="number"
-                                value={set.reps}
-                                onChange={(e) =>
-                                  handleSetChange(
-                                    exerciseIndex,
-                                    setIndex,
-                                    'reps',
-                                    e.target.value,
-                                  )
-                                }
-                                className="text-center p-1 h-8"
-                                disabled={set.completed}
-                              />
-                            </div>
-                            <div className="col-span-3 flex justify-end gap-1">
+                            {hasWeight && (
+                              <div className="col-span-2">
+                                <Input
+                                  type="number"
+                                  value={set.weight}
+                                  onChange={(e) =>
+                                    handleSetChange(
+                                      exerciseIndex,
+                                      setIndex,
+                                      'weight',
+                                      e.target.value,
+                                    )
+                                  }
+                                  className="text-center p-1 h-8"
+                                  disabled={set.completed}
+                                />
+                              </div>
+                            )}
+                            {isDuration ? (
+                              <div className="col-span-2">
+                                <Input
+                                  type="number"
+                                  value={set.durationSeconds}
+                                  onChange={(e) =>
+                                    handleSetChange(
+                                      exerciseIndex,
+                                      setIndex,
+                                      'durationSeconds',
+                                      e.target.value,
+                                    )
+                                  }
+                                  className="text-center p-1 h-8"
+                                  disabled={set.completed}
+                                  placeholder="sec"
+                                />
+                              </div>
+                            ) : (
+                              <div className="col-span-2">
+                                <Input
+                                  type="number"
+                                  value={set.reps}
+                                  onChange={(e) =>
+                                    handleSetChange(
+                                      exerciseIndex,
+                                      setIndex,
+                                      'reps',
+                                      e.target.value,
+                                    )
+                                  }
+                                  className="text-center p-1 h-8"
+                                  disabled={set.completed}
+                                />
+                              </div>
+                            )}
+                            <div
+                              className={`${isDuration && !hasWeight ? 'col-span-2' : 'col-span-2'} flex justify-end gap-1`}
+                            >
                               {set.completed ? (
                                 <button
+                                  type="button"
                                   onClick={() =>
                                     handleDeleteSet(exerciseIndex, setIndex)
                                   }
@@ -570,12 +884,19 @@ export function WorkoutSession() {
                                 </button>
                               ) : (
                                 <button
+                                  type="button"
                                   onClick={() =>
                                     handleCompleteSet(exerciseIndex, setIndex)
                                   }
-                                  className="p-1 bg-blue-600 rounded text-white hover:bg-blue-500"
+                                  className={`p-1 rounded text-white hover:opacity-80 ${
+                                    isDuration ? 'bg-purple-600' : 'bg-blue-600'
+                                  }`}
                                 >
-                                  <Check size={16} />
+                                  {isDuration ? (
+                                    <Play size={16} />
+                                  ) : (
+                                    <Check size={16} />
+                                  )}
                                 </button>
                               )}
                             </div>
@@ -586,6 +907,7 @@ export function WorkoutSession() {
                       {/* Add Set / Remove Exercise */}
                       <div className="flex justify-between mt-3 pt-3 border-t border-slate-700">
                         <button
+                          type="button"
                           onClick={() => handleAddSet(exerciseIndex)}
                           className="text-blue-400 text-sm flex items-center gap-1"
                         >
@@ -593,6 +915,7 @@ export function WorkoutSession() {
                           Add Set
                         </button>
                         <button
+                          type="button"
                           onClick={() => handleRemoveExercise(exerciseIndex)}
                           className="text-red-400 text-sm flex items-center gap-1"
                         >
@@ -630,6 +953,15 @@ export function WorkoutSession() {
           Finish Workout
         </Button>
       </div>
+
+      {/* Duration Timer */}
+      {durationTimerData && (
+        <DurationTimer
+          targetSeconds={durationTimerData.targetSeconds}
+          onComplete={handleDurationComplete}
+          onCancel={() => setDurationTimerData(null)}
+        />
+      )}
 
       {/* Rest Timer */}
       {showTimer && !timerMinimized && (
@@ -676,11 +1008,22 @@ export function WorkoutSession() {
           ) : (
             filteredExercises.map((exercise) => (
               <button
+                type="button"
                 key={exercise.id}
                 onClick={() => handleAddExercise(exercise)}
                 className="w-full p-3 bg-slate-700 rounded-lg text-left hover:bg-slate-600 transition-colors"
               >
-                <p className="text-white font-medium">{exercise.name}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-white font-medium flex-1">
+                    {exercise.name}
+                  </p>
+                  {exercise.exercise_type === 'duration' ||
+                  exercise.exercise_type === 'duration_weight' ? (
+                    <Clock size={16} className="text-purple-400" />
+                  ) : (
+                    <Dumbbell size={16} className="text-blue-400" />
+                  )}
+                </div>
                 {exercise.muscle_groups && (
                   <p className="text-slate-400 text-sm">
                     {exercise.muscle_groups}

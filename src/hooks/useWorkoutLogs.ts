@@ -206,8 +206,9 @@ export function useWorkoutLogs() {
     async (
       workoutLogId: number,
       exerciseId: number,
-      reps: number,
-      weightKg: number,
+      reps: number | null,
+      weightKg: number | null,
+      durationSeconds: number | null = null,
       notes?: string,
     ): Promise<WorkoutSetWithExercise> => {
       try {
@@ -223,10 +224,18 @@ export function useWorkoutLogs() {
         const setNumber = Number(count) + 1;
 
         const result = await db.query(
-          `INSERT INTO workout_sets (workout_log_id, exercise_id, set_number, reps, weight_kg, notes)
-         VALUES ($1, $2, $3, $4, $5, $6)
+          `INSERT INTO workout_sets (workout_log_id, exercise_id, set_number, reps, weight_kg, duration_seconds, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING *`,
-          [workoutLogId, exerciseId, setNumber, reps, weightKg, notes || null],
+          [
+            workoutLogId,
+            exerciseId,
+            setNumber,
+            reps,
+            weightKg,
+            durationSeconds,
+            notes || null,
+          ],
         );
         const newSet = (result.rows as WorkoutSet[])[0];
 
@@ -255,7 +264,12 @@ export function useWorkoutLogs() {
   const updateSet = useCallback(
     async (
       setId: number,
-      data: { reps?: number; weight_kg?: number; notes?: string },
+      data: {
+        reps?: number | null;
+        weight_kg?: number | null;
+        duration_seconds?: number | null;
+        notes?: string;
+      },
     ): Promise<void> => {
       try {
         const db = await getDB();

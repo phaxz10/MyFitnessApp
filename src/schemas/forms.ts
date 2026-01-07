@@ -187,6 +187,12 @@ export const exerciseFormSchema = z.object({
   description: z.string().optional(),
   muscleGroups: z.string().optional(),
   equipment: z.string().optional(),
+  exerciseType: z.enum([
+    'reps_weight',
+    'reps_only',
+    'duration',
+    'duration_weight',
+  ]),
 });
 
 export type ExerciseFormData = z.infer<typeof exerciseFormSchema>;
@@ -196,9 +202,14 @@ export type ExerciseFormData = z.infer<typeof exerciseFormSchema>;
 export const programExerciseSchema = z.object({
   exerciseId: z.number(),
   exerciseName: z.string(),
+  exerciseType: z
+    .enum(['reps_weight', 'reps_only', 'duration', 'duration_weight'])
+    .default('reps_weight'),
   targetSets: z.number().min(1, 'At least 1 set required'),
-  targetRepMin: z.number().min(1, 'At least 1 rep required'),
-  targetRepMax: z.number().min(1, 'At least 1 rep required'),
+  targetRepMin: z.number().nullable().optional(),
+  targetRepMax: z.number().nullable().optional(),
+  targetDurationSeconds: z.number().nullable().optional(),
+  supersetGroupId: z.string().nullable().optional(),
   notes: z.string().optional(),
 });
 
@@ -223,8 +234,9 @@ export type ProgramExerciseFormData = z.infer<typeof programExerciseSchema>;
 // ============== Workout Session Schema ==============
 
 export const workoutSetSchema = z.object({
-  reps: z.string(),
-  weight: z.string(),
+  reps: z.string().optional(),
+  weight: z.string().optional(),
+  durationSeconds: z.string().optional(),
 });
 
 export const workoutNotesSchema = z.object({

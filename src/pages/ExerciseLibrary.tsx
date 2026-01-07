@@ -29,7 +29,7 @@ import {
   isGeminiInitialized,
 } from '../services/gemini';
 import { exerciseFormSchema, type ExerciseFormData } from '../schemas/forms';
-import type { Exercise, AIExerciseResponse } from '../types';
+import type { Exercise, AIExerciseResponse, ExerciseType } from '../types';
 
 const MUSCLE_GROUPS = [
   'All',
@@ -42,6 +42,33 @@ const MUSCLE_GROUPS = [
   'Core',
   'Glutes',
   'Full Body',
+];
+
+const EXERCISE_TYPES: {
+  value: ExerciseType;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: 'reps_weight',
+    label: 'Reps & Weight',
+    description: 'e.g., Bench Press, Squat',
+  },
+  {
+    value: 'reps_only',
+    label: 'Reps Only',
+    description: 'e.g., Pull-ups, Push-ups',
+  },
+  {
+    value: 'duration',
+    label: 'Duration',
+    description: 'e.g., Plank, Dead Hang',
+  },
+  {
+    value: 'duration_weight',
+    label: 'Duration & Weight',
+    description: 'e.g., Weighted Plank',
+  },
 ];
 
 // Generate YouTube search URL for exercise demo
@@ -97,10 +124,12 @@ export function ExerciseLibrary() {
       description: '',
       muscleGroups: '',
       equipment: '',
+      exerciseType: 'reps_weight',
     },
   });
 
   const formName = watch('name');
+  const formExerciseType = watch('exerciseType');
 
   useEffect(() => {
     fetchExercises();
@@ -125,6 +154,7 @@ export function ExerciseLibrary() {
       description: '',
       muscleGroups: '',
       equipment: '',
+      exerciseType: 'reps_weight',
     });
     setEditingExercise(null);
   };
@@ -137,6 +167,7 @@ export function ExerciseLibrary() {
         description: exercise.description || '',
         muscleGroups: exercise.muscle_groups || '',
         equipment: exercise.equipment || '',
+        exerciseType: exercise.exercise_type || 'reps_weight',
       });
     } else {
       resetForm();
@@ -169,6 +200,7 @@ export function ExerciseLibrary() {
       setValue('description', fullDescription);
       setValue('muscleGroups', details.muscle_groups.join(', '));
       setValue('equipment', details.equipment);
+      setValue('exerciseType', details.exercise_type);
     } catch (err) {
       console.error('Failed to generate exercise details:', err);
       alert('Failed to generate details. Please try again.');
@@ -185,6 +217,7 @@ export function ExerciseLibrary() {
           description: data.description || '',
           muscle_groups: data.muscleGroups || '',
           equipment: data.equipment || '',
+          exercise_type: data.exerciseType,
         });
       } else {
         await addExercise({
@@ -192,6 +225,7 @@ export function ExerciseLibrary() {
           description: data.description || '',
           muscle_groups: data.muscleGroups || '',
           equipment: data.equipment || '',
+          exercise_type: data.exerciseType,
           video_url: null,
           is_ai_generated: false,
         });
@@ -311,6 +345,7 @@ export function ExerciseLibrary() {
           description: fullDescription,
           muscle_groups: details.muscle_groups.join(', '),
           equipment: details.equipment,
+          exercise_type: details.exercise_type,
           video_url: null,
           is_ai_generated: true,
         };
@@ -430,7 +465,9 @@ export function ExerciseLibrary() {
                   >
                     <CardContent className="p-3 flex items-center justify-between">
                       <div className="flex-1 min-w-0">
-                        <p className="text-white font-medium">{exercise.name}</p>
+                        <p className="text-white font-medium">
+                          {exercise.name}
+                        </p>
                         <p className="text-slate-400 text-sm truncate">
                           {exercise.equipment || 'No equipment'}
                         </p>
@@ -549,6 +586,27 @@ export function ExerciseLibrary() {
             />
           </div>
 
+          <div>
+            <p className="text-slate-400 text-sm mb-2">Exercise Type</p>
+            <div className="grid grid-cols-2 gap-2">
+              {EXERCISE_TYPES.map((type) => (
+                <button
+                  key={type.value}
+                  type="button"
+                  onClick={() => setValue('exerciseType', type.value)}
+                  className={`p-3 rounded-lg border text-left transition-colors ${
+                    formExerciseType === type.value
+                      ? 'border-blue-500 bg-blue-500/10'
+                      : 'border-slate-600 hover:border-slate-500'
+                  }`}
+                >
+                  <p className="text-white text-sm font-medium">{type.label}</p>
+                  <p className="text-slate-400 text-xs">{type.description}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="flex gap-3 pt-2">
             <Button
               type="button"
@@ -580,6 +638,17 @@ export function ExerciseLibrary() {
       >
         {showDetailsModal && (
           <div className="space-y-4">
+            <div>
+              <p className="text-slate-400 text-sm">Exercise Type</p>
+              <p className="text-white">
+                {EXERCISE_TYPES.find(
+                  (t) =>
+                    t.value ===
+                    (showDetailsModal.exercise_type || 'reps_weight'),
+                )?.label || 'Reps & Weight'}
+              </p>
+            </div>
+
             {showDetailsModal.muscle_groups && (
               <div>
                 <p className="text-slate-400 text-sm">Muscle Groups</p>
@@ -738,7 +807,10 @@ export function ExerciseLibrary() {
                         <span className="text-slate-400 text-xs">Pending</span>
                       )}
                       {exercise.status === 'generating' && (
-                        <Loader2 size={16} className="text-blue-400 animate-spin" />
+                        <Loader2
+                          size={16}
+                          className="text-blue-400 animate-spin"
+                        />
                       )}
                       {exercise.status === 'ready' && (
                         <Check size={16} className="text-green-400" />
@@ -795,7 +867,10 @@ export function ExerciseLibrary() {
                     disabled={loading}
                   >
                     Save{' '}
-                    {batchExercises.filter((ex) => ex.status === 'ready').length}{' '}
+                    {
+                      batchExercises.filter((ex) => ex.status === 'ready')
+                        .length
+                    }{' '}
                     Exercises
                   </Button>
                 )}

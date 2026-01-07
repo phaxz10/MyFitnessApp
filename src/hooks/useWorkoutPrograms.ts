@@ -67,7 +67,7 @@ export function useWorkoutPrograms() {
             sessions.map(async (session) => {
               const exercisesResult = await db.query(
                 `SELECT pe.*, e.name as exercise_name, e.description as exercise_description, 
-                    e.muscle_groups, e.equipment
+                    e.muscle_groups, e.equipment, e.exercise_type
              FROM program_exercises pe
              JOIN exercises e ON pe.exercise_id = e.id
              WHERE pe.session_id = $1
@@ -124,7 +124,7 @@ export function useWorkoutPrograms() {
             sessions.map(async (session) => {
               const exercisesResult = await db.query(
                 `SELECT pe.*, e.name as exercise_name, e.description as exercise_description, 
-                    e.muscle_groups, e.equipment
+                    e.muscle_groups, e.equipment, e.exercise_type
              FROM program_exercises pe
              JOIN exercises e ON pe.exercise_id = e.id
              WHERE pe.session_id = $1
@@ -338,8 +338,8 @@ export function useWorkoutPrograms() {
       try {
         const db = await getDB();
         const result = await db.query(
-          `INSERT INTO program_exercises (session_id, exercise_id, target_sets, target_rep_min, target_rep_max, order_index, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+          `INSERT INTO program_exercises (session_id, exercise_id, target_sets, target_rep_min, target_rep_max, target_duration_seconds, order_index, superset_group_id, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING id`,
           [
             sessionId,
@@ -347,7 +347,9 @@ export function useWorkoutPrograms() {
             exercise.target_sets,
             exercise.target_rep_min,
             exercise.target_rep_max,
+            exercise.target_duration_seconds,
             exercise.order_index,
+            exercise.superset_group_id,
             exercise.notes,
           ],
         );

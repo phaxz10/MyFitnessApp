@@ -12,6 +12,10 @@ import {
   ChevronUp,
   Save,
   X,
+  Link,
+  Clock,
+  Dumbbell,
+  Timer,
 } from 'lucide-react';
 import {
   Card,
@@ -23,7 +27,7 @@ import {
 } from '../components/ui';
 import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
 import { useExercises } from '../hooks/useExercises';
-import type { Exercise } from '../types';
+import type { Exercise, ExerciseType } from '../types';
 
 const DAY_OPTIONS = [
   { value: '', label: 'Any Day' },
@@ -36,14 +40,32 @@ const DAY_OPTIONS = [
   { value: '6', label: 'Saturday' },
 ];
 
+const EXERCISE_TYPE_LABELS: Record<
+  ExerciseType,
+  { label: string; icon: typeof Dumbbell }
+> = {
+  reps_weight: { label: 'Reps & Weight', icon: Dumbbell },
+  reps_only: { label: 'Reps Only', icon: Dumbbell },
+  duration: { label: 'Duration', icon: Timer },
+  duration_weight: { label: 'Duration & Weight', icon: Timer },
+};
+
 // Form schema with nested arrays
 const programExerciseFormSchema = z.object({
   id: z.number().optional(),
   exerciseId: z.number(),
   exerciseName: z.string(),
+  exerciseType: z.enum([
+    'reps_weight',
+    'reps_only',
+    'duration',
+    'duration_weight',
+  ]),
   targetSets: z.number().min(1, 'At least 1 set required'),
-  targetRepMin: z.number().min(1, 'At least 1 rep required'),
-  targetRepMax: z.number().min(1, 'At least 1 rep required'),
+  targetRepMin: z.number().nullable(),
+  targetRepMax: z.number().nullable(),
+  targetDurationSeconds: z.number().nullable(),
+  supersetGroupId: z.string().nullable(),
   notes: z.string().optional(),
 });
 
@@ -63,6 +85,11 @@ const programFormSchema = z.object({
 
 type ProgramFormData = z.infer<typeof programFormSchema>;
 type ExerciseFormData = z.infer<typeof programExerciseFormSchema>;
+
+// Generate unique superset group ID
+function generateSupersetId(): string {
+  return `ss-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
 
 export function ProgramEditor() {
   const { id } = useParams();
@@ -86,6 +113,10 @@ export function ProgramEditor() {
   const [showAddExercise, setShowAddExercise] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showDiscardModal, setShowDiscardModal] = useState(false);
+  const [selectedForSuperset, setSelectedForSuperset] = useState<{
+    sessionIndex: number;
+    exerciseIndex: number;
+  } | null>(null);
 
   const {
     register,
@@ -102,37 +133,48 @@ export function ProgramEditor() {
     },
   });
 
-  const { fields: sessionFields, append: appendSession, remove: removeSession, update: updateSessionField } = useFieldArray({
+  const {
+    fields: sessionFields,
+    append: appendSession,
+    remove: removeSession,
+    update: updateSessionField,
+  } = useFieldArray({
     control,
     name: 'sessions',
   });
 
   const watchedSessions = useWatch({ control, name: 'sessions' });
 
-  const loadProgram = useCallback(async (programId: number) => {
-    const program = await getProgramById(programId);
-    if (program) {
-      reset({
-        name: program.name,
-        description: program.description || '',
-        sessions: program.sessions.map((session) => ({
-          id: session.id,
-          name: session.name,
-          dayOfWeek: session.day_of_week?.toString() ?? '',
-          isExpanded: true,
-          exercises: session.exercises.map((ex) => ({
-            id: ex.id,
-            exerciseId: ex.exercise_id,
-            exerciseName: ex.exercise_name,
-            targetSets: ex.target_sets,
-            targetRepMin: ex.target_rep_min,
-            targetRepMax: ex.target_rep_max,
-            notes: ex.notes || '',
+  const loadProgram = useCallback(
+    async (programId: number) => {
+      const program = await getProgramById(programId);
+      if (program) {
+        reset({
+          name: program.name,
+          description: program.description || '',
+          sessions: program.sessions.map((session) => ({
+            id: session.id,
+            name: session.name,
+            dayOfWeek: session.day_of_week?.toString() ?? '',
+            isExpanded: true,
+            exercises: session.exercises.map((ex) => ({
+              id: ex.id,
+              exerciseId: ex.exercise_id,
+              exerciseName: ex.exercise_name,
+              exerciseType: ex.exercise_type || 'reps_weight',
+              targetSets: ex.target_sets,
+              targetRepMin: ex.target_rep_min,
+              targetRepMax: ex.target_rep_max,
+              targetDurationSeconds: ex.target_duration_seconds,
+              supersetGroupId: ex.superset_group_id,
+              notes: ex.notes || '',
+            })),
           })),
-        })),
-      });
-    }
-  }, [getProgramById, reset]);
+        });
+      }
+    },
+    [getProgramById, reset],
+  );
 
   useEffect(() => {
     fetchExercises();
@@ -172,12 +214,19 @@ export function ProgramEditor() {
   const handleAddExercise = (sessionIndex: number, exercise: Exercise) => {
     const currentSession = watchedSessions[sessionIndex];
     if (currentSession) {
+      const isDuration =
+        exercise.exercise_type === 'duration' ||
+        exercise.exercise_type === 'duration_weight';
+
       const newExercise: ExerciseFormData = {
         exerciseId: exercise.id,
         exerciseName: exercise.name,
+        exerciseType: exercise.exercise_type || 'reps_weight',
         targetSets: 3,
-        targetRepMin: 8,
-        targetRepMax: 12,
+        targetRepMin: isDuration ? null : 8,
+        targetRepMax: isDuration ? null : 12,
+        targetDurationSeconds: isDuration ? 30 : null,
+        supersetGroupId: null,
         notes: '',
       };
 
@@ -190,14 +239,123 @@ export function ProgramEditor() {
     setSearchQuery('');
   };
 
-  const handleDeleteExercise = (sessionIndex: number, exerciseIndex: number) => {
+  const handleDeleteExercise = (
+    sessionIndex: number,
+    exerciseIndex: number,
+  ) => {
     const currentSession = watchedSessions[sessionIndex];
     if (currentSession) {
       updateSessionField(sessionIndex, {
         ...currentSession,
-        exercises: currentSession.exercises.filter((_, i) => i !== exerciseIndex),
+        exercises: currentSession.exercises.filter(
+          (_, i) => i !== exerciseIndex,
+        ),
       });
     }
+    // Clear superset selection if deleted exercise was selected
+    if (
+      selectedForSuperset?.sessionIndex === sessionIndex &&
+      selectedForSuperset?.exerciseIndex === exerciseIndex
+    ) {
+      setSelectedForSuperset(null);
+    }
+  };
+
+  const handleUpdateExercise = (
+    sessionIndex: number,
+    exerciseIndex: number,
+    updates: Partial<ExerciseFormData>,
+  ) => {
+    const currentSession = watchedSessions[sessionIndex];
+    if (currentSession) {
+      const updatedExercises = [...currentSession.exercises];
+      updatedExercises[exerciseIndex] = {
+        ...updatedExercises[exerciseIndex],
+        ...updates,
+      };
+      updateSessionField(sessionIndex, {
+        ...currentSession,
+        exercises: updatedExercises,
+      });
+    }
+  };
+
+  const handleCreateSuperset = (
+    sessionIndex: number,
+    exerciseIndex: number,
+  ) => {
+    if (selectedForSuperset === null) {
+      // First exercise selected
+      setSelectedForSuperset({ sessionIndex, exerciseIndex });
+    } else if (selectedForSuperset.sessionIndex === sessionIndex) {
+      // Second exercise selected in same session - create superset
+      const currentSession = watchedSessions[sessionIndex];
+      if (currentSession) {
+        const supersetId = generateSupersetId();
+        const updatedExercises = [...currentSession.exercises];
+        updatedExercises[selectedForSuperset.exerciseIndex] = {
+          ...updatedExercises[selectedForSuperset.exerciseIndex],
+          supersetGroupId: supersetId,
+        };
+        updatedExercises[exerciseIndex] = {
+          ...updatedExercises[exerciseIndex],
+          supersetGroupId: supersetId,
+        };
+        updateSessionField(sessionIndex, {
+          ...currentSession,
+          exercises: updatedExercises,
+        });
+      }
+      setSelectedForSuperset(null);
+    } else {
+      // Different session - reset and select new
+      setSelectedForSuperset({ sessionIndex, exerciseIndex });
+    }
+  };
+
+  const handleRemoveFromSuperset = (
+    sessionIndex: number,
+    exerciseIndex: number,
+  ) => {
+    handleUpdateExercise(sessionIndex, exerciseIndex, {
+      supersetGroupId: null,
+    });
+  };
+
+  // Group exercises by superset for visual display
+  const getExerciseGroups = (exercises: ExerciseFormData[]) => {
+    const groups: {
+      supersetId: string | null;
+      exercises: { exercise: ExerciseFormData; index: number }[];
+    }[] = [];
+    const processedIndices = new Set<number>();
+
+    exercises.forEach((exercise, index) => {
+      if (processedIndices.has(index)) return;
+
+      if (exercise.supersetGroupId) {
+        // Find all exercises in this superset
+        const supersetExercises = exercises
+          .map((ex, i) => ({ exercise: ex, index: i }))
+          .filter(
+            (item) =>
+              item.exercise.supersetGroupId === exercise.supersetGroupId,
+          );
+
+        for (const item of supersetExercises) {
+          processedIndices.add(item.index);
+        }
+        groups.push({
+          supersetId: exercise.supersetGroupId,
+          exercises: supersetExercises,
+        });
+      } else {
+        processedIndices.add(index);
+        groups.push({ supersetId: null, exercises: [{ exercise, index }] });
+      }
+    });
+
+    return groups;
   };
 
   const onSubmit = async (data: ProgramFormData) => {
@@ -236,7 +394,8 @@ export function ProgramEditor() {
         for (let i = 0; i < data.sessions.length; i++) {
           const session = data.sessions[i];
           let sessionId: number;
-          const dayOfWeek = session.dayOfWeek === '' ? null : parseInt(session.dayOfWeek);
+          const dayOfWeek =
+            session.dayOfWeek === '' ? null : parseInt(session.dayOfWeek);
 
           if (session.id) {
             await updateSession(session.id, {
@@ -269,8 +428,11 @@ export function ProgramEditor() {
               if (exercise.id) {
                 await updateProgramExercise(exercise.id, {
                   target_sets: exercise.targetSets,
-                  target_rep_min: exercise.targetRepMin,
-                  target_rep_max: exercise.targetRepMax,
+                  target_rep_min: exercise.targetRepMin ?? null,
+                  target_rep_max: exercise.targetRepMax ?? null,
+                  target_duration_seconds:
+                    exercise.targetDurationSeconds ?? null,
+                  superset_group_id: exercise.supersetGroupId ?? null,
                   order_index: j,
                   notes: exercise.notes || null,
                 });
@@ -278,8 +440,11 @@ export function ProgramEditor() {
                 await addProgramExercise(sessionId, {
                   exercise_id: exercise.exerciseId,
                   target_sets: exercise.targetSets,
-                  target_rep_min: exercise.targetRepMin,
-                  target_rep_max: exercise.targetRepMax,
+                  target_rep_min: exercise.targetRepMin ?? null,
+                  target_rep_max: exercise.targetRepMax ?? null,
+                  target_duration_seconds:
+                    exercise.targetDurationSeconds ?? null,
+                  superset_group_id: exercise.supersetGroupId ?? null,
                   order_index: j,
                   notes: exercise.notes || null,
                 });
@@ -298,8 +463,10 @@ export function ProgramEditor() {
               await addProgramExercise(sessionId, {
                 exercise_id: exercise.exerciseId,
                 target_sets: exercise.targetSets,
-                target_rep_min: exercise.targetRepMin,
-                target_rep_max: exercise.targetRepMax,
+                target_rep_min: exercise.targetRepMin ?? null,
+                target_rep_max: exercise.targetRepMax ?? null,
+                target_duration_seconds: exercise.targetDurationSeconds ?? null,
+                superset_group_id: exercise.supersetGroupId ?? null,
                 order_index: j,
                 notes: exercise.notes || null,
               });
@@ -317,7 +484,8 @@ export function ProgramEditor() {
         // Create sessions and exercises
         for (let i = 0; i < data.sessions.length; i++) {
           const session = data.sessions[i];
-          const dayOfWeek = session.dayOfWeek === '' ? null : parseInt(session.dayOfWeek);
+          const dayOfWeek =
+            session.dayOfWeek === '' ? null : parseInt(session.dayOfWeek);
           const sessionId = await addSession(programId, {
             name: session.name,
             day_of_week: dayOfWeek,
@@ -329,8 +497,10 @@ export function ProgramEditor() {
             await addProgramExercise(sessionId, {
               exercise_id: exercise.exerciseId,
               target_sets: exercise.targetSets,
-              target_rep_min: exercise.targetRepMin,
-              target_rep_max: exercise.targetRepMax,
+              target_rep_min: exercise.targetRepMin ?? null,
+              target_rep_max: exercise.targetRepMax ?? null,
+              target_duration_seconds: exercise.targetDurationSeconds ?? null,
+              superset_group_id: exercise.supersetGroupId ?? null,
               order_index: j,
               notes: exercise.notes || null,
             });
@@ -351,6 +521,163 @@ export function ProgramEditor() {
       ex.muscle_groups?.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
+  const renderExerciseCard = (
+    exercise: ExerciseFormData,
+    exerciseIndex: number,
+    sessionIndex: number,
+    sessionFieldId: string,
+    isInSuperset: boolean = false,
+  ) => {
+    const isDuration =
+      exercise.exerciseType === 'duration' ||
+      exercise.exerciseType === 'duration_weight';
+    const hasWeight =
+      exercise.exerciseType === 'reps_weight' ||
+      exercise.exerciseType === 'duration_weight';
+    const isSelectedForSuperset =
+      selectedForSuperset?.sessionIndex === sessionIndex &&
+      selectedForSuperset?.exerciseIndex === exerciseIndex;
+    const TypeIcon =
+      EXERCISE_TYPE_LABELS[exercise.exerciseType]?.icon || Dumbbell;
+
+    return (
+      <div
+        key={exercise.id ?? `${sessionFieldId}-ex-${exerciseIndex}`}
+        className={`p-3 rounded-lg transition-all ${
+          isSelectedForSuperset
+            ? 'bg-blue-600/20 border-2 border-blue-500'
+            : 'bg-slate-700/50 border border-transparent'
+        }`}
+      >
+        {/* Exercise Header - Always visible */}
+        <div className="flex items-center gap-2 mb-2">
+          <GripVertical size={16} className="text-slate-500 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="text-white font-medium truncate">
+                {exercise.exerciseName}
+              </p>
+              <TypeIcon size={14} className="text-slate-400 flex-shrink-0" />
+            </div>
+            <p className="text-slate-400 text-xs">
+              {EXERCISE_TYPE_LABELS[exercise.exerciseType]?.label}
+            </p>
+          </div>
+
+          {/* Superset Button */}
+          {!isInSuperset && (
+            <button
+              type="button"
+              onClick={() => handleCreateSuperset(sessionIndex, exerciseIndex)}
+              className={`p-1.5 rounded transition-colors ${
+                isSelectedForSuperset
+                  ? 'bg-blue-500 text-white'
+                  : 'text-slate-400 hover:text-blue-400 hover:bg-slate-600'
+              }`}
+              title={
+                isSelectedForSuperset
+                  ? 'Click another exercise to link'
+                  : 'Create superset'
+              }
+            >
+              <Link size={14} />
+            </button>
+          )}
+
+          {isInSuperset && (
+            <button
+              type="button"
+              onClick={() =>
+                handleRemoveFromSuperset(sessionIndex, exerciseIndex)
+              }
+              className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-600 rounded transition-colors"
+              title="Remove from superset"
+            >
+              <X size={14} />
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => handleDeleteExercise(sessionIndex, exerciseIndex)}
+            className="p-1.5 text-red-400 hover:text-red-300 hover:bg-slate-600 rounded transition-colors"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+
+        {/* Exercise Configuration */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Sets */}
+          <div className="flex items-center gap-1">
+            <span className="text-slate-400 text-xs">Sets:</span>
+            <Input
+              type="number"
+              {...register(
+                `sessions.${sessionIndex}.exercises.${exerciseIndex}.targetSets`,
+                { valueAsNumber: true },
+              )}
+              className="w-14 text-center p-1 h-7 text-sm"
+              min={1}
+            />
+          </div>
+
+          {/* Reps (for non-duration exercises) */}
+          {!isDuration && (
+            <div className="flex items-center gap-1">
+              <span className="text-slate-400 text-xs">Reps:</span>
+              <Input
+                type="number"
+                {...register(
+                  `sessions.${sessionIndex}.exercises.${exerciseIndex}.targetRepMin`,
+                  { valueAsNumber: true },
+                )}
+                className="w-12 text-center p-1 h-7 text-sm"
+                min={1}
+              />
+              <span className="text-slate-400 text-xs">-</span>
+              <Input
+                type="number"
+                {...register(
+                  `sessions.${sessionIndex}.exercises.${exerciseIndex}.targetRepMax`,
+                  { valueAsNumber: true },
+                )}
+                className="w-12 text-center p-1 h-7 text-sm"
+                min={1}
+              />
+            </div>
+          )}
+
+          {/* Duration (for duration exercises) */}
+          {isDuration && (
+            <div className="flex items-center gap-1">
+              <Clock size={14} className="text-slate-400" />
+              <Input
+                type="number"
+                {...register(
+                  `sessions.${sessionIndex}.exercises.${exerciseIndex}.targetDurationSeconds`,
+                  { valueAsNumber: true },
+                )}
+                className="w-16 text-center p-1 h-7 text-sm"
+                min={1}
+                placeholder="sec"
+              />
+              <span className="text-slate-400 text-xs">sec</span>
+            </div>
+          )}
+
+          {/* Weight indicator for weight-based exercises */}
+          {hasWeight && (
+            <div className="flex items-center gap-1 text-slate-400 text-xs">
+              <Dumbbell size={12} />
+              <span>+ weight</span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="p-4 pb-24">
       {/* Header */}
@@ -367,12 +694,25 @@ export function ProgramEditor() {
         </h1>
       </div>
 
+      {/* Superset Selection Hint */}
+      {selectedForSuperset !== null && (
+        <div className="mb-4 p-3 bg-blue-600/20 border border-blue-500 rounded-lg">
+          <p className="text-blue-300 text-sm">
+            Click another exercise in this session to create a superset, or
+            click the same exercise to cancel.
+          </p>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit(onSubmit)}>
         {/* Program Info */}
         <Card className="mb-4">
           <CardContent className="p-4 space-y-4">
             <div>
-              <label htmlFor="programName" className="block text-slate-400 text-sm mb-1">
+              <label
+                htmlFor="programName"
+                className="block text-slate-400 text-sm mb-1"
+              >
                 Program Name
               </label>
               <Input
@@ -383,7 +723,10 @@ export function ProgramEditor() {
               />
             </div>
             <div>
-              <label htmlFor="programDescription" className="block text-slate-400 text-sm mb-1">
+              <label
+                htmlFor="programDescription"
+                className="block text-slate-400 text-sm mb-1"
+              >
                 Description (optional)
               </label>
               <TextArea
@@ -419,7 +762,10 @@ export function ProgramEditor() {
             <div className="space-y-3">
               {sessionFields.map((sessionField, sessionIndex) => {
                 const currentSession = watchedSessions[sessionIndex];
-                
+                const exerciseGroups = currentSession
+                  ? getExerciseGroups(currentSession.exercises)
+                  : [];
+
                 return (
                   <Card key={sessionField.id}>
                     <CardContent className="p-4">
@@ -464,61 +810,50 @@ export function ProgramEditor() {
                       {/* Exercises */}
                       {currentSession?.isExpanded && (
                         <div className="space-y-2 ml-6">
-                          {currentSession.exercises.length === 0 ? (
+                          {exerciseGroups.length === 0 ? (
                             <p className="text-slate-500 text-sm py-2">
                               No exercises added
                             </p>
                           ) : (
-                            currentSession.exercises.map((exercise, exerciseIndex) => (
-                              <div
-                                key={exercise.id ?? `${sessionField.id}-ex-${exerciseIndex}`}
-                                className="flex items-center gap-2 p-2 bg-slate-700/50 rounded-lg"
-                              >
-                                <GripVertical
-                                  size={16}
-                                  className="text-slate-500"
-                                />
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-white text-sm truncate">
-                                    {exercise.exerciseName}
-                                  </p>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <Input
-                                    type="number"
-                                    {...register(`sessions.${sessionIndex}.exercises.${exerciseIndex}.targetSets`, { valueAsNumber: true })}
-                                    className="w-12 text-center p-1 h-8 text-sm"
-                                    min={1}
-                                  />
-                                  <span className="text-slate-400 text-sm">×</span>
-                                  <Input
-                                    type="number"
-                                    {...register(`sessions.${sessionIndex}.exercises.${exerciseIndex}.targetRepMin`, { valueAsNumber: true })}
-                                    className="w-12 text-center p-1 h-8 text-sm"
-                                    min={1}
-                                  />
-                                  <span className="text-slate-400 text-sm">-</span>
-                                  <Input
-                                    type="number"
-                                    {...register(`sessions.${sessionIndex}.exercises.${exerciseIndex}.targetRepMax`, { valueAsNumber: true })}
-                                    className="w-12 text-center p-1 h-8 text-sm"
-                                    min={1}
-                                  />
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleDeleteExercise(
-                                      sessionIndex,
-                                      exerciseIndex,
-                                    )
-                                  }
-                                  className="p-1 text-red-400 hover:text-red-300"
+                            exerciseGroups.map((group) =>
+                              group.supersetId ? (
+                                // Superset group
+                                <div
+                                  key={group.supersetId}
+                                  className="border-l-4 border-purple-500 pl-3 space-y-2"
                                 >
-                                  <X size={16} />
-                                </button>
-                              </div>
-                            ))
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <Link
+                                      size={14}
+                                      className="text-purple-400"
+                                    />
+                                    <span className="text-purple-400 text-xs font-medium uppercase">
+                                      Superset
+                                    </span>
+                                  </div>
+                                  {group.exercises.map(({ exercise, index }) =>
+                                    renderExerciseCard(
+                                      exercise,
+                                      index,
+                                      sessionIndex,
+                                      sessionField.id,
+                                      true,
+                                    ),
+                                  )}
+                                </div>
+                              ) : (
+                                // Single exercise
+                                group.exercises.map(({ exercise, index }) =>
+                                  renderExerciseCard(
+                                    exercise,
+                                    index,
+                                    sessionIndex,
+                                    sessionField.id,
+                                    false,
+                                  ),
+                                )
+                              ),
+                            )
                           )}
 
                           <button
@@ -584,24 +919,43 @@ export function ProgramEditor() {
               No exercises found. Add some in the Exercise Library.
             </p>
           ) : (
-            filteredExercises.map((exercise) => (
-              <button
-                type="button"
-                key={exercise.id}
-                onClick={() =>
-                  showAddExercise !== null &&
-                  handleAddExercise(showAddExercise, exercise)
-                }
-                className="w-full p-3 bg-slate-700 rounded-lg text-left hover:bg-slate-600 transition-colors"
-              >
-                <p className="text-white font-medium">{exercise.name}</p>
-                {exercise.muscle_groups && (
-                  <p className="text-slate-400 text-sm">
-                    {exercise.muscle_groups}
-                  </p>
-                )}
-              </button>
-            ))
+            filteredExercises.map((exercise) => {
+              const TypeIcon =
+                EXERCISE_TYPE_LABELS[exercise.exercise_type || 'reps_weight']
+                  ?.icon || Dumbbell;
+              return (
+                <button
+                  type="button"
+                  key={exercise.id}
+                  onClick={() =>
+                    showAddExercise !== null &&
+                    handleAddExercise(showAddExercise, exercise)
+                  }
+                  className="w-full p-3 bg-slate-700 rounded-lg text-left hover:bg-slate-600 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <p className="text-white font-medium flex-1">
+                      {exercise.name}
+                    </p>
+                    <TypeIcon size={16} className="text-slate-400" />
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    {exercise.muscle_groups && (
+                      <p className="text-slate-400 text-sm">
+                        {exercise.muscle_groups}
+                      </p>
+                    )}
+                    <span className="text-slate-500 text-xs">
+                      {
+                        EXERCISE_TYPE_LABELS[
+                          exercise.exercise_type || 'reps_weight'
+                        ]?.label
+                      }
+                    </span>
+                  </div>
+                </button>
+              );
+            })
           )}
         </div>
 

@@ -885,12 +885,8 @@ export function ProgramEditor() {
         </div>
 
         {/* Save Button */}
-        <div className="fixed bottom-20 left-0 right-0 p-4 bg-gradient-to-t from-slate-900 to-transparent">
-          <Button
-            type="submit"
-            className="w-full max-w-lg mx-auto block"
-            disabled={loading}
-          >
+        <div className="mt-6 mb-24 max-w-lg mx-auto">
+          <Button type="submit" className="w-full" disabled={loading}>
             <Save size={18} className="mr-2" />
             {isEditing ? 'Save Changes' : 'Create Program'}
           </Button>

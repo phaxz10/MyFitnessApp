@@ -117,6 +117,19 @@ Return JSON format only, no markdown code blocks:
   return JSON.parse(cleanedResponse) as AIFoodAnalysisResponse;
 }
 
+// Valid muscle group categories for filtering
+const MUSCLE_GROUP_CATEGORIES = [
+  'Chest',
+  'Back',
+  'Shoulders',
+  'Biceps',
+  'Triceps',
+  'Legs',
+  'Core',
+  'Glutes',
+  'Full Body',
+] as const;
+
 // Generate exercise details
 export async function generateExerciseDetails(
   exerciseName: string,
@@ -129,11 +142,16 @@ export async function generateExerciseDetails(
 
 Provide detailed, actionable information that helps someone perform this exercise safely and effectively.
 
+IMPORTANT: For muscle_groups, you MUST ONLY use values from this list: ${MUSCLE_GROUP_CATEGORIES.join(', ')}
+- Map anatomical terms to these categories (e.g., "Pectoralis Major" -> "Chest", "Latissimus Dorsi" -> "Back", "Quadriceps/Hamstrings" -> "Legs", "Deltoids" -> "Shoulders", "Abdominals/Obliques" -> "Core", "Gluteus Maximus" -> "Glutes")
+- List primary muscle group first
+- For compound movements targeting many areas, you can include "Full Body"
+
 Return JSON format only, no markdown code blocks:
 {
   "name": "standardized exercise name",
   "description": "A comprehensive step-by-step guide on how to perform this exercise. Include: starting position, movement execution (concentric and eccentric phases), and end position. Be specific about body positioning, grip, stance, and range of motion.",
-  "muscle_groups": ["primary muscle group", "secondary muscle groups..."],
+  "muscle_groups": ["Primary category", "Secondary category"],
   "equipment": "required equipment (or 'Bodyweight' if none)",
   "tips": [
     "Form cue or technique tip",
@@ -147,7 +165,6 @@ Return JSON format only, no markdown code blocks:
 Guidelines:
 - Description should be 3-5 sentences covering the full movement pattern
 - Include 4-6 practical tips covering form, breathing, safety, and common errors
-- Muscle groups should list primary muscle first, then secondary/stabilizers
 - Be specific and actionable - avoid vague instructions`;
 
   const result = await model.generateContent(prompt);

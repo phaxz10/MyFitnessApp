@@ -13,6 +13,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { Card, CardContent, Button, Input, Select } from '../components/ui';
+import { ExportModal } from '../components/settings/ExportModal';
 import { useProfile } from '../hooks/useProfile';
 import { useAppStore } from '../hooks/useAppStore';
 import { initGemini, calculateTargets } from '../services/gemini';
@@ -21,6 +22,7 @@ import {
   importData,
   downloadBackup,
   readBackupFile,
+  type ExportOptions,
 } from '../services/backup';
 import { resetDatabase } from '../services/db';
 import {
@@ -59,6 +61,7 @@ export function Settings() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   // Profile form
   const profileForm = useForm<ProfileFormData>({
@@ -143,12 +146,7 @@ export function Settings() {
     setError(null);
     try {
       await updateProfile({
-        goal: data.goal as
-          | 'bulk'
-          | 'lean_bulk'
-          | 'recomp'
-          | 'cut'
-          | 'maintain',
+        goal: data.goal as 'bulk' | 'lean_bulk' | 'recomp' | 'cut' | 'maintain',
         target_rate_kg_per_week: parseFloat(data.targetRate),
         calorie_target: parseInt(data.calories),
         protein_target_g: parseInt(data.protein),
@@ -223,10 +221,10 @@ export function Settings() {
     }
   };
 
-  const handleExport = async () => {
+  const handleExport = async (options: ExportOptions) => {
     setIsLoading(true);
     try {
-      const data = await exportData();
+      const data = await exportData(options);
       downloadBackup(data);
       setSuccess('Data exported successfully');
     } catch (err) {
@@ -492,7 +490,7 @@ export function Settings() {
 
           <Button
             variant="secondary"
-            onClick={handleExport}
+            onClick={() => setShowExportModal(true)}
             className="w-full justify-start"
           >
             <Download size={18} className="mr-2" />
@@ -528,6 +526,14 @@ export function Settings() {
         <p>MyPersonalFitness v0.0.1</p>
         <p>Offline-first PWA</p>
       </div>
+
+      {/* Export Modal */}
+      <ExportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        onExport={handleExport}
+        isLoading={isLoading}
+      />
     </div>
   );
 }

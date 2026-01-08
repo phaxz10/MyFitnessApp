@@ -131,14 +131,21 @@ export function useWorkoutLogs() {
       setError(null);
       try {
         const db = await getDB();
-        const now = new Date().toISOString();
-        const today = now.split('T')[0];
+        const now = new Date();
+        // Format as local ISO string without timezone suffix
+        // This ensures the time stored matches the user's local time
+        const localISOString = new Date(
+          now.getTime() - now.getTimezoneOffset() * 60000,
+        )
+          .toISOString()
+          .slice(0, -1); // Remove the 'Z' suffix
+        const today = localISOString.split('T')[0];
 
         const result = await db.query(
           `INSERT INTO workout_logs (program_id, session_id, date, started_at)
          VALUES ($1, $2, $3, $4)
          RETURNING *`,
-          [programId, sessionId, today, now],
+          [programId, sessionId, today, localISOString],
         );
         const workout = (result.rows as WorkoutLog[])[0];
         setActiveWorkout(workout);
@@ -162,11 +169,17 @@ export function useWorkoutLogs() {
       setError(null);
       try {
         const db = await getDB();
-        const now = new Date().toISOString();
+        // Format as local ISO string without timezone suffix
+        const now = new Date();
+        const localISOString = new Date(
+          now.getTime() - now.getTimezoneOffset() * 60000,
+        )
+          .toISOString()
+          .slice(0, -1);
 
         await db.query(
           `UPDATE workout_logs SET ended_at = $1, notes = $2 WHERE id = $3`,
-          [now, notes || null, workoutId],
+          [localISOString, notes || null, workoutId],
         );
         setActiveWorkout(null);
         setActiveWorkoutSets([]);
@@ -425,7 +438,11 @@ export function useWorkoutLogs() {
     try {
       const db = await getDB();
       // Find any workout that was started today and not ended
-      const today = new Date().toISOString().split('T')[0];
+      // Use local date to match how we store dates
+      const now = new Date();
+      const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+        .toISOString()
+        .split('T')[0];
       const result = await db.query(
         `SELECT * FROM workout_logs 
          WHERE date = $1 AND ended_at IS NULL

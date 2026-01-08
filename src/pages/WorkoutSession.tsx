@@ -30,6 +30,7 @@ import { RestTimer } from '../components/workout';
 import { useWorkoutLogs } from '../hooks/useWorkoutLogs';
 import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
 import { useExercises } from '../hooks/useExercises';
+import { parseLocalTimestamp } from '../utils/date';
 import {
   workoutNotesSchema,
   type WorkoutNotesFormData,
@@ -326,7 +327,7 @@ export function WorkoutSession() {
   useEffect(() => {
     if (!activeWorkout) return;
 
-    const startTime = new Date(activeWorkout.started_at).getTime();
+    const startTime = parseLocalTimestamp(activeWorkout.started_at).getTime();
 
     const interval = setInterval(() => {
       const now = Date.now();

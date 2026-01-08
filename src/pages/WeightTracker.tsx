@@ -14,7 +14,12 @@ import {
 import { Card, CardContent, Button, Modal, Input } from '../components/ui';
 import { useWeight } from '../hooks/useWeight';
 import { useProfile } from '../hooks/useProfile';
-import { formatDate, formatShortDate, formatDisplayDate } from '../utils/date';
+import {
+  formatDate,
+  formatShortDate,
+  formatDisplayDate,
+  getDaysAgo,
+} from '../utils/date';
 import {
   calculateBodyFatPercentage,
   calculateWeeklyWeightChange,
@@ -93,13 +98,10 @@ export function WeightTracker() {
   const getFilteredLogs = () => {
     if (timeRange === 'all') return [...logs].reverse();
 
-    const now = new Date();
     const daysMap = { '7d': 7, '30d': 30, '90d': 90 };
-    const cutoff = new Date(
-      now.getTime() - daysMap[timeRange] * 24 * 60 * 60 * 1000,
-    );
+    const cutoffDate = getDaysAgo(daysMap[timeRange]);
 
-    return logs.filter((log) => new Date(log.date) >= cutoff).reverse();
+    return logs.filter((log) => formatDate(log.date) >= cutoffDate).reverse();
   };
 
   const filteredLogs = getFilteredLogs();

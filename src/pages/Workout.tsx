@@ -18,6 +18,7 @@ import {
   useWorkoutLogs,
   type WorkoutLogWithSets,
 } from '../hooks/useWorkoutLogs';
+import { isToday, isYesterday, parseLocalTimestamp } from '../utils/date';
 import type { WorkoutProgram, ProgramSessionWithExercises } from '../types';
 
 export function Workout() {
@@ -88,8 +89,8 @@ export function Workout() {
   };
 
   const formatDuration = (startedAt: string, endedAt: string | null) => {
-    const start = new Date(startedAt);
-    const end = endedAt ? new Date(endedAt) : new Date();
+    const start = parseLocalTimestamp(startedAt);
+    const end = endedAt ? parseLocalTimestamp(endedAt) : new Date();
     const diffMs = end.getTime() - start.getTime();
     const mins = Math.floor(diffMs / 60000);
     if (mins < 60) return `${mins} min`;
@@ -99,14 +100,10 @@ export function Workout() {
   };
 
   const formatDate = (dateStr: string) => {
+    if (isToday(dateStr)) return 'Today';
+    if (isYesterday(dateStr)) return 'Yesterday';
+
     const date = new Date(dateStr);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    if (date.toDateString() === today.toDateString()) return 'Today';
-    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-
     return date.toLocaleDateString('en-US', {
       weekday: 'short',
       month: 'short',

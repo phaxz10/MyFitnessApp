@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { getDB } from '../services/db';
+import { getLocalTimestamp, getLocalDateString } from '../utils/date';
 import type { WorkoutLog, WorkoutSet, WorkoutSetWithExercise } from '../types';
 
 export interface WorkoutLogWithSets extends WorkoutLog {
@@ -131,15 +132,8 @@ export function useWorkoutLogs() {
       setError(null);
       try {
         const db = await getDB();
-        const now = new Date();
-        // Format as local ISO string without timezone suffix
-        // This ensures the time stored matches the user's local time
-        const localISOString = new Date(
-          now.getTime() - now.getTimezoneOffset() * 60000,
-        )
-          .toISOString()
-          .slice(0, -1); // Remove the 'Z' suffix
-        const today = localISOString.split('T')[0];
+        const localISOString = getLocalTimestamp();
+        const today = getLocalDateString();
 
         const result = await db.query(
           `INSERT INTO workout_logs (program_id, session_id, date, started_at)
@@ -169,13 +163,7 @@ export function useWorkoutLogs() {
       setError(null);
       try {
         const db = await getDB();
-        // Format as local ISO string without timezone suffix
-        const now = new Date();
-        const localISOString = new Date(
-          now.getTime() - now.getTimezoneOffset() * 60000,
-        )
-          .toISOString()
-          .slice(0, -1);
+        const localISOString = getLocalTimestamp();
 
         await db.query(
           `UPDATE workout_logs SET ended_at = $1, notes = $2 WHERE id = $3`,
@@ -438,11 +426,7 @@ export function useWorkoutLogs() {
     try {
       const db = await getDB();
       // Find any workout that was started today and not ended
-      // Use local date to match how we store dates
-      const now = new Date();
-      const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
-        .toISOString()
-        .split('T')[0];
+      const today = getLocalDateString();
       const result = await db.query(
         `SELECT * FROM workout_logs 
          WHERE date = $1 AND ended_at IS NULL

@@ -1,4 +1,5 @@
 import { getDB } from './db';
+import { getLocalDateString } from '../utils/date';
 
 interface BackupData {
   version: string;
@@ -301,7 +302,7 @@ export async function importData(jsonString: string): Promise<void> {
 }
 
 export function downloadBackup(jsonString: string): void {
-  const date = new Date().toISOString().split('T')[0];
+  const date = getLocalDateString();
   const filename = `mypersonalfitness-backup-${date}.json`;
 
   const blob = new Blob([jsonString], { type: 'application/json' });

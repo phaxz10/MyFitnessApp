@@ -94,7 +94,7 @@ export function isOnTrackWithGoal(
 
 // Calculate weekly weight change
 export function calculateWeeklyWeightChange(
-  weights: { date: string; weight_kg: number }[],
+  weights: { date: string | Date; weight_kg: number }[],
 ): number {
   if (weights.length < 2) return 0;
 
@@ -105,17 +105,54 @@ export function calculateWeeklyWeightChange(
 
   const firstWeight = sortedWeights[0].weight_kg;
   const lastWeight = sortedWeights[sortedWeights.length - 1].weight_kg;
-  const daysDiff = Math.ceil(
-    (new Date(sortedWeights[sortedWeights.length - 1].date).getTime() -
-      new Date(sortedWeights[0].date).getTime()) /
-      (1000 * 60 * 60 * 24),
+
+  // Calculate days difference more accurately
+  const firstDate = new Date(sortedWeights[0].date);
+  const lastDate = new Date(sortedWeights[sortedWeights.length - 1].date);
+
+  // Reset time to midnight to get accurate day difference
+  firstDate.setHours(0, 0, 0, 0);
+  lastDate.setHours(0, 0, 0, 0);
+
+  const daysDiff = Math.round(
+    (lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24),
   );
 
-  if (daysDiff === 0) return 0;
+  // Need at least 3 days of data for a meaningful weekly projection
+  // Otherwise, daily fluctuations get amplified unrealistically
+  if (daysDiff < 3) {
+    // For less than 3 days, just return the raw daily change (not extrapolated)
+    // This prevents showing misleading -4.9 kg/week from a 0.7kg daily fluctuation
+    const totalChange = lastWeight - firstWeight;
+    return Math.round(totalChange * 100) / 100;
+  }
 
   // Calculate weekly rate
   const totalChange = lastWeight - firstWeight;
   const weeklyChange = (totalChange / daysDiff) * 7;
 
   return Math.round(weeklyChange * 100) / 100;
+}
+
+// Check if we have enough data for a meaningful weekly projection
+export function hasEnoughDataForWeeklyTrend(
+  weights: { date: string | Date; weight_kg: number }[],
+): boolean {
+  if (weights.length < 2) return false;
+
+  const sortedWeights = [...weights].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+  );
+
+  const firstDate = new Date(sortedWeights[0].date);
+  const lastDate = new Date(sortedWeights[sortedWeights.length - 1].date);
+
+  firstDate.setHours(0, 0, 0, 0);
+  lastDate.setHours(0, 0, 0, 0);
+
+  const daysDiff = Math.round(
+    (lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24),
+  );
+
+  return daysDiff >= 3;
 }

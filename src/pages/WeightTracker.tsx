@@ -18,6 +18,7 @@ import { formatDate, formatShortDate, formatDisplayDate } from '../utils/date';
 import {
   calculateBodyFatPercentage,
   calculateWeeklyWeightChange,
+  hasEnoughDataForWeeklyTrend,
   isOnTrackWithGoal,
   formatWeight,
 } from '../utils/calculations';
@@ -104,6 +105,7 @@ export function WeightTracker() {
   const filteredLogs = getFilteredLogs();
   const latestLog = logs.length > 0 ? logs[0] : null;
   const weeklyChange = calculateWeeklyWeightChange(filteredLogs);
+  const hasEnoughData = hasEnoughDataForWeeklyTrend(filteredLogs);
   const onTrack = profile
     ? isOnTrackWithGoal(profile.goal, weeklyChange)
     : true;
@@ -203,7 +205,9 @@ export function WeightTracker() {
         <CardContent className="p-4">
           <div className="flex justify-between items-center">
             <div>
-              <p className="text-slate-400 text-sm">Weekly Change</p>
+              <p className="text-slate-400 text-sm">
+                {hasEnoughData ? 'Weekly Change' : 'Recent Change'}
+              </p>
               <div className="flex items-center gap-2">
                 {getTrendIcon()}
                 <span
@@ -216,19 +220,26 @@ export function WeightTracker() {
                   }`}
                 >
                   {weeklyChange > 0 ? '+' : ''}
-                  {formatWeight(weeklyChange)} kg/week
+                  {formatWeight(weeklyChange)} kg{hasEnoughData ? '/week' : ''}
                 </span>
               </div>
+              {!hasEnoughData && filteredLogs.length > 1 && (
+                <p className="text-slate-500 text-xs mt-1">
+                  Log for 3+ days for weekly trend
+                </p>
+              )}
             </div>
-            <div
-              className={`px-3 py-1 rounded-full text-sm font-medium ${
-                onTrack
-                  ? 'bg-green-500/20 text-green-400'
-                  : 'bg-red-500/20 text-red-400'
-              }`}
-            >
-              {onTrack ? 'On Track' : 'Off Track'}
-            </div>
+            {hasEnoughData && (
+              <div
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  onTrack
+                    ? 'bg-green-500/20 text-green-400'
+                    : 'bg-red-500/20 text-red-400'
+                }`}
+              >
+                {onTrack ? 'On Track' : 'Off Track'}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

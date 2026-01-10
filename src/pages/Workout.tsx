@@ -11,8 +11,10 @@ import {
   Edit,
   CheckCircle2,
   Clock,
+  Sparkles,
 } from 'lucide-react';
 import { Card, CardContent, Button, Modal } from '../components/ui';
+import { ProgramGeneratorWizard } from '../components/program-generator';
 import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
 import {
   useWorkoutLogs,
@@ -38,6 +40,8 @@ export function Workout() {
   const [showDeleteModal, setShowDeleteModal] = useState<WorkoutProgram | null>(
     null,
   );
+  const [showNewProgramOptions, setShowNewProgramOptions] = useState(false);
+  const [showAIGenerator, setShowAIGenerator] = useState(false);
   const [todaySession, setTodaySession] =
     useState<ProgramSessionWithExercises | null>(null);
 
@@ -115,10 +119,51 @@ export function Workout() {
     <div className="p-4 pb-20">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-white">Workout</h1>
-        <Button onClick={() => navigate('/workout/program/new')}>
-          <Plus size={18} className="mr-1" />
-          New Program
-        </Button>
+        <div className="relative">
+          <Button
+            onClick={() => setShowNewProgramOptions(!showNewProgramOptions)}
+          >
+            <Plus size={18} className="mr-1" />
+            New Program
+          </Button>
+
+          {showNewProgramOptions && (
+            <div className="absolute right-0 top-full mt-1 bg-slate-700 rounded-lg shadow-lg z-20 overflow-hidden min-w-[200px]">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNewProgramOptions(false);
+                  navigate('/workout/program/new');
+                }}
+                className="w-full px-4 py-3 text-left text-white hover:bg-slate-600 flex items-center gap-3"
+              >
+                <Plus size={18} />
+                <div>
+                  <div className="font-medium">Create Manually</div>
+                  <div className="text-slate-400 text-xs">
+                    Build your own program
+                  </div>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNewProgramOptions(false);
+                  setShowAIGenerator(true);
+                }}
+                className="w-full px-4 py-3 text-left text-white hover:bg-slate-600 flex items-center gap-3 border-t border-slate-600"
+              >
+                <Sparkles size={18} className="text-purple-400" />
+                <div>
+                  <div className="font-medium">Generate with AI</div>
+                  <div className="text-slate-400 text-xs">
+                    Let AI create a program for you
+                  </div>
+                </div>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Resume Active Workout Banner */}
@@ -255,8 +300,9 @@ export function Workout() {
               >
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
-                    <div
-                      className="flex-1 cursor-pointer"
+                    <button
+                      type="button"
+                      className="flex-1 cursor-pointer text-left"
                       onClick={() => navigate(`/workout/program/${program.id}`)}
                     >
                       <div className="flex items-center gap-2">
@@ -272,7 +318,7 @@ export function Workout() {
                       <p className="text-slate-400 text-sm">
                         {program.sessions_per_week}x per week
                       </p>
-                    </div>
+                    </button>
 
                     <div className="flex items-center gap-2">
                       <ChevronRight size={20} className="text-slate-500" />
@@ -409,11 +455,25 @@ export function Workout() {
         </div>
       </Modal>
 
-      {/* Click outside to close menu */}
-      {showProgramMenu && (
-        <div
-          className="fixed inset-0 z-0"
-          onClick={() => setShowProgramMenu(null)}
+      {/* AI Program Generator Wizard */}
+      <ProgramGeneratorWizard
+        isOpen={showAIGenerator}
+        onClose={() => {
+          setShowAIGenerator(false);
+          fetchPrograms();
+        }}
+      />
+
+      {/* Click outside to close menus */}
+      {(showProgramMenu || showNewProgramOptions) && (
+        <button
+          type="button"
+          className="fixed inset-0 z-10 w-full h-full cursor-default"
+          onClick={() => {
+            setShowProgramMenu(null);
+            setShowNewProgramOptions(false);
+          }}
+          aria-label="Close menu"
         />
       )}
     </div>

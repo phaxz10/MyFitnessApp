@@ -298,6 +298,79 @@ export interface WeeklyReview {
   created_at: string;
 }
 
+// AI Program Generator Types
+export type EquipmentType =
+  | 'Barbell'
+  | 'Dumbbell'
+  | 'Cable Machine'
+  | 'Smith Machine'
+  | 'Kettlebell'
+  | 'Pull-up Bar'
+  | 'Dip Station'
+  | 'Bench'
+  | 'Squat Rack'
+  | 'Leg Press'
+  | 'Leg Curl Machine'
+  | 'Leg Extension Machine'
+  | 'Lat Pulldown Machine'
+  | 'Chest Press Machine'
+  | 'Shoulder Press Machine'
+  | 'Rowing Machine'
+  | 'EZ Curl Bar'
+  | 'Trap Bar'
+  | 'Medicine Ball'
+  | 'Stability Ball'
+  | 'TRX / Suspension Trainer'
+  | 'Battle Ropes';
+
+// These are always available regardless of user selection
+export type AlwaysAvailableEquipment = 'Bodyweight' | 'Resistance Bands';
+
+export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced';
+
+export interface AIProgramGeneratorInput {
+  trainingDaysPerWeek: number;
+  sessionDurationMinutes: number;
+  availableEquipment: EquipmentType[];
+  goal: UserProfile['goal'];
+  experienceLevel: ExperienceLevel;
+  focusAreas?: string[]; // e.g., ["Chest", "Back"] for emphasis
+  injuries?: string; // free text describing any limitations
+  preferredTrainingSplit?:
+    | 'full_body'
+    | 'upper_lower'
+    | 'push_pull_legs'
+    | 'bro_split'
+    | 'auto';
+}
+
+export interface AIGeneratedExercise {
+  name: string;
+  targetSets: number;
+  targetRepMin: number;
+  targetRepMax: number;
+  targetDurationSeconds?: number; // for duration-based exercises
+  notes?: string;
+  supersetWith?: string; // name of exercise to superset with
+}
+
+export interface AIGeneratedSession {
+  name: string;
+  dayOfWeek: number | null; // 0=Sunday, 1=Monday, etc. null if flexible
+  exercises: AIGeneratedExercise[];
+}
+
+export interface AIProgramGeneratorResponse {
+  programName: string;
+  programDescription: string;
+  sessions: AIGeneratedSession[];
+  weeklyVolumeSummary: {
+    totalSets: number;
+    muscleGroupBreakdown: Record<string, number>; // e.g., { "Chest": 12, "Back": 14 }
+  };
+  recommendations: string[]; // Tips for the user
+}
+
 // App State Types
 export interface AppSettings {
   isOnboardingComplete: boolean;

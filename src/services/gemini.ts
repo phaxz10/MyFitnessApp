@@ -5,11 +5,14 @@ import type {
   AITargetResponse,
   AIGoalReviewResponse,
   AIWeeklyReviewResponse,
+  AIProgramGeneratorInput,
+  AIProgramGeneratorResponse,
   UserProfile,
   WeightLog,
   Exercise,
   WeeklyReviewData,
 } from '../types';
+import { ALWAYS_AVAILABLE_EQUIPMENT } from '../constants/equipment';
 
 let genAI: GoogleGenerativeAI | null = null;
 
@@ -522,4 +525,143 @@ Guidelines:
     .trim();
 
   return JSON.parse(cleanedResponse) as AIWeeklyReviewResponse;
+}
+
+// Generate a complete workout program based on user preferences
+export async function generateWorkoutProgram(
+  input: AIProgramGeneratorInput,
+  existingExercises: Exercise[],
+): Promise<AIProgramGeneratorResponse> {
+  if (!genAI) throw new Error('Gemini API not initialized');
+
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+  // Combine user equipment with always-available equipment
+  const allEquipment = [
+    ...ALWAYS_AVAILABLE_EQUIPMENT,
+    ...input.availableEquipment,
+  ];
+
+  // Build existing exercises reference for the AI
+  const existingExercisesList = existingExercises
+    .slice(0, 100)
+    .map((ex) => `- ${ex.name} (${ex.muscle_groups}, ${ex.equipment})`)
+    .join('\n');
+
+  const goalDescriptions: Record<string, string> = {
+    bulk: 'Building muscle mass (caloric surplus)',
+    lean_bulk: 'Building lean muscle with minimal fat gain',
+    recomp: 'Simultaneously building muscle and losing fat',
+    cut: 'Losing body fat while preserving muscle',
+    maintain: 'Maintaining current physique and strength',
+  };
+
+  const splitPreference =
+    input.preferredTrainingSplit === 'auto'
+      ? 'Choose the most appropriate training split based on the frequency'
+      : `Use a ${input.preferredTrainingSplit?.replace(/_/g, ' ')} split`;
+
+  const prompt = `You are an expert strength and conditioning coach. Create a complete workout program based on these specifications:
+
+USER PREFERENCES:
+- Training frequency: ${input.trainingDaysPerWeek} days per week
+- Session duration: ${input.sessionDurationMinutes} minutes per session
+- Experience level: ${input.experienceLevel}
+- Goal: ${input.goal} - ${goalDescriptions[input.goal] || input.goal}
+- Split preference: ${splitPreference}
+${input.focusAreas?.length ? `- Focus areas (prioritize): ${input.focusAreas.join(', ')}` : ''}
+${input.injuries ? `- Injuries/limitations: ${input.injuries}` : ''}
+
+AVAILABLE EQUIPMENT:
+${allEquipment.join(', ')}
+
+IMPORTANT: You may ONLY program exercises that can be performed with the equipment listed above.
+"Bodyweight" and "Resistance Bands" are always available.
+
+EXISTING EXERCISE LIBRARY (prefer using these exact names when applicable):
+${existingExercisesList || 'No existing exercises'}
+
+PROGRAM DESIGN GUIDELINES:
+1. For ${input.experienceLevel} level:
+   ${input.experienceLevel === 'beginner' ? '- Focus on compound movements, 2-3 sets per exercise, full body or simple splits' : ''}
+   ${input.experienceLevel === 'intermediate' ? '- Mix of compound and isolation, 3-4 sets per exercise, can use more complex splits' : ''}
+   ${input.experienceLevel === 'advanced' ? '- Can include advanced techniques, 3-5 sets, specialized programming' : ''}
+
+2. Rep ranges by goal:
+   - Bulk/Lean Bulk: 6-12 reps for hypertrophy
+   - Cut: 8-15 reps, higher volume
+   - Recomp: Mix of 5-8 (strength) and 10-15 (metabolic)
+   - Maintain: 6-10 reps
+
+3. Session structure:
+   - Start with compound movements
+   - Progress to isolation exercises
+   - Include appropriate warm-up movements
+   - Consider supersets for time efficiency if session is short
+
+4. Weekly volume guidelines:
+   - Major muscle groups: 10-20 sets per week
+   - Smaller muscles (biceps, triceps): 8-14 sets per week
+   - Prioritize ${input.focusAreas?.length ? input.focusAreas.join(' and ') : 'balanced development'}
+
+5. Day of week assignment:
+   - Assign each session a specific day (0=Sunday through 6=Saturday)
+   - Allow adequate rest between sessions hitting the same muscles
+   - For ${input.trainingDaysPerWeek} days: suggest optimal spacing
+
+Return JSON format only, no markdown code blocks:
+{
+  "programName": "descriptive program name",
+  "programDescription": "2-3 sentence program overview",
+  "sessions": [
+    {
+      "name": "Session name (e.g., 'Push Day', 'Upper Body A')",
+      "dayOfWeek": 1,
+      "exercises": [
+        {
+          "name": "Exercise Name (use exact name from library if exists)",
+          "targetSets": 3,
+          "targetRepMin": 8,
+          "targetRepMax": 12,
+          "targetDurationSeconds": null,
+          "notes": "optional form cue or progression note",
+          "supersetWith": "name of exercise to superset with, or null"
+        }
+      ]
+    }
+  ],
+  "weeklyVolumeSummary": {
+    "totalSets": 45,
+    "muscleGroupBreakdown": {
+      "Chest": 12,
+      "Back": 14,
+      "Shoulders": 10,
+      "Biceps": 8,
+      "Triceps": 8,
+      "Legs": 16,
+      "Core": 6
+    }
+  },
+  "recommendations": [
+    "Tip about progression",
+    "Recovery advice",
+    "Nutrition consideration"
+  ]
+}
+
+CRITICAL RULES:
+- ONLY use exercises that can be done with the available equipment
+- Exercise names should be standard, recognizable names
+- For duration-based exercises (planks, holds), set targetDurationSeconds instead of reps
+- Ensure balanced muscle development unless specific focus areas requested
+- ${input.sessionDurationMinutes} minute sessions should have roughly ${Math.floor(input.sessionDurationMinutes / 7)}-${Math.floor(input.sessionDurationMinutes / 5)} exercises`;
+
+  const result = await model.generateContent(prompt);
+  const response = result.response.text();
+  const cleanedResponse = response
+    .replace(/```json\n?/g, '')
+    .replace(/```\n?/g, '')
+    .trim();
+
+  return JSON.parse(cleanedResponse) as AIProgramGeneratorResponse;
 }

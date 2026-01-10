@@ -27,10 +27,10 @@ import {
   generateExerciseDetails,
   generateExerciseDetailsBatch,
   isGeminiInitialized,
+  findDuplicateExercises,
 } from '../services/gemini';
 import { exerciseFormSchema, type ExerciseFormData } from '../schemas/forms';
 import type { Exercise, AIExerciseResponse, ExerciseType } from '../types';
-
 const MUSCLE_GROUPS = [
   'All',
   'Chest',
@@ -43,7 +43,6 @@ const MUSCLE_GROUPS = [
   'Glutes',
   'Full Body',
 ];
-
 const EXERCISE_TYPES: {
   value: ExerciseType;
   label: string;
@@ -70,13 +69,11 @@ const EXERCISE_TYPES: {
     description: 'e.g., Weighted Plank',
   },
 ];
-
 // Generate YouTube search URL for exercise demo
 function getYouTubeSearchUrl(exerciseName: string): string {
   const query = encodeURIComponent(`${exerciseName} exercise form tutorial`);
   return `https://www.youtube.com/results?search_query=${query}`;
 }
-
 export function ExerciseLibrary() {
   const {
     exercises,
@@ -87,7 +84,6 @@ export function ExerciseLibrary() {
     deleteExercise,
     loading,
   } = useExercises();
-
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMuscle, setSelectedMuscle] = useState('All');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -98,7 +94,6 @@ export function ExerciseLibrary() {
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
-
   // Batch add state
   const [batchInput, setBatchInput] = useState('');
   const [batchExercises, setBatchExercises] = useState<
@@ -106,10 +101,11 @@ export function ExerciseLibrary() {
       name: string;
       status: 'pending' | 'generating' | 'ready' | 'error';
       details?: AIExerciseResponse;
+      duplicates?: Exercise[];
+      includeForGeneration: boolean;
     }[]
   >([]);
   const [isBatchGenerating, setIsBatchGenerating] = useState(false);
-
   const {
     register,
     handleSubmit,
@@ -127,27 +123,22 @@ export function ExerciseLibrary() {
       exerciseType: 'reps_weight',
     },
   });
-
   const formName = watch('name');
   const formExerciseType = watch('exerciseType');
-
   useEffect(() => {
     fetchExercises();
   }, [fetchExercises]);
-
   const filteredExercises = exercises.filter((ex) => {
+    const q = searchQuery.toLowerCase();
     const matchesSearch =
-      ex.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ex.muscle_groups?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ex.equipment?.toLowerCase().includes(searchQuery.toLowerCase());
-
+      ex.name.toLowerCase().includes(q) ||
+      ex.muscle_groups?.toLowerCase().includes(q) ||
+      ex.equipment?.toLowerCase().includes(q);
     const matchesMuscle =
       selectedMuscle === 'All' ||
       ex.muscle_groups?.toLowerCase().includes(selectedMuscle.toLowerCase());
-
     return matchesSearch && matchesMuscle;
   });
-
   const resetForm = () => {
     reset({
       name: '',
@@ -158,7 +149,6 @@ export function ExerciseLibrary() {
     });
     setEditingExercise(null);
   };
-
   const handleOpenAddModal = (exercise?: Exercise) => {
     if (exercise) {
       setEditingExercise(exercise);
@@ -174,28 +164,47 @@ export function ExerciseLibrary() {
     }
     setShowAddModal(true);
   };
-
   const handleGenerateDetails = async () => {
     if (!formName.trim()) {
       alert('Please enter an exercise name first');
       return;
     }
-
     if (!isGeminiInitialized()) {
       alert('Please set up your Gemini API key in Settings');
       return;
     }
-
+    // Single-generate duplicate check
+    if (exercises.length > 0) {
+      try {
+        const duplicates = await findDuplicateExercises(formName, exercises);
+        if (duplicates.length > 0) {
+          const message = `This exercise looks similar to existing ones:\n\n${duplicates
+            .map(
+              (ex) =>
+                `- ${ex.name} (${ex.muscle_groups}${
+                  ex.equipment ? `, ${ex.equipment}` : ''
+                })`,
+            )
+            .join('\n')}\n\nDo you still want to generate a new variation?`;
+          const proceed = window.confirm(message);
+          if (!proceed) {
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Duplicate check failed for exercise', error);
+      }
+    }
     setIsGenerating(true);
     try {
       const details: AIExerciseResponse =
         await generateExerciseDetails(formName);
-
       // Combine description with tips for comprehensive instructions
       const fullDescription = details.tips?.length
-        ? `${details.description}\n\nTips:\n${details.tips.map((tip) => `• ${tip}`).join('\n')}`
+        ? `${details.description}\n\nTips:\n${details.tips
+            .map((tip) => `• ${tip}`)
+            .join('\n')}`
         : details.description;
-
       setValue('name', details.name);
       setValue('description', fullDescription);
       setValue('muscleGroups', details.muscle_groups.join(', '));
@@ -208,7 +217,6 @@ export function ExerciseLibrary() {
       setIsGenerating(false);
     }
   };
-
   const onSubmit = async (data: ExerciseFormData) => {
     try {
       if (editingExercise) {
@@ -237,63 +245,79 @@ export function ExerciseLibrary() {
       alert('Failed to save exercise');
     }
   };
-
   const handleDeleteExercise = async () => {
-    if (showDeleteModal) {
-      try {
-        await deleteExercise(showDeleteModal.id);
-        setShowDeleteModal(null);
-        setShowDetailsModal(null);
-      } catch (err) {
-        console.error('Failed to delete exercise:', err);
-        alert('Failed to delete exercise. It may be used in a program.');
-      }
+    if (!showDeleteModal) return;
+    try {
+      await deleteExercise(showDeleteModal.id);
+      setShowDeleteModal(null);
+      setShowDetailsModal(null);
+    } catch (err) {
+      console.error('Failed to delete exercise:', err);
+      alert('Failed to delete exercise. It may be used in a program.');
     }
   };
-
   // Batch add handlers
   const handleParseBatchInput = () => {
     const names = batchInput
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line.length > 0);
-
     if (names.length === 0) {
       alert('Please enter at least one exercise name');
       return;
     }
-
-    setBatchExercises(names.map((name) => ({ name, status: 'pending' })));
+    setBatchExercises(
+      names.map((name) => ({
+        name,
+        status: 'pending',
+        includeForGeneration: true,
+      })),
+    );
   };
-
   const handleRemoveBatchExercise = (index: number) => {
     setBatchExercises((prev) => prev.filter((_, i) => i !== index));
   };
-
   const handleGenerateBatchDetails = async () => {
     if (!isGeminiInitialized()) {
       alert('Please set up your Gemini API key in Settings');
       return;
     }
-
     const pendingExercises = batchExercises.filter(
-      (ex) => ex.status === 'pending',
+      (ex) => ex.status === 'pending' && ex.includeForGeneration,
     );
     if (pendingExercises.length === 0) return;
-
+    // Batch duplicate check – per row, no global confirm
+    if (exercises.length > 0) {
+      try {
+        const duplicateMap: Record<string, Exercise[]> = {};
+        for (const ex of pendingExercises) {
+          const duplicates = await findDuplicateExercises(ex.name, exercises);
+          if (duplicates.length > 0) {
+            duplicateMap[ex.name] = duplicates;
+          }
+        }
+        setBatchExercises((prev) =>
+          prev.map((ex) => ({
+            ...ex,
+            duplicates: duplicateMap[ex.name],
+          })),
+        );
+      } catch (error) {
+        console.error('Duplicate check failed for batch exercises', error);
+      }
+    }
     setIsBatchGenerating(true);
-
-    // Mark all as generating
+    // Mark only included + pending items as generating
     setBatchExercises((prev) =>
       prev.map((ex) =>
-        ex.status === 'pending' ? { ...ex, status: 'generating' } : ex,
+        ex.status === 'pending' && ex.includeForGeneration
+          ? { ...ex, status: 'generating' }
+          : ex,
       ),
     );
-
     try {
       const names = pendingExercises.map((ex) => ex.name);
       const details = await generateExerciseDetailsBatch(names);
-
       // Update with generated details
       setBatchExercises((prev) => {
         const updated = [...prev];
@@ -325,21 +349,20 @@ export function ExerciseLibrary() {
       setIsBatchGenerating(false);
     }
   };
-
   const handleSaveBatchExercises = async () => {
     const readyExercises = batchExercises.filter((ex) => ex.status === 'ready');
     if (readyExercises.length === 0) {
       alert('No exercises ready to save. Generate details first.');
       return;
     }
-
     try {
       const exercisesToAdd = readyExercises.map((ex) => {
         const details = ex.details!;
         const fullDescription = details.tips?.length
-          ? `${details.description}\n\nTips:\n${details.tips.map((tip) => `• ${tip}`).join('\n')}`
+          ? `${details.description}\n\nTips:\n${details.tips
+              .map((tip) => `• ${tip}`)
+              .join('\n')}`
           : details.description;
-
         return {
           name: details.name,
           description: fullDescription,
@@ -350,7 +373,6 @@ export function ExerciseLibrary() {
           is_ai_generated: true,
         };
       });
-
       await addExercisesBatch(exercisesToAdd);
       setShowBatchModal(false);
       setBatchInput('');
@@ -360,13 +382,11 @@ export function ExerciseLibrary() {
       alert('Failed to save exercises');
     }
   };
-
   const handleCloseBatchModal = () => {
     setShowBatchModal(false);
     setBatchInput('');
     setBatchExercises([]);
   };
-
   // Group exercises by muscle group for display
   const groupedExercises = filteredExercises.reduce(
     (acc, ex) => {
@@ -377,7 +397,6 @@ export function ExerciseLibrary() {
     },
     {} as Record<string, Exercise[]>,
   );
-
   return (
     <div className="p-4 pb-24">
       {/* Header */}
@@ -387,7 +406,6 @@ export function ExerciseLibrary() {
           Manage your exercise collection
         </p>
       </div>
-
       {/* Search */}
       <div className="relative mb-4">
         <Search
@@ -401,7 +419,6 @@ export function ExerciseLibrary() {
           className="pl-10"
         />
       </div>
-
       {/* Muscle Group Filter */}
       <div className="flex gap-2 overflow-x-auto pb-2 mb-4 scrollbar-hide">
         {MUSCLE_GROUPS.map((muscle) => (
@@ -419,7 +436,6 @@ export function ExerciseLibrary() {
           </button>
         ))}
       </div>
-
       {/* Action Buttons */}
       <div className="flex gap-2 mb-4">
         <Button className="flex-1" onClick={() => handleOpenAddModal()}>
@@ -431,7 +447,6 @@ export function ExerciseLibrary() {
           Batch Add
         </Button>
       </div>
-
       {/* Exercise List */}
       {filteredExercises.length === 0 ? (
         <Card>
@@ -503,7 +518,6 @@ export function ExerciseLibrary() {
           ))}
         </div>
       )}
-
       {/* Add/Edit Exercise Modal */}
       <Modal
         isOpen={showAddModal}
@@ -542,7 +556,6 @@ export function ExerciseLibrary() {
               )}
             </div>
           </div>
-
           <div>
             <label
               htmlFor="description"
@@ -557,7 +570,6 @@ export function ExerciseLibrary() {
               rows={3}
             />
           </div>
-
           <div>
             <label
               htmlFor="muscleGroups"
@@ -571,7 +583,6 @@ export function ExerciseLibrary() {
               placeholder="e.g., Chest, Shoulders, Triceps"
             />
           </div>
-
           <div>
             <label
               htmlFor="equipment"
@@ -585,7 +596,6 @@ export function ExerciseLibrary() {
               placeholder="e.g., Barbell, Bench"
             />
           </div>
-
           <div>
             <p className="text-slate-400 text-sm mb-2">Exercise Type</p>
             <div className="grid grid-cols-2 gap-2">
@@ -606,7 +616,6 @@ export function ExerciseLibrary() {
               ))}
             </div>
           </div>
-
           <div className="flex gap-3 pt-2">
             <Button
               type="button"
@@ -629,7 +638,6 @@ export function ExerciseLibrary() {
           </div>
         </form>
       </Modal>
-
       {/* Exercise Details Modal */}
       <Modal
         isOpen={!!showDetailsModal}
@@ -648,21 +656,18 @@ export function ExerciseLibrary() {
                 )?.label || 'Reps & Weight'}
               </p>
             </div>
-
             {showDetailsModal.muscle_groups && (
               <div>
                 <p className="text-slate-400 text-sm">Muscle Groups</p>
                 <p className="text-white">{showDetailsModal.muscle_groups}</p>
               </div>
             )}
-
             {showDetailsModal.equipment && (
               <div>
                 <p className="text-slate-400 text-sm">Equipment</p>
                 <p className="text-white">{showDetailsModal.equipment}</p>
               </div>
             )}
-
             {showDetailsModal.description && (
               <div>
                 <p className="text-slate-400 text-sm">Instructions</p>
@@ -671,7 +676,6 @@ export function ExerciseLibrary() {
                 </p>
               </div>
             )}
-
             {/* Video Demo Link */}
             <a
               href={getYouTubeSearchUrl(showDetailsModal.name)}
@@ -682,14 +686,12 @@ export function ExerciseLibrary() {
               <Video size={18} />
               <span>Watch Demo on YouTube</span>
             </a>
-
             {showDetailsModal.is_ai_generated && (
               <div className="flex items-center gap-2 text-slate-400 text-sm">
                 <Sparkles size={14} />
                 <span>AI Generated</span>
               </div>
             )}
-
             <div className="flex gap-3 pt-2">
               <Button
                 variant="secondary"
@@ -713,7 +715,6 @@ export function ExerciseLibrary() {
           </div>
         )}
       </Modal>
-
       {/* Delete Confirmation Modal */}
       <Modal
         isOpen={!!showDeleteModal}
@@ -740,7 +741,6 @@ export function ExerciseLibrary() {
           </Button>
         </div>
       </Modal>
-
       {/* Batch Add Modal */}
       <Modal
         isOpen={showBatchModal}
@@ -785,13 +785,28 @@ export function ExerciseLibrary() {
                 {batchExercises.filter((ex) => ex.status === 'ready').length} of{' '}
                 {batchExercises.length} exercises ready
               </p>
-
               <div className="max-h-64 overflow-y-auto space-y-2">
                 {batchExercises.map((exercise, index) => (
                   <div
                     key={`${exercise.name}-${index}`}
-                    className="flex items-center gap-2 bg-slate-800 rounded-lg p-2"
+                    className="flex items-start gap-2 bg-slate-800 rounded-lg p-2"
                   >
+                    <div className="pt-1">
+                      <input
+                        type="checkbox"
+                        checked={exercise.includeForGeneration}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setBatchExercises((prev) =>
+                            prev.map((ex, i) =>
+                              i === index
+                                ? { ...ex, includeForGeneration: checked }
+                                : ex,
+                            ),
+                          );
+                        }}
+                      />
+                    </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-white text-sm truncate">
                         {exercise.details?.name || exercise.name}
@@ -801,8 +816,32 @@ export function ExerciseLibrary() {
                           {exercise.details.muscle_groups.join(', ')}
                         </p>
                       )}
+                      {exercise.duplicates &&
+                        exercise.duplicates.length > 0 && (
+                          <div className="mt-1 text-amber-400 text-xs">
+                            <p className="font-medium">Possible duplicates:</p>
+                            <ul className="list-disc list-inside space-y-0.5">
+                              {exercise.duplicates.map((dup) => {
+                                const parts: string[] = [];
+                                if (dup.muscle_groups)
+                                  parts.push(dup.muscle_groups);
+                                if (dup.equipment) parts.push(dup.equipment);
+                                const meta =
+                                  parts.length > 0
+                                    ? ` (${parts.join(', ')})`
+                                    : '';
+                                return (
+                                  <li key={dup.id} className="truncate">
+                                    {dup.name}
+                                    {meta}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
+                        )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col items-end gap-1">
                       {exercise.status === 'pending' && (
                         <span className="text-slate-400 text-xs">Pending</span>
                       )}
@@ -829,7 +868,6 @@ export function ExerciseLibrary() {
                   </div>
                 ))}
               </div>
-
               <div className="flex gap-3">
                 <Button
                   type="button"
@@ -875,7 +913,6 @@ export function ExerciseLibrary() {
                   </Button>
                 )}
               </div>
-
               {!isGeminiInitialized() && (
                 <p className="text-amber-400 text-sm text-center">
                   Set up your Gemini API key in Settings to use AI generation

@@ -6,6 +6,7 @@ import type {
   AIGoalReviewResponse,
   UserProfile,
   WeightLog,
+  Exercise,
 } from '../types';
 
 let genAI: GoogleGenerativeAI | null = null;
@@ -236,6 +237,72 @@ Guidelines:
     .trim();
 
   return JSON.parse(cleanedResponse) as AIExerciseResponse[];
+}
+
+// Check for potential duplicate exercises using AI
+export async function findDuplicateExercises(
+  candidateName: string,
+  existingExercises: Exercise[],
+): Promise<Exercise[]> {
+  if (!genAI) throw new Error('Gemini API not initialized');
+
+  if (existingExercises.length === 0) return [];
+
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+  const list = existingExercises
+    .slice(0, 100)
+    .map(
+      (ex, index) =>
+        `${index + 1}. Name: ${ex.name}; Muscles: ${ex.muscle_groups}; Equipment: ${ex.equipment}`,
+    )
+    .join('\n');
+
+  const prompt = `You are helping manage a personal exercise library.
+User wants to add or generate a new exercise with name: "${candidateName}".
+
+Here is the current exercise library (up to 100 items):
+${list}
+
+Task:
+- Identify any existing exercises that are likely the same exercise or a very close duplicate.
+- Focus on name similarity and overlapping muscle groups/equipment.
+
+Return JSON ONLY (no markdown) in this format:
+{
+  "duplicate_indices": [
+    index_numbers_of_potential_duplicates_using_1_based_indices_from_the_list_above
+  ]
+}`;
+
+  const result = await model.generateContent(prompt);
+  const response = result.response.text();
+  const cleanedResponse = response
+    .replace(/```json\n?/g, '')
+    .replace(/```\n?/g, '')
+    .trim();
+
+  try {
+    const parsed = JSON.parse(cleanedResponse) as {
+      duplicate_indices?: number[];
+    };
+    const indices = Array.isArray(parsed.duplicate_indices)
+      ? parsed.duplicate_indices.filter((n) => Number.isInteger(n) && n >= 1)
+      : [];
+
+    if (indices.length === 0) return [];
+
+    return indices
+      .map((i) => existingExercises[i - 1])
+      .filter((ex) => ex !== undefined);
+  } catch (error) {
+    console.error(
+      'Failed to parse duplicate exercise response',
+      error,
+      cleanedResponse,
+    );
+    return [];
+  }
 }
 
 // Calculate calorie and macro targets

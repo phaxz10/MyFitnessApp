@@ -4,9 +4,11 @@ import type {
   AIExerciseResponse,
   AITargetResponse,
   AIGoalReviewResponse,
+  AIWeeklyReviewResponse,
   UserProfile,
   WeightLog,
   Exercise,
+  WeeklyReviewData,
 } from '../types';
 
 let genAI: GoogleGenerativeAI | null = null;
@@ -432,4 +434,92 @@ Return JSON format only, no markdown code blocks:
     .trim();
 
   return JSON.parse(cleanedResponse) as AIGoalReviewResponse;
+}
+
+// Weekly progress review for Sunday check-in
+export async function reviewWeeklyProgress(
+  profile: UserProfile,
+  weeklyData: WeeklyReviewData,
+): Promise<AIWeeklyReviewResponse> {
+  if (!genAI) throw new Error('Gemini API not initialized');
+
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+  const weightDataSummary = weeklyData.weightLogs
+    .map(
+      (w) =>
+        `${w.date}: ${w.weight_kg}kg${w.body_fat_pct ? ` (${w.body_fat_pct}% BF)` : ''}`,
+    )
+    .join('\n');
+
+  const prompt = `You are a fitness coach conducting a weekly check-in review. Analyze the user's past week of progress and provide actionable recommendations.
+
+User Profile:
+- Age: ${profile.age}, Gender: ${profile.gender}, Height: ${profile.height_cm}cm
+- Current Goal: ${profile.goal} (target rate: ${profile.target_rate_kg_per_week}kg/week)
+- Current Calorie Target: ${profile.calorie_target} kcal/day
+- Macro Targets: ${profile.protein_target_g}g protein, ${profile.carbs_target_g}g carbs, ${profile.fat_target_g}g fat
+
+Week Summary (${weeklyData.weekStart} to ${weeklyData.weekEnd}):
+- Days with weight logged: ${weeklyData.daysWithWeightLog}
+- Days with calories logged: ${weeklyData.daysWithCalorieLog}
+- Workouts completed: ${weeklyData.totalWorkouts}
+
+Weight Data:
+${weightDataSummary || 'No weight logs this week'}
+${weeklyData.weightChange !== null ? `Weekly weight change: ${weeklyData.weightChange > 0 ? '+' : ''}${weeklyData.weightChange}kg` : ''}
+
+Calorie Adherence:
+- Average daily intake: ${weeklyData.avgDailyCalories} kcal
+- Target: ${profile.calorie_target} kcal
+- Adherence: ${weeklyData.calorieAdherence}%
+
+Based on this data, provide a comprehensive weekly review. Consider:
+1. Is the user on track for their ${profile.goal} goal?
+2. Should they update body measurements (weight, body fat)? Recommend this if no recent measurements or if significant weight change detected.
+3. Should calorie targets be adjusted? Consider if actual intake differs significantly from target or if weight isn't trending as expected.
+4. Should the goal be changed? (e.g., cut -> lean bulk if target weight reached, or bulk -> cut if gaining too fast)
+5. Are there any workout/program adjustments needed?
+
+Return JSON format only, no markdown code blocks:
+{
+  "summary": "2-3 sentence overview of the week's progress",
+  "onTrack": true/false,
+  "progressAssessment": {
+    "weightProgress": "assessment of weight trend vs goal",
+    "calorieAdherence": "assessment of calorie tracking consistency",
+    "workoutConsistency": "assessment of workout frequency"
+  },
+  "recommendations": {
+    "updateMeasurements": true/false,
+    "measurementsReason": "why measurements should be updated, or null",
+    "adjustCalories": true/false,
+    "newCalorieTarget": new_target_number_or_null,
+    "newProteinTarget": new_protein_or_null,
+    "newCarbsTarget": new_carbs_or_null,
+    "newFatTarget": new_fat_or_null,
+    "caloriesReason": "explanation for calorie adjustment, or null",
+    "changeGoal": true/false,
+    "suggestedGoal": "bulk|lean_bulk|recomp|cut|maintain" or null,
+    "goalReason": "why goal should change, or null",
+    "changeProgram": true/false,
+    "programSuggestion": "program advice or null"
+  },
+  "motivationalMessage": "encouraging message tailored to their progress"
+}
+
+Guidelines:
+- Be encouraging but honest
+- Only suggest goal changes if there's a clear reason (e.g., goal achieved, progress stalled for weeks)
+- Calorie adjustments should be moderate (100-200 kcal) unless severely off track
+- If data is limited, acknowledge uncertainty but still provide useful guidance`;
+
+  const result = await model.generateContent(prompt);
+  const response = result.response.text();
+  const cleanedResponse = response
+    .replace(/```json\n?/g, '')
+    .replace(/```\n?/g, '')
+    .trim();
+
+  return JSON.parse(cleanedResponse) as AIWeeklyReviewResponse;
 }

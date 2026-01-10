@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Utensils, Camera, Scale, Dumbbell } from 'lucide-react';
 import { Card, CardContent } from '../components/ui';
+import {
+  WeeklyReviewButton,
+  WeeklyReviewModal,
+} from '../components/weekly-review';
 import { useProfile } from '../hooks/useProfile';
 import { useCalories } from '../hooks/useCalories';
 import { useWeight } from '../hooks/useWeight';
@@ -16,6 +20,7 @@ export function Dashboard() {
   const isOnline = useAppStore((state) => state.isOnline);
 
   const [latestWeight, setLatestWeight] = useState<number | null>(null);
+  const [showWeeklyReview, setShowWeeklyReview] = useState(false);
   const today = formatDate(new Date());
 
   useEffect(() => {
@@ -42,6 +47,21 @@ export function Dashboard() {
         </h2>
       </div>
 
+      {/* Weekly Review Button - Shows on Sundays with sufficient data */}
+      <WeeklyReviewButton
+        profile={profile}
+        onStartReview={() => setShowWeeklyReview(true)}
+      />
+
+      {/* Weekly Review Modal */}
+      {profile && (
+        <WeeklyReviewModal
+          isOpen={showWeeklyReview}
+          onClose={() => setShowWeeklyReview(false)}
+          profile={profile}
+        />
+      )}
+
       {/* Calorie Summary Card */}
       <Card>
         <CardContent className="p-6">
@@ -58,7 +78,11 @@ export function Dashboard() {
           {/* Progress Ring */}
           <div className="flex items-center justify-center mb-6">
             <div className="relative w-40 h-40">
-              <svg className="w-full h-full transform -rotate-90">
+              <svg
+                className="w-full h-full transform -rotate-90"
+                aria-label="Calorie progress indicator"
+                role="img"
+              >
                 <circle
                   cx="80"
                   cy="80"

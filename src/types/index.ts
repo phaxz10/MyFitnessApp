@@ -222,6 +222,82 @@ export interface DailyCalorieSummary {
   };
 }
 
+// Weekly Review Types
+export interface WeeklyReviewData {
+  weekStart: string;
+  weekEnd: string;
+  weightLogs: WeightLog[];
+  calorieEntries: FoodEntry[];
+  workoutLogs: WorkoutLog[];
+  daysWithWeightLog: number;
+  daysWithCalorieLog: number;
+  daysWithWorkout: number;
+  avgDailyCalories: number;
+  totalWorkouts: number;
+  startWeight: number | null;
+  endWeight: number | null;
+  weightChange: number | null;
+  calorieAdherence: number; // percentage of target
+}
+
+export interface WeeklyReviewSufficiency {
+  hasSufficientData: boolean;
+  hasWeightData: boolean;
+  hasCalorieData: boolean;
+  hasWorkoutData: boolean;
+  weightDaysLogged: number;
+  calorieDaysLogged: number;
+  workoutDaysLogged: number;
+  minimumWeightDays: number;
+  minimumCalorieDays: number;
+}
+
+export interface AIWeeklyReviewResponse {
+  summary: string;
+  onTrack: boolean;
+  progressAssessment: {
+    weightProgress: string;
+    calorieAdherence: string;
+    workoutConsistency: string;
+  };
+  recommendations: {
+    updateMeasurements: boolean;
+    measurementsReason: string | null;
+    adjustCalories: boolean;
+    newCalorieTarget: number | null;
+    newProteinTarget: number | null;
+    newCarbsTarget: number | null;
+    newFatTarget: number | null;
+    caloriesReason: string | null;
+    changeGoal: boolean;
+    suggestedGoal: 'bulk' | 'lean_bulk' | 'recomp' | 'cut' | 'maintain' | null;
+    goalReason: string | null;
+    changeProgram: boolean;
+    programSuggestion: string | null;
+  };
+  motivationalMessage: string;
+}
+
+export interface WeeklyReview {
+  id: number;
+  week_start: string;
+  week_end: string;
+  start_weight: number | null;
+  end_weight: number | null;
+  weight_change: number | null;
+  avg_daily_calories: number;
+  calorie_target: number;
+  calorie_adherence: number;
+  workouts_completed: number;
+  previous_goal: string;
+  new_goal: string | null;
+  previous_calorie_target: number;
+  new_calorie_target: number | null;
+  ai_summary: string;
+  recommendations_applied: string | null; // JSON string of what was accepted
+  created_at: string;
+}
+
 // App State Types
 export interface AppSettings {
   isOnboardingComplete: boolean;

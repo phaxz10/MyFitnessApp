@@ -147,6 +147,28 @@ async function initSchema(): Promise<void> {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Weekly Reviews Table
+    CREATE TABLE IF NOT EXISTS weekly_reviews (
+      id SERIAL PRIMARY KEY,
+      week_start DATE NOT NULL,
+      week_end DATE NOT NULL,
+      start_weight REAL,
+      end_weight REAL,
+      weight_change REAL,
+      avg_daily_calories INTEGER,
+      calorie_target INTEGER NOT NULL,
+      calorie_adherence INTEGER,
+      workouts_completed INTEGER DEFAULT 0,
+      previous_goal TEXT NOT NULL,
+      new_goal TEXT,
+      previous_calorie_target INTEGER NOT NULL,
+      new_calorie_target INTEGER,
+      ai_summary TEXT NOT NULL,
+      recommendations_applied TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(week_start, week_end)
+    );
+
     -- Create indexes for common queries
     CREATE INDEX IF NOT EXISTS idx_food_entries_date ON food_entries(date);
     CREATE INDEX IF NOT EXISTS idx_weight_logs_date ON weight_logs(date);

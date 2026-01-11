@@ -47,7 +47,7 @@ export function Dashboard() {
         </h2>
       </div>
 
-      {/* Weekly Review Button - Shows on Sundays with sufficient data */}
+      {/* Weekly Review Button - Shows on Mondays with at least 5 logged days */}
       <WeeklyReviewButton
         profile={profile}
         onStartReview={() => setShowWeeklyReview(true)}

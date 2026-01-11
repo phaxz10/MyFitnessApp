@@ -232,6 +232,7 @@ export interface WeeklyReviewData {
   daysWithWeightLog: number;
   daysWithCalorieLog: number;
   daysWithWorkout: number;
+  totalUniqueDaysLogged: number; // Unique days with any type of logged data
   avgDailyCalories: number;
   totalWorkouts: number;
   startWeight: number | null;
@@ -248,6 +249,8 @@ export interface WeeklyReviewSufficiency {
   weightDaysLogged: number;
   calorieDaysLogged: number;
   workoutDaysLogged: number;
+  totalDaysLogged: number;
+  minimumLoggedDays: number;
   minimumWeightDays: number;
   minimumCalorieDays: number;
 }

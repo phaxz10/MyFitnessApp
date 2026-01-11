@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { getDB } from '../services/db';
 import { formatDate, getWeekRange } from '../utils/date';
-import { subDays, isSunday } from 'date-fns';
+import { subDays, isMonday } from 'date-fns';
 import type {
   WeeklyReviewData,
   WeeklyReviewSufficiency,
@@ -13,6 +13,7 @@ import type {
 } from '../types';
 
 // Minimum requirements for a meaningful weekly review
+const MIN_LOGGED_DAYS = 5; // At least 5 days with any logged data for assessment
 const MIN_WEIGHT_DAYS = 2; // At least 2 weight logs for trend
 const MIN_CALORIE_DAYS = 3; // At least 3 days of calorie logging
 
@@ -21,7 +22,7 @@ export function useWeeklyReview() {
   const [error, setError] = useState<string | null>(null);
 
   /**
-   * Check if today is Sunday (review day)
+   * Check if today is Monday (review day)
    * Can be forced via URL query param ?forceReview=true for testing
    */
   const isReviewDay = useCallback((): boolean => {
@@ -32,17 +33,17 @@ export function useWeeklyReview() {
         return true;
       }
     }
-    return isSunday(new Date());
+    return isMonday(new Date());
   }, []);
 
   /**
    * Get the date range for the past week (Monday to Sunday)
-   * If called on Sunday, returns the week that just ended (Mon-Sun)
+   * If called on Monday, returns the previous week (Mon-Sun)
    */
   const getPastWeekRange = useCallback((): { start: string; end: string } => {
     const today = new Date();
-    // Get the week range for yesterday to ensure we're looking at the completed week
-    const referenceDate = isSunday(today) ? subDays(today, 1) : today;
+    // On Monday, look back to get the completed week
+    const referenceDate = isMonday(today) ? subDays(today, 1) : today;
     const range = getWeekRange(referenceDate);
     return {
       start: formatDate(range.start),
@@ -83,13 +84,25 @@ export function useWeeklyReview() {
         const workoutLogs = workoutResult.rows as WorkoutLog[];
 
         // Calculate unique days with data
-        const weightDays = new Set(weightLogs.map((w) => formatDate(w.date)))
-          .size;
-        const calorieDays = new Set(
+        const weightDates = new Set(weightLogs.map((w) => formatDate(w.date)));
+        const calorieDates = new Set(
           calorieEntries.map((c) => formatDate(c.date)),
-        ).size;
-        const workoutDays = new Set(workoutLogs.map((w) => formatDate(w.date)))
-          .size;
+        );
+        const workoutDates = new Set(
+          workoutLogs.map((w) => formatDate(w.date)),
+        );
+
+        // Calculate total unique days with any logged data
+        const allDates = new Set([
+          ...weightDates,
+          ...calorieDates,
+          ...workoutDates,
+        ]);
+
+        const weightDays = weightDates.size;
+        const calorieDays = calorieDates.size;
+        const workoutDays = workoutDates.size;
+        const totalUniqueDaysLogged = allDates.size;
 
         // Calculate calorie stats
         const dailyCalories: Record<string, number> = {};
@@ -134,6 +147,7 @@ export function useWeeklyReview() {
           daysWithWeightLog: weightDays,
           daysWithCalorieLog: calorieDays,
           daysWithWorkout: workoutDays,
+          totalUniqueDaysLogged,
           avgDailyCalories,
           totalWorkouts: workoutLogs.length,
           startWeight,
@@ -155,6 +169,7 @@ export function useWeeklyReview() {
 
   /**
    * Check if there's sufficient data for a meaningful review
+   * Requires at least 5 total logged days (any combination of weight, calories, workouts)
    */
   const checkDataSufficiency = useCallback(
     (data: WeeklyReviewData | null): WeeklyReviewSufficiency => {
@@ -167,6 +182,8 @@ export function useWeeklyReview() {
           weightDaysLogged: 0,
           calorieDaysLogged: 0,
           workoutDaysLogged: 0,
+          totalDaysLogged: 0,
+          minimumLoggedDays: MIN_LOGGED_DAYS,
           minimumWeightDays: MIN_WEIGHT_DAYS,
           minimumCalorieDays: MIN_CALORIE_DAYS,
         };
@@ -176,8 +193,8 @@ export function useWeeklyReview() {
       const hasCalorieData = data.daysWithCalorieLog >= MIN_CALORIE_DAYS;
       const hasWorkoutData = data.daysWithWorkout > 0;
 
-      // Sufficient if we have either weight OR calorie data meeting minimums
-      const hasSufficientData = hasWeightData || hasCalorieData;
+      // Sufficient only if we have at least 5 unique days with logged data
+      const hasSufficientData = data.totalUniqueDaysLogged >= MIN_LOGGED_DAYS;
 
       return {
         hasSufficientData,
@@ -187,6 +204,8 @@ export function useWeeklyReview() {
         weightDaysLogged: data.daysWithWeightLog,
         calorieDaysLogged: data.daysWithCalorieLog,
         workoutDaysLogged: data.daysWithWorkout,
+        totalDaysLogged: data.totalUniqueDaysLogged,
+        minimumLoggedDays: MIN_LOGGED_DAYS,
         minimumWeightDays: MIN_WEIGHT_DAYS,
         minimumCalorieDays: MIN_CALORIE_DAYS,
       };
@@ -280,7 +299,7 @@ export function useWeeklyReview() {
 
   /**
    * Check if the weekly review button should be shown
-   * Shows on Sunday if there's sufficient data and no review completed yet
+   * Shows on Monday if there's at least 5 logged days and no review completed yet
    */
   const shouldShowReviewButton = useCallback(
     async (
@@ -295,7 +314,7 @@ export function useWeeklyReview() {
         return { show: false, reason: 'No profile', sufficiency: null };
       }
 
-      // Check if today is Sunday (review day)
+      // Check if today is Monday (review day)
       if (!isReviewDay()) {
         return { show: false, reason: 'Not review day', sufficiency: null };
       }

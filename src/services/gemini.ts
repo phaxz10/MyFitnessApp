@@ -439,7 +439,7 @@ Return JSON format only, no markdown code blocks:
   return JSON.parse(cleanedResponse) as AIGoalReviewResponse;
 }
 
-// Weekly progress review for Sunday check-in
+// Weekly progress review for Monday check-in
 export async function reviewWeeklyProgress(
   profile: UserProfile,
   weeklyData: WeeklyReviewData,

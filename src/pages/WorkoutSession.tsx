@@ -17,6 +17,7 @@ import {
   RotateCcw,
   Dumbbell,
   Clock,
+  MessageSquare,
 } from 'lucide-react';
 import {
   Card,
@@ -58,6 +59,7 @@ interface ExerciseWithSets {
   lastPerformance: WorkoutSet[] | null;
   isExpanded: boolean;
   supersetGroupId?: string | null;
+  notes: string; // Notes for this exercise (e.g., why can't progress, form cues)
 }
 
 // Duration Timer Component
@@ -264,6 +266,7 @@ export function WorkoutSession() {
                 lastPerformance: lastPerf,
                 isExpanded: true,
                 supersetGroupId: ex.superset_group_id,
+                notes: '',
               };
             }),
           );
@@ -397,6 +400,7 @@ export function WorkoutSession() {
         null,
         hasWeight ? weight : null,
         actualSeconds,
+        exerciseData.notes || undefined,
       );
 
       setExercisesWithSets((prev) => {
@@ -457,6 +461,7 @@ export function WorkoutSession() {
         reps,
         hasWeight ? weight : null,
         null,
+        exerciseData.notes || undefined,
       );
 
       setExercisesWithSets((prev) => {
@@ -646,6 +651,7 @@ export function WorkoutSession() {
           ],
           lastPerformance: lastPerf,
           isExpanded: true,
+          notes: '',
         },
       ]);
       setShowAddExercise(false);
@@ -659,6 +665,12 @@ export function WorkoutSession() {
       prev.map((ex, i) =>
         i === index ? { ...ex, isExpanded: !ex.isExpanded } : ex,
       ),
+    );
+  };
+
+  const handleUpdateExerciseNotes = (index: number, notes: string) => {
+    setExercisesWithSets((prev) =>
+      prev.map((ex, i) => (i === index ? { ...ex, notes } : ex)),
     );
   };
 
@@ -785,16 +797,41 @@ export function WorkoutSession() {
             {exerciseData.lastPerformance &&
               exerciseData.lastPerformance.length > 0 && (
                 <div className="mb-3 p-2 bg-slate-700/50 rounded text-xs text-slate-400">
-                  Last:{' '}
-                  {exerciseData.lastPerformance
-                    .map((s) =>
-                      s.duration_seconds
-                        ? `${s.duration_seconds}s${s.weight_kg ? ` @ ${s.weight_kg}kg` : ''}`
-                        : `${s.weight_kg || 0}kg × ${s.reps || 0}`,
-                    )
-                    .join(' | ')}
+                  <div>
+                    Last:{' '}
+                    {exerciseData.lastPerformance
+                      .map((s) =>
+                        s.duration_seconds
+                          ? `${s.duration_seconds}s${s.weight_kg ? ` @ ${s.weight_kg}kg` : ''}`
+                          : `${s.weight_kg || 0}kg × ${s.reps || 0}`,
+                      )
+                      .join(' | ')}
+                  </div>
+                  {/* Show previous note if exists */}
+                  {exerciseData.lastPerformance[0]?.notes && (
+                    <div className="mt-1 text-slate-500 italic">
+                      Note: {exerciseData.lastPerformance[0].notes}
+                    </div>
+                  )}
                 </div>
               )}
+
+            {/* Exercise Notes */}
+            <div className="mb-3">
+              <div className="flex items-center gap-2 mb-1">
+                <MessageSquare size={14} className="text-slate-500" />
+                <span className="text-xs text-slate-500">Exercise Note</span>
+              </div>
+              <input
+                type="text"
+                value={exerciseData.notes}
+                onChange={(e) =>
+                  handleUpdateExerciseNotes(exerciseIndex, e.target.value)
+                }
+                placeholder="Why can't progress? Form issues? Equipment notes..."
+                className="w-full px-2 py-1.5 text-sm bg-slate-700/50 border border-slate-600 rounded text-slate-300 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
 
             {/* Set Headers */}
             <div
@@ -1014,6 +1051,38 @@ export function WorkoutSession() {
             )}
           </div>
         </button>
+
+        {/* Exercise Notes for Superset (shown when expanded) */}
+        {allExpanded && (
+          <div className="mb-4 space-y-2">
+            {supersetExercises.map((ex) => {
+              const exerciseIndex = exercisesWithSets.indexOf(ex);
+              const exerciseName =
+                'exercise_name' in ex.exercise
+                  ? ex.exercise.exercise_name
+                  : ex.exercise.name;
+              return (
+                <div
+                  key={`notes-${ex.exercise.id}`}
+                  className="flex items-center gap-2"
+                >
+                  <span className="text-xs text-slate-500 min-w-[80px] truncate">
+                    {exerciseName}:
+                  </span>
+                  <input
+                    type="text"
+                    value={ex.notes}
+                    onChange={(e) =>
+                      handleUpdateExerciseNotes(exerciseIndex, e.target.value)
+                    }
+                    placeholder="Note..."
+                    className="flex-1 px-2 py-1 text-sm bg-slate-700/50 border border-slate-600 rounded text-slate-300 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Rounds */}
         {allExpanded && (
@@ -1306,7 +1375,8 @@ export function WorkoutSession() {
                     .reduce(
                       (setSum, s) =>
                         setSum +
-                        (parseFloat(s.weight) || 0) * (parseInt(s.reps, 10) || 1),
+                        (parseFloat(s.weight) || 0) *
+                          (parseInt(s.reps, 10) || 1),
                       0,
                     ),
                 0,

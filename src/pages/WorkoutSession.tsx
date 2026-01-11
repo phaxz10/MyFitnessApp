@@ -372,7 +372,7 @@ export function WorkoutSession() {
   ) => {
     const exerciseData = exercisesWithSets[exerciseIndex];
     const targetSeconds =
-      parseInt(exerciseData.sets[setIndex].durationSeconds) || 30;
+      parseInt(exerciseData.sets[setIndex].durationSeconds, 10) || 30;
     setDurationTimerData({ exerciseIndex, setIndex, targetSeconds });
   };
 
@@ -444,7 +444,7 @@ export function WorkoutSession() {
       return;
     }
 
-    const reps = parseInt(setData.reps) || 0;
+    const reps = parseInt(setData.reps, 10) || 0;
     const weight = parseFloat(setData.weight) || 0;
     const hasWeight = exerciseData.exerciseType === 'reps_weight';
 
@@ -619,7 +619,7 @@ export function WorkoutSession() {
   ): boolean => {
     return supersetExercises.every((ex) => {
       const set = ex.sets[roundNumber];
-      return set && set.completed;
+      return set?.completed;
     });
   };
 
@@ -1306,7 +1306,7 @@ export function WorkoutSession() {
                     .reduce(
                       (setSum, s) =>
                         setSum +
-                        (parseFloat(s.weight) || 0) * (parseInt(s.reps) || 1),
+                        (parseFloat(s.weight) || 0) * (parseInt(s.reps, 10) || 1),
                       0,
                     ),
                 0,

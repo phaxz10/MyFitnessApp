@@ -121,7 +121,7 @@ export function MealScanner() {
         })),
       );
       setStep('results');
-    } catch (err) {
+    } catch (_err) {
       setError('Failed to analyze image. Please try again or enter manually.');
       setStep('capture');
     } finally {
@@ -188,7 +188,7 @@ export function MealScanner() {
       }
 
       navigate('/calories');
-    } catch (err) {
+    } catch (_err) {
       setError('Failed to save entries');
     } finally {
       setIsLoading(false);
@@ -420,7 +420,7 @@ export function MealScanner() {
                           onChange={(e) =>
                             handlePortionChange(
                               index,
-                              parseInt(e.target.value) || 0,
+                              parseInt(e.target.value, 10) || 0,
                             )
                           }
                           className="w-20 text-center"

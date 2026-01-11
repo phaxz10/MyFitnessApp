@@ -273,60 +273,48 @@ export function useWorkoutPrograms() {
       programId: number,
       session: Omit<ProgramSession, 'id' | 'program_id' | 'created_at'>,
     ): Promise<number> => {
-      try {
-        const db = await getDB();
-        const result = await db.query(
-          `INSERT INTO program_sessions (program_id, name, day_of_week, order_index)
+      const db = await getDB();
+      const result = await db.query(
+        `INSERT INTO program_sessions (program_id, name, day_of_week, order_index)
          VALUES ($1, $2, $3, $4)
          RETURNING id`,
-          [programId, session.name, session.day_of_week, session.order_index],
-        );
-        const rows = result.rows as { id: number }[];
-        return rows[0].id;
-      } catch (err) {
-        throw err;
-      }
+        [programId, session.name, session.day_of_week, session.order_index],
+      );
+      const rows = result.rows as { id: number }[];
+      return rows[0].id;
     },
     [],
   );
 
   const updateSession = useCallback(
     async (id: number, data: Partial<ProgramSession>) => {
-      try {
-        const db = await getDB();
-        const fields: string[] = [];
-        const values: unknown[] = [];
-        let paramIndex = 1;
+      const db = await getDB();
+      const fields: string[] = [];
+      const values: unknown[] = [];
+      let paramIndex = 1;
 
-        Object.entries(data).forEach(([key, value]) => {
-          if (key !== 'id' && key !== 'created_at' && value !== undefined) {
-            fields.push(`${key} = $${paramIndex}`);
-            values.push(value);
-            paramIndex++;
-          }
-        });
-
-        if (fields.length > 0) {
-          values.push(id);
-          await db.query(
-            `UPDATE program_sessions SET ${fields.join(', ')} WHERE id = $${paramIndex}`,
-            values,
-          );
+      Object.entries(data).forEach(([key, value]) => {
+        if (key !== 'id' && key !== 'created_at' && value !== undefined) {
+          fields.push(`${key} = $${paramIndex}`);
+          values.push(value);
+          paramIndex++;
         }
-      } catch (err) {
-        throw err;
+      });
+
+      if (fields.length > 0) {
+        values.push(id);
+        await db.query(
+          `UPDATE program_sessions SET ${fields.join(', ')} WHERE id = $${paramIndex}`,
+          values,
+        );
       }
     },
     [],
   );
 
   const deleteSession = useCallback(async (id: number) => {
-    try {
-      const db = await getDB();
-      await db.query('DELETE FROM program_sessions WHERE id = $1', [id]);
-    } catch (err) {
-      throw err;
-    }
+    const db = await getDB();
+    await db.query('DELETE FROM program_sessions WHERE id = $1', [id]);
   }, []);
 
   // Program exercise management
@@ -335,70 +323,58 @@ export function useWorkoutPrograms() {
       sessionId: number,
       exercise: Omit<ProgramExercise, 'id' | 'session_id'>,
     ): Promise<number> => {
-      try {
-        const db = await getDB();
-        const result = await db.query(
-          `INSERT INTO program_exercises (session_id, exercise_id, target_sets, target_rep_min, target_rep_max, target_duration_seconds, order_index, superset_group_id, notes)
+      const db = await getDB();
+      const result = await db.query(
+        `INSERT INTO program_exercises (session_id, exercise_id, target_sets, target_rep_min, target_rep_max, target_duration_seconds, order_index, superset_group_id, notes)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING id`,
-          [
-            sessionId,
-            exercise.exercise_id,
-            exercise.target_sets,
-            exercise.target_rep_min,
-            exercise.target_rep_max,
-            exercise.target_duration_seconds,
-            exercise.order_index,
-            exercise.superset_group_id,
-            exercise.notes,
-          ],
-        );
-        const rows = result.rows as { id: number }[];
-        return rows[0].id;
-      } catch (err) {
-        throw err;
-      }
+        [
+          sessionId,
+          exercise.exercise_id,
+          exercise.target_sets,
+          exercise.target_rep_min,
+          exercise.target_rep_max,
+          exercise.target_duration_seconds,
+          exercise.order_index,
+          exercise.superset_group_id,
+          exercise.notes,
+        ],
+      );
+      const rows = result.rows as { id: number }[];
+      return rows[0].id;
     },
     [],
   );
 
   const updateProgramExercise = useCallback(
     async (id: number, data: Partial<ProgramExercise>) => {
-      try {
-        const db = await getDB();
-        const fields: string[] = [];
-        const values: unknown[] = [];
-        let paramIndex = 1;
+      const db = await getDB();
+      const fields: string[] = [];
+      const values: unknown[] = [];
+      let paramIndex = 1;
 
-        Object.entries(data).forEach(([key, value]) => {
-          if (key !== 'id' && value !== undefined) {
-            fields.push(`${key} = $${paramIndex}`);
-            values.push(value);
-            paramIndex++;
-          }
-        });
-
-        if (fields.length > 0) {
-          values.push(id);
-          await db.query(
-            `UPDATE program_exercises SET ${fields.join(', ')} WHERE id = $${paramIndex}`,
-            values,
-          );
+      Object.entries(data).forEach(([key, value]) => {
+        if (key !== 'id' && value !== undefined) {
+          fields.push(`${key} = $${paramIndex}`);
+          values.push(value);
+          paramIndex++;
         }
-      } catch (err) {
-        throw err;
+      });
+
+      if (fields.length > 0) {
+        values.push(id);
+        await db.query(
+          `UPDATE program_exercises SET ${fields.join(', ')} WHERE id = $${paramIndex}`,
+          values,
+        );
       }
     },
     [],
   );
 
   const deleteProgramExercise = useCallback(async (id: number) => {
-    try {
-      const db = await getDB();
-      await db.query('DELETE FROM program_exercises WHERE id = $1', [id]);
-    } catch (err) {
-      throw err;
-    }
+    const db = await getDB();
+    await db.query('DELETE FROM program_exercises WHERE id = $1', [id]);
   }, []);
 
   return {

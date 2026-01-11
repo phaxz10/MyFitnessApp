@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Play, Pause, RotateCcw, X, Volume2, VolumeX } from 'lucide-react';
 import { Button } from '../ui';
 
@@ -21,30 +21,6 @@ export function RestTimer({
   const [initialSeconds, setInitialSeconds] = useState(defaultSeconds);
   const [isRunning, setIsRunning] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
-
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
-
-    if (isRunning && seconds > 0) {
-      interval = setInterval(() => {
-        setSeconds((s) => s - 1);
-      }, 1000);
-    } else if (seconds === 0 && isRunning) {
-      setIsRunning(false);
-      // Play sound notification
-      if (soundEnabled) {
-        playBeep();
-      }
-      // Vibrate if supported
-      if (navigator.vibrate) {
-        navigator.vibrate([200, 100, 200, 100, 200]);
-      }
-    }
-
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isRunning, seconds, soundEnabled]);
 
   const playBeep = useCallback(() => {
     try {
@@ -89,6 +65,34 @@ export function RestTimer({
     }
   }, []);
 
+  // Use ref for playBeep to avoid re-running effect when it changes
+  const playBeepRef = useRef(playBeep);
+  playBeepRef.current = playBeep;
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    if (isRunning && seconds > 0) {
+      interval = setInterval(() => {
+        setSeconds((s) => s - 1);
+      }, 1000);
+    } else if (seconds === 0 && isRunning) {
+      setIsRunning(false);
+      // Play sound notification
+      if (soundEnabled) {
+        playBeepRef.current();
+      }
+      // Vibrate if supported
+      if (navigator.vibrate) {
+        navigator.vibrate([200, 100, 200, 100, 200]);
+      }
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isRunning, seconds, soundEnabled]);
+
   const toggleTimer = () => {
     setIsRunning(!isRunning);
   };
@@ -116,7 +120,8 @@ export function RestTimer({
   // Minimized view
   if (isMinimized) {
     return (
-      <div
+      <button
+        type="button"
         className={`fixed bottom-20 right-4 z-50 px-4 py-2 rounded-full shadow-lg cursor-pointer
           ${isFinished ? 'bg-green-600 animate-pulse' : isRunning ? 'bg-blue-600' : 'bg-slate-700'}`}
         onClick={onToggleMinimize}
@@ -124,7 +129,7 @@ export function RestTimer({
         <span className="text-white font-mono font-bold">
           {formatTime(seconds)}
         </span>
-      </div>
+      </button>
     );
   }
 
@@ -164,7 +169,11 @@ export function RestTimer({
       >
         <div className="w-32 h-32 relative">
           {/* Background circle */}
-          <svg className="w-full h-full transform -rotate-90">
+          <svg
+            className="w-full h-full transform -rotate-90"
+            role="img"
+            aria-label={`Rest timer: ${formatTime(seconds)} remaining`}
+          >
             <circle
               cx="64"
               cy="64"

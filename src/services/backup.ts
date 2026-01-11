@@ -15,6 +15,7 @@ interface BackupData {
     workout_logs: unknown[];
     workout_sets: unknown[];
     ai_goal_reviews: unknown[];
+    weekly_reviews: unknown[];
   };
 }
 
@@ -28,7 +29,7 @@ export interface ExportOptions {
   exercises: boolean;
   workoutPrograms: boolean; // Includes program_sessions and program_exercises
   workoutHistory: boolean; // Includes workout_logs and workout_sets
-  aiReviews: boolean;
+  aiReviews: boolean; // Includes ai_goal_reviews and weekly_reviews
 }
 
 export const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
@@ -48,7 +49,7 @@ export const EXPORT_OPTION_LABELS: Record<keyof ExportOptions, string> = {
   exercises: 'Exercises',
   workoutPrograms: 'Workout Programs',
   workoutHistory: 'Workout History',
-  aiReviews: 'AI Goal Reviews',
+  aiReviews: 'AI Reviews (Goal & Weekly)',
 };
 
 export async function exportData(
@@ -68,6 +69,7 @@ export async function exportData(
     workoutLogs,
     workoutSets,
     aiGoalReviews,
+    weeklyReviews,
   ] = await Promise.all([
     options.userProfile
       ? db.query('SELECT * FROM user_profile')
@@ -105,10 +107,13 @@ export async function exportData(
     options.aiReviews
       ? db.query('SELECT * FROM ai_goal_reviews ORDER BY review_date')
       : Promise.resolve({ rows: [] }),
+    options.aiReviews
+      ? db.query('SELECT * FROM weekly_reviews ORDER BY week_start')
+      : Promise.resolve({ rows: [] }),
   ]);
 
   const backup: BackupData = {
-    version: '1.0',
+    version: '1.1', // Bumped version for new schema
     exported_at: new Date().toISOString(),
     data: {
       user_profile: userProfile.rows,
@@ -121,6 +126,7 @@ export async function exportData(
       workout_logs: workoutLogs.rows,
       workout_sets: workoutSets.rows,
       ai_goal_reviews: aiGoalReviews.rows,
+      weekly_reviews: weeklyReviews.rows,
     },
   };
 
@@ -153,6 +159,7 @@ export async function importData(jsonString: string): Promise<void> {
   const tablesToClear: string[] = [];
 
   // Build list of tables to clear in reverse dependency order
+  if (hasData(data.weekly_reviews)) tablesToClear.push('weekly_reviews');
   if (hasData(data.ai_goal_reviews)) tablesToClear.push('ai_goal_reviews');
   if (hasData(data.workout_sets)) tablesToClear.push('workout_sets');
   if (hasData(data.workout_logs)) tablesToClear.push('workout_logs');
@@ -241,18 +248,20 @@ export async function importData(jsonString: string): Promise<void> {
     }
   }
 
-  // Exercises
+  // Exercises (updated with video_url and exercise_type)
   if (hasData(data.exercises)) {
     for (const row of data.exercises as Record<string, unknown>[]) {
       await db.query(
-        `INSERT INTO exercises (id, name, description, muscle_groups, equipment, is_ai_generated, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        `INSERT INTO exercises (id, name, description, muscle_groups, equipment, video_url, exercise_type, is_ai_generated, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           row.id,
           row.name,
           row.description,
           row.muscle_groups,
           row.equipment,
+          row.video_url ?? null,
+          row.exercise_type ?? 'reps_weight',
           row.is_ai_generated,
           row.created_at,
         ],
@@ -297,12 +306,12 @@ export async function importData(jsonString: string): Promise<void> {
     }
   }
 
-  // Program exercises
+  // Program exercises (updated with target_duration_seconds and superset_group_id)
   if (hasData(data.program_exercises)) {
     for (const row of data.program_exercises as Record<string, unknown>[]) {
       await db.query(
-        `INSERT INTO program_exercises (id, session_id, exercise_id, target_sets, target_rep_min, target_rep_max, order_index, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        `INSERT INTO program_exercises (id, session_id, exercise_id, target_sets, target_rep_min, target_rep_max, target_duration_seconds, order_index, superset_group_id, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
           row.id,
           row.session_id,
@@ -310,7 +319,9 @@ export async function importData(jsonString: string): Promise<void> {
           row.target_sets,
           row.target_rep_min,
           row.target_rep_max,
+          row.target_duration_seconds ?? null,
           row.order_index,
+          row.superset_group_id ?? null,
           row.notes,
         ],
       );
@@ -337,12 +348,12 @@ export async function importData(jsonString: string): Promise<void> {
     }
   }
 
-  // Workout sets
+  // Workout sets (updated with duration_seconds)
   if (hasData(data.workout_sets)) {
     for (const row of data.workout_sets as Record<string, unknown>[]) {
       await db.query(
-        `INSERT INTO workout_sets (id, workout_log_id, exercise_id, set_number, reps, weight_kg, notes, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        `INSERT INTO workout_sets (id, workout_log_id, exercise_id, set_number, reps, weight_kg, duration_seconds, notes, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           row.id,
           row.workout_log_id,
@@ -350,6 +361,7 @@ export async function importData(jsonString: string): Promise<void> {
           row.set_number,
           row.reps,
           row.weight_kg,
+          row.duration_seconds ?? null,
           row.notes,
           row.created_at,
         ],
@@ -372,6 +384,35 @@ export async function importData(jsonString: string): Promise<void> {
           row.new_goal_suggestion,
           row.ai_analysis,
           row.was_accepted,
+          row.created_at,
+        ],
+      );
+    }
+  }
+
+  // Weekly reviews (NEW)
+  if (hasData(data.weekly_reviews)) {
+    for (const row of data.weekly_reviews as Record<string, unknown>[]) {
+      await db.query(
+        `INSERT INTO weekly_reviews (id, week_start, week_end, start_weight, end_weight, weight_change, avg_daily_calories, calorie_target, calorie_adherence, workouts_completed, previous_goal, new_goal, previous_calorie_target, new_calorie_target, ai_summary, recommendations_applied, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+        [
+          row.id,
+          row.week_start,
+          row.week_end,
+          row.start_weight,
+          row.end_weight,
+          row.weight_change,
+          row.avg_daily_calories,
+          row.calorie_target,
+          row.calorie_adherence,
+          row.workouts_completed,
+          row.previous_goal,
+          row.new_goal,
+          row.previous_calorie_target,
+          row.new_calorie_target,
+          row.ai_summary,
+          row.recommendations_applied,
           row.created_at,
         ],
       );
@@ -423,6 +464,11 @@ export async function importData(jsonString: string): Promise<void> {
   if (hasData(data.ai_goal_reviews)) {
     sequenceResets.push(
       "SELECT setval('ai_goal_reviews_id_seq', COALESCE((SELECT MAX(id) FROM ai_goal_reviews), 0) + 1, false)",
+    );
+  }
+  if (hasData(data.weekly_reviews)) {
+    sequenceResets.push(
+      "SELECT setval('weekly_reviews_id_seq', COALESCE((SELECT MAX(id) FROM weekly_reviews), 0) + 1, false)",
     );
   }
 

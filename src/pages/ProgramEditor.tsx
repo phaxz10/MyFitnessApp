@@ -181,7 +181,7 @@ export function ProgramEditor() {
     fetchExercises();
 
     if (isEditing) {
-      loadProgram(parseInt(id));
+      loadProgram(parseInt(id, 10));
     }
   }, [id, isEditing, fetchExercises, loadProgram]);
 
@@ -372,7 +372,7 @@ export function ProgramEditor() {
       let programId: number;
 
       if (isEditing) {
-        programId = parseInt(id);
+        programId = parseInt(id, 10);
         await updateProgram(programId, {
           name: data.name,
           description: data.description || '',
@@ -399,7 +399,7 @@ export function ProgramEditor() {
           const session = data.sessions[i];
           let sessionId: number;
           const dayOfWeek =
-            session.dayOfWeek === '' ? null : parseInt(session.dayOfWeek);
+            session.dayOfWeek === '' ? null : parseInt(session.dayOfWeek, 10);
 
           if (session.id) {
             await updateSession(session.id, {
@@ -489,7 +489,7 @@ export function ProgramEditor() {
         for (let i = 0; i < data.sessions.length; i++) {
           const session = data.sessions[i];
           const dayOfWeek =
-            session.dayOfWeek === '' ? null : parseInt(session.dayOfWeek);
+            session.dayOfWeek === '' ? null : parseInt(session.dayOfWeek, 10);
           const sessionId = await addSession(programId, {
             name: session.name,
             day_of_week: dayOfWeek,
@@ -529,7 +529,7 @@ export function ProgramEditor() {
             '\nNote: Reset Database will clear all your data.',
         );
       } else {
-        alert('Failed to save program: ' + errorMessage);
+        alert(`Failed to save program: ${errorMessage}`);
       }
     }
   };

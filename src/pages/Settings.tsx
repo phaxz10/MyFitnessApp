@@ -124,7 +124,7 @@ export function Settings() {
     setError(null);
     try {
       await updateProfile({
-        age: parseInt(data.age),
+        age: parseInt(data.age, 10),
         height_cm: parseFloat(data.heightCm),
         activity_level: data.activityLevel as
           | 'sedentary'
@@ -134,7 +134,7 @@ export function Settings() {
       });
       setSuccess('Profile updated');
       setActiveSection(null);
-    } catch (err) {
+    } catch (_err) {
       setError('Failed to update profile');
     } finally {
       setIsLoading(false);
@@ -148,14 +148,14 @@ export function Settings() {
       await updateProfile({
         goal: data.goal as 'bulk' | 'lean_bulk' | 'recomp' | 'cut' | 'maintain',
         target_rate_kg_per_week: parseFloat(data.targetRate),
-        calorie_target: parseInt(data.calories),
-        protein_target_g: parseInt(data.protein),
-        carbs_target_g: parseInt(data.carbs),
-        fat_target_g: parseInt(data.fat),
+        calorie_target: parseInt(data.calories, 10),
+        protein_target_g: parseInt(data.protein, 10),
+        carbs_target_g: parseInt(data.carbs, 10),
+        fat_target_g: parseInt(data.fat, 10),
       });
       setSuccess('Targets updated');
       setActiveSection(null);
-    } catch (err) {
+    } catch (_err) {
       setError('Failed to update targets');
     } finally {
       setIsLoading(false);
@@ -174,7 +174,7 @@ export function Settings() {
       initGemini(profile.gemini_api_key);
       const values = goalsForm.getValues();
       const result = await calculateTargets({
-        age: parseInt(profileForm.getValues().age),
+        age: parseInt(profileForm.getValues().age, 10),
         gender: profile.gender,
         height_cm: parseFloat(profileForm.getValues().heightCm),
         weight_kg: 70, // Would need to get latest weight
@@ -197,7 +197,7 @@ export function Settings() {
       goalsForm.setValue('carbs', result.carbs_g.toString());
       goalsForm.setValue('fat', result.fat_g.toString());
       setSuccess('Targets recalculated');
-    } catch (err) {
+    } catch (_err) {
       setError('Failed to recalculate targets');
     } finally {
       setIsLoading(false);
@@ -214,7 +214,7 @@ export function Settings() {
       }
       setSuccess('API key updated');
       setActiveSection(null);
-    } catch (err) {
+    } catch (_err) {
       setError('Failed to update API key');
     } finally {
       setIsLoading(false);
@@ -227,7 +227,7 @@ export function Settings() {
       const data = await exportData(options);
       downloadBackup(data);
       setSuccess('Data exported successfully');
-    } catch (err) {
+    } catch (_err) {
       setError('Failed to export data');
     } finally {
       setIsLoading(false);
@@ -245,7 +245,7 @@ export function Settings() {
       await importData(data);
       await fetchProfile();
       setSuccess('Data imported successfully');
-    } catch (err) {
+    } catch (_err) {
       setError('Failed to import data');
     } finally {
       setIsLoading(false);
@@ -267,7 +267,7 @@ export function Settings() {
       await resetDatabase();
       setOnboardingComplete(false);
       navigate('/onboarding');
-    } catch (err) {
+    } catch (_err) {
       setError('Failed to clear data');
       setIsLoading(false);
     }

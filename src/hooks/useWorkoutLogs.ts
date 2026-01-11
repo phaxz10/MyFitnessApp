@@ -212,52 +212,48 @@ export function useWorkoutLogs() {
       durationSeconds: number | null = null,
       notes?: string,
     ): Promise<WorkoutSetWithExercise> => {
-      try {
-        const db = await getDB();
+      const db = await getDB();
 
-        // Get the next set number for this exercise in this workout
-        const countResult = await db.query(
-          `SELECT COUNT(*) as count FROM workout_sets 
+      // Get the next set number for this exercise in this workout
+      const countResult = await db.query(
+        `SELECT COUNT(*) as count FROM workout_sets 
          WHERE workout_log_id = $1 AND exercise_id = $2`,
-          [workoutLogId, exerciseId],
-        );
-        const count = (countResult.rows as { count: number }[])[0].count;
-        const setNumber = Number(count) + 1;
+        [workoutLogId, exerciseId],
+      );
+      const count = (countResult.rows as { count: number }[])[0].count;
+      const setNumber = Number(count) + 1;
 
-        const result = await db.query(
-          `INSERT INTO workout_sets (workout_log_id, exercise_id, set_number, reps, weight_kg, duration_seconds, notes)
+      const result = await db.query(
+        `INSERT INTO workout_sets (workout_log_id, exercise_id, set_number, reps, weight_kg, duration_seconds, notes)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING *`,
-          [
-            workoutLogId,
-            exerciseId,
-            setNumber,
-            reps,
-            weightKg,
-            durationSeconds,
-            notes || null,
-          ],
-        );
-        const newSet = (result.rows as WorkoutSet[])[0];
+        [
+          workoutLogId,
+          exerciseId,
+          setNumber,
+          reps,
+          weightKg,
+          durationSeconds,
+          notes || null,
+        ],
+      );
+      const newSet = (result.rows as WorkoutSet[])[0];
 
-        // Get exercise name
-        const exerciseResult = await db.query(
-          'SELECT name FROM exercises WHERE id = $1',
-          [exerciseId],
-        );
-        const exerciseName =
-          (exerciseResult.rows as { name: string }[])[0]?.name || '';
+      // Get exercise name
+      const exerciseResult = await db.query(
+        'SELECT name FROM exercises WHERE id = $1',
+        [exerciseId],
+      );
+      const exerciseName =
+        (exerciseResult.rows as { name: string }[])[0]?.name || '';
 
-        const setWithExercise: WorkoutSetWithExercise = {
-          ...newSet,
-          exercise_name: exerciseName,
-        };
+      const setWithExercise: WorkoutSetWithExercise = {
+        ...newSet,
+        exercise_name: exerciseName,
+      };
 
-        setActiveWorkoutSets((prev) => [...prev, setWithExercise]);
-        return setWithExercise;
-      } catch (err) {
-        throw err;
-      }
+      setActiveWorkoutSets((prev) => [...prev, setWithExercise]);
+      return setWithExercise;
     },
     [],
   );
@@ -272,46 +268,38 @@ export function useWorkoutLogs() {
         notes?: string;
       },
     ): Promise<void> => {
-      try {
-        const db = await getDB();
-        const fields: string[] = [];
-        const values: unknown[] = [];
-        let paramIndex = 1;
+      const db = await getDB();
+      const fields: string[] = [];
+      const values: unknown[] = [];
+      let paramIndex = 1;
 
-        Object.entries(data).forEach(([key, value]) => {
-          if (value !== undefined) {
-            fields.push(`${key} = $${paramIndex}`);
-            values.push(value);
-            paramIndex++;
-          }
-        });
-
-        if (fields.length > 0) {
-          values.push(setId);
-          await db.query(
-            `UPDATE workout_sets SET ${fields.join(', ')} WHERE id = $${paramIndex}`,
-            values,
-          );
-
-          setActiveWorkoutSets((prev) =>
-            prev.map((set) => (set.id === setId ? { ...set, ...data } : set)),
-          );
+      Object.entries(data).forEach(([key, value]) => {
+        if (value !== undefined) {
+          fields.push(`${key} = $${paramIndex}`);
+          values.push(value);
+          paramIndex++;
         }
-      } catch (err) {
-        throw err;
+      });
+
+      if (fields.length > 0) {
+        values.push(setId);
+        await db.query(
+          `UPDATE workout_sets SET ${fields.join(', ')} WHERE id = $${paramIndex}`,
+          values,
+        );
+
+        setActiveWorkoutSets((prev) =>
+          prev.map((set) => (set.id === setId ? { ...set, ...data } : set)),
+        );
       }
     },
     [],
   );
 
   const deleteSet = useCallback(async (setId: number): Promise<void> => {
-    try {
-      const db = await getDB();
-      await db.query('DELETE FROM workout_sets WHERE id = $1', [setId]);
-      setActiveWorkoutSets((prev) => prev.filter((set) => set.id !== setId));
-    } catch (err) {
-      throw err;
-    }
+    const db = await getDB();
+    await db.query('DELETE FROM workout_sets WHERE id = $1', [setId]);
+    setActiveWorkoutSets((prev) => prev.filter((set) => set.id !== setId));
   }, []);
 
   const getExerciseHistory = useCallback(

@@ -136,7 +136,7 @@ export function Onboarding() {
       if (values.apiKey) {
         initGemini(values.apiKey);
         const result = await calculateTargets({
-          age: parseInt(values.age),
+          age: parseInt(values.age, 10),
           gender: values.gender,
           height_cm: parseFloat(values.heightCm),
           weight_kg: parseFloat(values.weightKg),
@@ -163,11 +163,11 @@ export function Onboarding() {
           values.gender === 'male'
             ? 10 * weight +
               6.25 * parseFloat(values.heightCm) -
-              5 * parseInt(values.age) +
+              5 * parseInt(values.age, 10) +
               5
             : 10 * weight +
               6.25 * parseFloat(values.heightCm) -
-              5 * parseInt(values.age) -
+              5 * parseInt(values.age, 10) -
               161;
 
         const tdee = bmr * multipliers[values.activityLevel];
@@ -188,7 +188,7 @@ export function Onboarding() {
         setValue('targets', { calories, protein, carbs, fat });
       }
       setStep('targets');
-    } catch (err) {
+    } catch (_err) {
       setError('Failed to calculate targets. Using default values.');
       // Set fallback values
       const weight = parseFloat(values.weightKg);
@@ -206,7 +206,7 @@ export function Onboarding() {
     const values = getValues();
     try {
       await createProfile({
-        age: parseInt(values.age),
+        age: parseInt(values.age, 10),
         gender: values.gender,
         height_cm: parseFloat(values.heightCm),
         activity_level: values.activityLevel,
@@ -231,7 +231,7 @@ export function Onboarding() {
 
       setOnboardingComplete(true);
       setStep('ready');
-    } catch (err) {
+    } catch (_err) {
       setError('Failed to save profile. Please try again.');
     }
   };
@@ -496,7 +496,7 @@ export function Onboarding() {
                   onChange={(e) =>
                     setValue('targets', {
                       ...targets,
-                      calories: parseInt(e.target.value) || 0,
+                      calories: parseInt(e.target.value, 10) || 0,
                     })
                   }
                   className="w-24 text-right"
@@ -510,7 +510,7 @@ export function Onboarding() {
                   onChange={(e) =>
                     setValue('targets', {
                       ...targets,
-                      protein: parseInt(e.target.value) || 0,
+                      protein: parseInt(e.target.value, 10) || 0,
                     })
                   }
                   className="w-24 text-right"
@@ -524,7 +524,7 @@ export function Onboarding() {
                   onChange={(e) =>
                     setValue('targets', {
                       ...targets,
-                      carbs: parseInt(e.target.value) || 0,
+                      carbs: parseInt(e.target.value, 10) || 0,
                     })
                   }
                   className="w-24 text-right"
@@ -538,7 +538,7 @@ export function Onboarding() {
                   onChange={(e) =>
                     setValue('targets', {
                       ...targets,
-                      fat: parseInt(e.target.value) || 0,
+                      fat: parseInt(e.target.value, 10) || 0,
                     })
                   }
                   className="w-24 text-right"

@@ -179,10 +179,10 @@ export function WeeklyReviewModal({
     setIsLoading(true);
     try {
       await updateProfile({
-        calorie_target: parseInt(targetsForm.calories),
-        protein_target_g: parseInt(targetsForm.protein),
-        carbs_target_g: parseInt(targetsForm.carbs),
-        fat_target_g: parseInt(targetsForm.fat),
+        calorie_target: parseInt(targetsForm.calories, 10),
+        protein_target_g: parseInt(targetsForm.protein, 10),
+        carbs_target_g: parseInt(targetsForm.carbs, 10),
+        fat_target_g: parseInt(targetsForm.fat, 10),
       });
 
       setAppliedRecommendations((prev) => ({ ...prev, targets: true }));
@@ -254,7 +254,7 @@ export function WeeklyReviewModal({
           appliedRecommendations,
           appliedRecommendations.goal ? selectedGoal : null,
           appliedRecommendations.targets
-            ? parseInt(targetsForm.calories)
+            ? parseInt(targetsForm.calories, 10)
             : null,
         );
       } catch {

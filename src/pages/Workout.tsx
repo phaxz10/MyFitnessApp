@@ -338,7 +338,7 @@ export function Workout() {
                         </button>
 
                         {showProgramMenu === program.id && (
-                          <div className="absolute right-0 top-full mt-1 bg-slate-700 rounded-lg shadow-lg z-10 overflow-hidden min-w-[150px]">
+                          <div className="absolute right-0 top-full mt-1 bg-slate-700 rounded-lg shadow-lg z-20 overflow-hidden min-w-[150px]">
                             {!program.is_active && (
                               <button
                                 onClick={() => handleSetActive(program.id)}
@@ -468,7 +468,7 @@ export function Workout() {
       {(showProgramMenu || showNewProgramOptions) && (
         <button
           type="button"
-          className="fixed inset-0 z-10 w-full h-full cursor-default"
+          className="fixed inset-0 z-0 w-full h-full cursor-default"
           onClick={() => {
             setShowProgramMenu(null);
             setShowNewProgramOptions(false);

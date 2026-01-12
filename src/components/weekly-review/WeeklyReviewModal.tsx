@@ -11,6 +11,9 @@ import {
   Loader2,
   ChevronRight,
   ArrowRight,
+  Zap,
+  Battery,
+  BatteryLow,
 } from 'lucide-react';
 import { Modal, Button, Card, CardContent } from '../ui';
 import { useWeeklyReview } from '../../hooks/useWeeklyReview';
@@ -366,6 +369,75 @@ export function WeeklyReviewModal({
                   </div>
                 </CardContent>
               </Card>
+            )}
+
+            {/* Metabolic Response */}
+            {aiReview?.metabolicResponse && (
+              <Card
+                className={`border-l-4 ${
+                  aiReview.metabolicResponse.type === 'thrifty'
+                    ? 'border-l-orange-500'
+                    : aiReview.metabolicResponse.type === 'spendthrift'
+                      ? 'border-l-blue-500'
+                      : 'border-l-green-500'
+                }`}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-3">
+                    {aiReview.metabolicResponse.type === 'thrifty' ? (
+                      <BatteryLow
+                        size={24}
+                        className="text-orange-400 flex-shrink-0 mt-0.5"
+                      />
+                    ) : aiReview.metabolicResponse.type === 'spendthrift' ? (
+                      <Zap
+                        size={24}
+                        className="text-blue-400 flex-shrink-0 mt-0.5"
+                      />
+                    ) : (
+                      <Battery
+                        size={24}
+                        className="text-green-400 flex-shrink-0 mt-0.5"
+                      />
+                    )}
+                    <div>
+                      <p className="text-white font-medium mb-1">
+                        {aiReview.metabolicResponse.type === 'thrifty'
+                          ? 'Thrifty Metabolism Detected'
+                          : aiReview.metabolicResponse.type === 'spendthrift'
+                            ? 'Spendthrift Metabolism'
+                            : 'Normal Metabolic Response'}
+                      </p>
+                      <p className="text-slate-300 text-sm mb-2">
+                        {aiReview.metabolicResponse.analysis}
+                      </p>
+                      <p className="text-slate-400 text-xs">
+                        {aiReview.metabolicResponse.recommendation}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Diet Break Recommendation */}
+            {aiReview?.recommendations.dietBreakRecommended && (
+              <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-3">
+                <div className="flex items-start gap-2">
+                  <AlertCircle
+                    size={18}
+                    className="text-orange-400 flex-shrink-0 mt-0.5"
+                  />
+                  <div>
+                    <p className="text-orange-300 font-medium text-sm">
+                      Diet Break Recommended
+                    </p>
+                    <p className="text-orange-200/70 text-xs mt-1">
+                      {aiReview.recommendations.dietBreakReason}
+                    </p>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Progress Details */}

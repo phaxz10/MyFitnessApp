@@ -258,6 +258,11 @@ export interface WeeklyReviewSufficiency {
 export interface AIWeeklyReviewResponse {
   summary: string;
   onTrack: boolean;
+  metabolicResponse: {
+    type: 'thrifty' | 'normal' | 'spendthrift';
+    analysis: string;
+    recommendation: string;
+  };
   progressAssessment: {
     weightProgress: string;
     calorieAdherence: string;
@@ -272,6 +277,8 @@ export interface AIWeeklyReviewResponse {
     newCarbsTarget: number | null;
     newFatTarget: number | null;
     caloriesReason: string | null;
+    dietBreakRecommended: boolean;
+    dietBreakReason: string | null;
     changeGoal: boolean;
     suggestedGoal: 'bulk' | 'lean_bulk' | 'recomp' | 'cut' | 'maintain' | null;
     goalReason: string | null;

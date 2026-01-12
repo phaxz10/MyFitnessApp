@@ -455,6 +455,13 @@ export async function reviewWeeklyProgress(
     )
     .join('\n');
 
+  // Calculate expected vs actual weight change for metabolic response analysis
+  const dailyDeficitOrSurplus =
+    weeklyData.avgDailyCalories - profile.calorie_target;
+  const weeklyCalorieDifference = dailyDeficitOrSurplus * 7;
+  // 7700 kcal ≈ 1kg of body weight
+  const expectedWeeklyWeightChange = weeklyCalorieDifference / 7700;
+
   const prompt = `You are a fitness coach conducting a weekly check-in review. Analyze the user's past week of progress and provide actionable recommendations.
 
 User Profile:
@@ -470,24 +477,56 @@ Week Summary (${weeklyData.weekStart} to ${weeklyData.weekEnd}):
 
 Weight Data:
 ${weightDataSummary || 'No weight logs this week'}
-${weeklyData.weightChange !== null ? `Weekly weight change: ${weeklyData.weightChange > 0 ? '+' : ''}${weeklyData.weightChange}kg` : ''}
+${weeklyData.weightChange !== null ? `Actual weekly weight change: ${weeklyData.weightChange > 0 ? '+' : ''}${weeklyData.weightChange.toFixed(2)}kg` : ''}
 
 Calorie Adherence:
 - Average daily intake: ${weeklyData.avgDailyCalories} kcal
 - Target: ${profile.calorie_target} kcal
 - Adherence: ${weeklyData.calorieAdherence}%
+- Weekly calorie difference from target: ${weeklyCalorieDifference > 0 ? '+' : ''}${Math.round(weeklyCalorieDifference)} kcal
+- Expected weight change based on intake: ${expectedWeeklyWeightChange > 0 ? '+' : ''}${expectedWeeklyWeightChange.toFixed(2)}kg
+
+METABOLIC RESPONSE ANALYSIS:
+Compare actual weight change vs expected weight change to assess metabolic adaptation:
+
+"Thrifty" Metabolic Response (signs of metabolic adaptation):
+- Weight loss is SLOWER than expected despite calorie deficit
+- Or weight gain is FASTER than expected on small surplus
+- Body is conserving energy, reducing NEAT (non-exercise activity thermogenesis)
+- Common after prolonged dieting or multiple cut cycles
+- Recommendation: Consider diet break, reverse diet, or increase calories slightly to restore metabolic rate
+
+"Spendthrift" Metabolic Response (metabolically flexible):
+- Weight changes roughly match expected rates based on calorie intake
+- Body responds predictably to calorie adjustments
+- Good metabolic flexibility - continue current approach
+
+"Hyper-Spendthrift" Response (rare):
+- Weight loss is FASTER than expected
+- Or difficulty gaining weight despite surplus
+- High metabolic rate, body "wastes" excess energy as heat
+- May need larger surplus for bulking goals
 
 Based on this data, provide a comprehensive weekly review. Consider:
 1. Is the user on track for their ${profile.goal} goal?
-2. Should they update body measurements (weight, body fat)? Recommend this if no recent measurements or if significant weight change detected.
-3. Should calorie targets be adjusted? Consider if actual intake differs significantly from target or if weight isn't trending as expected.
-4. Should the goal be changed? (e.g., cut -> lean bulk if target weight reached, or bulk -> cut if gaining too fast)
-5. Are there any workout/program adjustments needed?
+2. Analyze their metabolic response: Is their body responding as expected to their calorie intake, or showing signs of metabolic adaptation (thrifty) or high metabolism (spendthrift)?
+3. Should they update body measurements (weight, body fat)? Recommend this if no recent measurements or if significant weight change detected.
+4. Should calorie targets be adjusted? Consider:
+   - If showing "thrifty" response during a cut: may need a diet break or slight calorie increase
+   - If showing "thrifty" response during bulk: current calories may be sufficient
+   - If showing "spendthrift" response: continue current approach or adjust based on goals
+5. Should the goal be changed? (e.g., cut -> maintenance for diet break if metabolically adapted)
+6. Are there any workout/program adjustments needed?
 
 Return JSON format only, no markdown code blocks:
 {
   "summary": "2-3 sentence overview of the week's progress",
   "onTrack": true/false,
+  "metabolicResponse": {
+    "type": "thrifty|normal|spendthrift",
+    "analysis": "explanation of how body is responding to current calorie intake vs expected",
+    "recommendation": "specific advice based on metabolic response"
+  },
   "progressAssessment": {
     "weightProgress": "assessment of weight trend vs goal",
     "calorieAdherence": "assessment of calorie tracking consistency",
@@ -501,21 +540,28 @@ Return JSON format only, no markdown code blocks:
     "newProteinTarget": new_protein_or_null,
     "newCarbsTarget": new_carbs_or_null,
     "newFatTarget": new_fat_or_null,
-    "caloriesReason": "explanation for calorie adjustment, or null",
+    "caloriesReason": "explanation for calorie adjustment including metabolic response considerations, or null",
+    "dietBreakRecommended": true/false,
+    "dietBreakReason": "if thrifty response detected during cut, explain benefit of 1-2 week maintenance phase, or null",
     "changeGoal": true/false,
     "suggestedGoal": "bulk|lean_bulk|recomp|cut|maintain" or null,
     "goalReason": "why goal should change, or null",
     "changeProgram": true/false,
     "programSuggestion": "program advice or null"
   },
-  "motivationalMessage": "encouraging message tailored to their progress"
+  "motivationalMessage": "encouraging message tailored to their progress and metabolic situation"
 }
 
 Guidelines:
-- Be encouraging but honest
-- Only suggest goal changes if there's a clear reason (e.g., goal achieved, progress stalled for weeks)
-- Calorie adjustments should be moderate (100-200 kcal) unless severely off track
-- If data is limited, acknowledge uncertainty but still provide useful guidance`;
+- Be encouraging but honest about metabolic adaptation
+- If data shows thrifty response during a cut (weight not dropping despite deficit), suggest:
+  * A 1-2 week "diet break" at maintenance calories to restore metabolic rate
+  * Slightly increasing calories (100-200) to break through plateau
+  * Adding refeed days (1-2 higher carb days per week)
+- If data shows spendthrift response, reassure user their metabolism is healthy
+- Only suggest goal changes if there's a clear reason (e.g., metabolic adaptation requiring diet break)
+- Calorie adjustments should consider metabolic state, not just weight trends
+- If data is limited, acknowledge uncertainty but note that consistent logging helps identify metabolic patterns`;
 
   const result = await model.generateContent(prompt);
   const response = result.response.text();

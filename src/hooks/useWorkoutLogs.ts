@@ -420,10 +420,11 @@ export function useWorkoutLogs() {
     try {
       const db = await getDB();
       // Find any workout that is still in_progress for today
+      // Also handle legacy records where status might be NULL but ended_at is NULL
       const today = getLocalDateString();
       const result = await db.query(
         `SELECT * FROM workout_logs 
-         WHERE date = $1 AND status = 'in_progress'
+         WHERE date = $1 AND (status = 'in_progress' OR (status IS NULL AND ended_at IS NULL))
          ORDER BY started_at DESC
          LIMIT 1`,
         [today],
@@ -432,6 +433,16 @@ export function useWorkoutLogs() {
       if ((result.rows as WorkoutLog[]).length === 0) return null;
 
       const workout = (result.rows as WorkoutLog[])[0];
+
+      // If status was NULL, update it to 'in_progress' for consistency
+      if (!workout.status) {
+        await db.query(
+          `UPDATE workout_logs SET status = 'in_progress' WHERE id = $1`,
+          [workout.id],
+        );
+        workout.status = 'in_progress';
+      }
+
       setActiveWorkout(workout);
       await loadActiveWorkoutSets(workout.id);
       return workout;
@@ -505,11 +516,13 @@ export function useWorkoutLogs() {
       const today = getLocalDateString();
 
       // Find all in_progress workouts from before today
+      // Also handle legacy records where status might be NULL but ended_at is NULL
       const result = await db.query(
         `SELECT wl.id, 
                 (SELECT COUNT(*) FROM workout_sets WHERE workout_log_id = wl.id) as set_count
          FROM workout_logs wl
-         WHERE wl.status = 'in_progress' AND wl.date < $1`,
+         WHERE (wl.status = 'in_progress' OR (wl.status IS NULL AND wl.ended_at IS NULL)) 
+         AND wl.date < $1`,
         [today],
       );
 
@@ -537,9 +550,11 @@ export function useWorkoutLogs() {
         const db = await getDB();
         const today = getLocalDateString();
 
+        // Check for status = 'completed' OR legacy records with ended_at set
         const result = await db.query(
           `SELECT COUNT(*) as count FROM workout_logs 
-           WHERE session_id = $1 AND date = $2 AND status = 'completed'`,
+           WHERE session_id = $1 AND date = $2 
+           AND (status = 'completed' OR (status IS NULL AND ended_at IS NOT NULL))`,
           [sessionId, today],
         );
 
@@ -566,7 +581,7 @@ export function useWorkoutLogs() {
         const today = getLocalDateString();
 
         const result = await db.query(
-          `SELECT id, status FROM workout_logs 
+          `SELECT id, status, ended_at FROM workout_logs 
            WHERE session_id = $1 AND date = $2
            ORDER BY started_at DESC
            LIMIT 1`,
@@ -577,8 +592,22 @@ export function useWorkoutLogs() {
           return { hasWorkout: false, status: null, workoutId: null };
         }
 
-        const log = (result.rows as { id: number; status: WorkoutStatus }[])[0];
-        return { hasWorkout: true, status: log.status, workoutId: log.id };
+        const log = (
+          result.rows as {
+            id: number;
+            status: WorkoutStatus | null;
+            ended_at: string | null;
+          }[]
+        )[0];
+
+        // Handle legacy records where status might be NULL
+        // Infer status from ended_at for backwards compatibility
+        let effectiveStatus: WorkoutStatus | null = log.status;
+        if (effectiveStatus === null) {
+          effectiveStatus = log.ended_at ? 'completed' : 'in_progress';
+        }
+
+        return { hasWorkout: true, status: effectiveStatus, workoutId: log.id };
       } catch {
         return { hasWorkout: false, status: null, workoutId: null };
       }

@@ -251,9 +251,17 @@ async function initSchema(): Promise<void> {
     await db.exec(`
       ALTER TABLE workout_logs ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'in_progress';
     `);
-    // Set status for existing completed workouts (those with ended_at)
+    // Backfill status for ALL existing workouts:
+    // 1. If ended_at exists -> 'completed'
+    // 2. If ended_at is NULL -> 'in_progress'
+    // This ensures no NULL values remain in the status column
     await db.exec(`
-      UPDATE workout_logs SET status = 'completed' WHERE ended_at IS NOT NULL AND (status IS NULL OR status = 'in_progress');
+      UPDATE workout_logs 
+      SET status = CASE 
+        WHEN ended_at IS NOT NULL THEN 'completed'
+        ELSE 'in_progress'
+      END
+      WHERE status IS NULL;
     `);
   } catch {
     // Column may already exist, ignore

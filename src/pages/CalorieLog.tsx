@@ -224,6 +224,9 @@ export function CalorieLog() {
 
   return (
     <div className="p-4 pb-20">
+      {/* Page Title */}
+      <h1 className="text-2xl font-bold text-white mb-4">Nutrition</h1>
+
       {/* Date Navigation */}
       <div className="flex items-center justify-between mb-6">
         <button

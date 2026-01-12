@@ -377,7 +377,7 @@ export function WeightTracker() {
   return (
     <div className="p-4 pb-20">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-white">Weight Tracker</h1>
+        <h1 className="text-2xl font-bold text-white">Body Tracking</h1>
         <div className="flex gap-2">
           <Button variant="secondary" onClick={handleOpenPhotoModal}>
             <Camera size={18} className="mr-1" />

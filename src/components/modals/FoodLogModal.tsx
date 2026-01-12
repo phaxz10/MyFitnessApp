@@ -42,10 +42,18 @@ export function FoodLogModal() {
   const { addEntry } = useCalories();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Text mode state
+  // Shared state
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Text mode state
+  const [textStep, setTextStep] = useState<'input' | 'analyzing' | 'results'>(
+    'input',
+  );
+  const [textResults, setTextResults] = useState<EditableFoodItem[]>([]);
+  const [textMealType, setTextMealType] = useState<MealType>('lunch');
+  const [textDescription, setTextDescription] = useState('');
 
   // Scanner mode state
   const [scannerStep, setScannerStep] = useState<
@@ -60,7 +68,7 @@ export function FoodLogModal() {
   const [scannerMealType, setScannerMealType] = useState<MealType>('lunch');
   const [scannerDescription, setScannerDescription] = useState('');
 
-  // React Hook Form for text mode
+  // React Hook Form for manual mode
   const {
     register,
     handleSubmit,
@@ -81,7 +89,6 @@ export function FoodLogModal() {
     },
   });
 
-  const foodDescription = watch('foodDescription') || '';
   const calories = watch('calories');
 
   // Reset state when modal opens/closes
@@ -91,6 +98,7 @@ export function FoodLogModal() {
       if (foodLogModal.mealType) {
         setValue('mealType', foodLogModal.mealType);
         setScannerMealType(foodLogModal.mealType);
+        setTextMealType(foodLogModal.mealType);
       }
       setError(null);
     } else {
@@ -99,6 +107,11 @@ export function FoodLogModal() {
       setError(null);
       setIsAnalyzing(false);
       setIsSaving(false);
+      // Text mode reset
+      setTextStep('input');
+      setTextResults([]);
+      setTextDescription('');
+      // Scanner mode reset
       setScannerStep('capture');
       setImagePreview(null);
       setImageData(null);
@@ -111,9 +124,78 @@ export function FoodLogModal() {
     closeFoodLogModal();
   }, [closeFoodLogModal]);
 
+  // === SHARED HANDLERS FOR EDITABLE RESULTS ===
+  const handleTextPortionChange = (index: number, newPortion: number) => {
+    setTextResults((prev) =>
+      prev.map((item, i) => {
+        if (i !== index) return item;
+
+        const recalculated = recalculateMacros(
+          item.originalPortion,
+          newPortion,
+          {
+            calories:
+              item.calories * (item.originalPortion / item.portion_grams),
+            protein_g:
+              item.protein_g * (item.originalPortion / item.portion_grams),
+            carbs_g: item.carbs_g * (item.originalPortion / item.portion_grams),
+            fat_g: item.fat_g * (item.originalPortion / item.portion_grams),
+          },
+        );
+
+        return {
+          ...item,
+          portion_grams: newPortion,
+          calories: recalculated.calories,
+          protein_g: recalculated.protein_g,
+          carbs_g: recalculated.carbs_g,
+          fat_g: recalculated.fat_g,
+        };
+      }),
+    );
+  };
+
+  const handleTextRemoveItem = (index: number) => {
+    setTextResults((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleScannerPortionChange = (index: number, newPortion: number) => {
+    setScannerResults((prev) =>
+      prev.map((item, i) => {
+        if (i !== index) return item;
+
+        const recalculated = recalculateMacros(
+          item.originalPortion,
+          newPortion,
+          {
+            calories:
+              item.calories * (item.originalPortion / item.portion_grams),
+            protein_g:
+              item.protein_g * (item.originalPortion / item.portion_grams),
+            carbs_g: item.carbs_g * (item.originalPortion / item.portion_grams),
+            fat_g: item.fat_g * (item.originalPortion / item.portion_grams),
+          },
+        );
+
+        return {
+          ...item,
+          portion_grams: newPortion,
+          calories: recalculated.calories,
+          protein_g: recalculated.protein_g,
+          carbs_g: recalculated.carbs_g,
+          fat_g: recalculated.fat_g,
+        };
+      }),
+    );
+  };
+
+  const handleScannerRemoveItem = (index: number) => {
+    setScannerResults((prev) => prev.filter((_, i) => i !== index));
+  };
+
   // === TEXT MODE HANDLERS ===
   const handleAnalyzeText = async () => {
-    if (!foodDescription.trim()) {
+    if (!textDescription.trim()) {
       setError('Please describe your food');
       return;
     }
@@ -128,37 +210,60 @@ export function FoodLogModal() {
       return;
     }
 
-    setIsAnalyzing(true);
+    setTextStep('analyzing');
     setError(null);
 
     try {
-      const result = await analyzeFoodText(foodDescription);
+      const result = await analyzeFoodText(textDescription);
 
-      // Calculate totals from items
-      const total = result.items.reduce(
-        (acc, item) => ({
-          calories: acc.calories + item.calories,
-          protein_g: acc.protein_g + item.protein_g,
-          carbs_g: acc.carbs_g + item.carbs_g,
-          fat_g: acc.fat_g + item.fat_g,
-          portion_grams: acc.portion_grams + item.portion_grams,
-        }),
-        { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, portion_grams: 0 },
+      setTextResults(
+        result.items.map((item) => ({
+          ...item,
+          originalPortion: item.portion_grams,
+        })),
       );
-
-      setValue('portionGrams', total.portion_grams.toString());
-      setValue('calories', Math.round(total.calories).toString());
-      setValue('protein', Math.round(total.protein_g).toString());
-      setValue('carbs', Math.round(total.carbs_g).toString());
-      setValue('fat', Math.round(total.fat_g).toString());
+      setTextStep('results');
     } catch {
-      setError('Failed to analyze food. Please try again or enter manually.');
-    } finally {
-      setIsAnalyzing(false);
+      setError('Failed to analyze food. Please try again.');
+      setTextStep('input');
     }
   };
 
-  const onTextSubmit = async (data: FoodEntryFormData) => {
+  const handleSaveTextResults = async () => {
+    if (textResults.length === 0) {
+      setError('No food items to save');
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      for (const item of textResults) {
+        await addEntry({
+          date: foodLogModal.date,
+          meal_type: textMealType,
+          food_description: item.name,
+          portion_grams: item.portion_grams,
+          calories: item.calories,
+          protein_g: item.protein_g,
+          carbs_g: item.carbs_g,
+          fat_g: item.fat_g,
+          is_ai_generated: true,
+        });
+      }
+
+      foodLogModal.onSuccess?.();
+      handleClose();
+    } catch {
+      setError('Failed to save entries');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // === MANUAL MODE HANDLER ===
+  const onManualSubmit = async (data: FoodEntryFormData) => {
     setIsSaving(true);
     setError(null);
 
@@ -172,7 +277,7 @@ export function FoodLogModal() {
         protein_g: parseFloat(data.protein),
         carbs_g: parseFloat(data.carbs),
         fat_g: parseFloat(data.fat),
-        is_ai_generated: true,
+        is_ai_generated: false,
       });
 
       foodLogModal.onSuccess?.();
@@ -243,40 +348,6 @@ export function FoodLogModal() {
     }
   };
 
-  const handlePortionChange = (index: number, newPortion: number) => {
-    setScannerResults((prev) =>
-      prev.map((item, i) => {
-        if (i !== index) return item;
-
-        const recalculated = recalculateMacros(
-          item.originalPortion,
-          newPortion,
-          {
-            calories:
-              item.calories * (item.originalPortion / item.portion_grams),
-            protein_g:
-              item.protein_g * (item.originalPortion / item.portion_grams),
-            carbs_g: item.carbs_g * (item.originalPortion / item.portion_grams),
-            fat_g: item.fat_g * (item.originalPortion / item.portion_grams),
-          },
-        );
-
-        return {
-          ...item,
-          portion_grams: newPortion,
-          calories: recalculated.calories,
-          protein_g: recalculated.protein_g,
-          carbs_g: recalculated.carbs_g,
-          fat_g: recalculated.fat_g,
-        };
-      }),
-    );
-  };
-
-  const handleRemoveItem = (index: number) => {
-    setScannerResults((prev) => prev.filter((_, i) => i !== index));
-  };
-
   const handleSaveScannerResults = async () => {
     if (scannerResults.length === 0) {
       setError('No food items to save');
@@ -310,7 +381,8 @@ export function FoodLogModal() {
     }
   };
 
-  const totals = scannerResults.reduce(
+  // Calculate totals for results views
+  const textTotals = textResults.reduce(
     (acc, item) => ({
       calories: acc.calories + item.calories,
       protein: acc.protein + item.protein_g,
@@ -320,7 +392,17 @@ export function FoodLogModal() {
     { calories: 0, protein: 0, carbs: 0, fat: 0 },
   );
 
-  // === RENDER ===
+  const scannerTotals = scannerResults.reduce(
+    (acc, item) => ({
+      calories: acc.calories + item.calories,
+      protein: acc.protein + item.protein_g,
+      carbs: acc.carbs + item.carbs_g,
+      fat: acc.fat + item.fat_g,
+    }),
+    { calories: 0, protein: 0, carbs: 0, fat: 0 },
+  );
+
+  // === RENDER FUNCTIONS ===
   const renderSelectMode = () => (
     <div className="space-y-3">
       <p className="text-slate-400 text-sm text-center mb-4">
@@ -394,85 +476,169 @@ export function FoodLogModal() {
     </div>
   );
 
-  const renderTextMode = () => (
-    <form onSubmit={handleSubmit(onTextSubmit)} className="space-y-4">
-      <button
-        type="button"
-        onClick={() => setFoodLogModalMode('select')}
-        className="flex items-center gap-1 text-slate-400 hover:text-white text-sm mb-2"
-      >
-        <ChevronLeft size={16} />
-        Back
-      </button>
-
-      <Select label="Meal Type" options={mealTypes} {...register('mealType')} />
-
-      <TextArea
-        label="Describe your food"
-        {...register('foodDescription')}
-        placeholder="e.g., 2 eggs, 2 slices of toast with butter, orange juice"
-        rows={3}
-      />
-
-      <Button
-        type="button"
-        onClick={handleAnalyzeText}
-        disabled={isAnalyzing || !foodDescription.trim()}
-        className="w-full"
-        variant="secondary"
-      >
-        {isAnalyzing ? (
-          <>
-            <Loader2 size={16} className="animate-spin mr-2" />
-            Analyzing...
-          </>
-        ) : (
-          'Analyze with AI'
-        )}
-      </Button>
-
-      {calories && (
-        <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-700">
-          <Input
-            label="Portion (g)"
-            type="number"
-            {...register('portionGrams')}
-            placeholder="100"
-          />
-          <Input
-            label="Calories"
-            type="number"
-            {...register('calories')}
-            error={errors.calories?.message}
-          />
-          <Input
-            label="Protein (g)"
-            type="number"
-            {...register('protein')}
-            error={errors.protein?.message}
-          />
-          <Input
-            label="Carbs (g)"
-            type="number"
-            {...register('carbs')}
-            error={errors.carbs?.message}
-          />
-          <Input
-            label="Fat (g)"
-            type="number"
-            {...register('fat')}
-            error={errors.fat?.message}
-          />
+  const renderTextMode = () => {
+    if (textStep === 'analyzing') {
+      return (
+        <div className="flex flex-col items-center justify-center py-12">
+          <Loader2 size={48} className="text-blue-400 animate-spin mb-4" />
+          <p className="text-white font-medium">Analyzing your food...</p>
+          <p className="text-slate-400 text-sm">This may take a few seconds</p>
         </div>
-      )}
+      );
+    }
 
-      {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+    if (textStep === 'results') {
+      return (
+        <div className="space-y-4">
+          <button
+            type="button"
+            onClick={() => {
+              setTextStep('input');
+              setTextResults([]);
+            }}
+            className="flex items-center gap-1 text-slate-400 hover:text-white text-sm"
+          >
+            <ChevronLeft size={16} />
+            Edit Description
+          </button>
 
-      <Button type="submit" disabled={isSaving || !calories} className="w-full">
-        {isSaving ? 'Saving...' : 'Save Entry'}
-      </Button>
-    </form>
-  );
+          <div className="bg-slate-700/30 rounded-lg p-2 mb-2">
+            <p className="text-slate-400 text-xs">Your description:</p>
+            <p className="text-white text-sm">{textDescription}</p>
+          </div>
+
+          <div className="space-y-2">
+            {textResults.map((item, index) => (
+              <div
+                key={`${item.name}-${index}`}
+                className="bg-slate-700/50 rounded-lg p-3"
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex-1">
+                    <p className="text-white font-medium text-sm">
+                      {item.name}
+                    </p>
+                    <p className="text-slate-400 text-xs">
+                      {Math.round(item.calories)} kcal | P:{' '}
+                      {Math.round(item.protein_g)}g | C:{' '}
+                      {Math.round(item.carbs_g)}g | F: {Math.round(item.fat_g)}g
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleTextRemoveItem(index)}
+                    className="text-slate-400 hover:text-red-400 p-1"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleTextPortionChange(
+                        index,
+                        Math.max(10, item.portion_grams - 10),
+                      )
+                    }
+                    className="p-1 bg-slate-600 rounded hover:bg-slate-500"
+                  >
+                    <Minus size={14} className="text-white" />
+                  </button>
+                  <span className="text-white text-sm min-w-[60px] text-center">
+                    {Math.round(item.portion_grams)}g
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleTextPortionChange(index, item.portion_grams + 10)
+                    }
+                    className="p-1 bg-slate-600 rounded hover:bg-slate-500"
+                  >
+                    <Plus size={14} className="text-white" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {textResults.length > 0 && (
+            <div className="bg-slate-700 rounded-lg p-3">
+              <p className="text-slate-400 text-xs mb-2">Total</p>
+              <div className="flex justify-between text-sm">
+                <span className="text-white font-medium">
+                  {Math.round(textTotals.calories)} kcal
+                </span>
+                <span className="text-slate-400">
+                  P: {Math.round(textTotals.protein)}g | C:{' '}
+                  {Math.round(textTotals.carbs)}g | F:{' '}
+                  {Math.round(textTotals.fat)}g
+                </span>
+              </div>
+            </div>
+          )}
+
+          {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+
+          <Button
+            onClick={handleSaveTextResults}
+            disabled={isSaving || textResults.length === 0}
+            className="w-full"
+          >
+            {isSaving
+              ? 'Saving...'
+              : `Save ${textResults.length} Item${textResults.length !== 1 ? 's' : ''}`}
+          </Button>
+        </div>
+      );
+    }
+
+    // Input step
+    return (
+      <div className="space-y-4">
+        <button
+          type="button"
+          onClick={() => setFoodLogModalMode('select')}
+          className="flex items-center gap-1 text-slate-400 hover:text-white text-sm"
+        >
+          <ChevronLeft size={16} />
+          Back
+        </button>
+
+        <Select
+          label="Meal Type"
+          options={mealTypes}
+          value={textMealType}
+          onChange={(e) => setTextMealType(e.target.value as MealType)}
+        />
+
+        <TextArea
+          label="Describe your food"
+          value={textDescription}
+          onChange={(e) => setTextDescription(e.target.value)}
+          placeholder="e.g., 2 eggs, 2 slices of toast with butter, glass of orange juice"
+          rows={3}
+        />
+
+        {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+
+        <Button
+          onClick={handleAnalyzeText}
+          disabled={isAnalyzing || !textDescription.trim()}
+          className="w-full"
+        >
+          {isAnalyzing ? (
+            <>
+              <Loader2 size={16} className="animate-spin mr-2" />
+              Analyzing...
+            </>
+          ) : (
+            'Analyze with AI'
+          )}
+        </Button>
+      </div>
+    );
+  };
 
   const renderScannerMode = () => {
     if (scannerStep === 'analyzing') {
@@ -511,22 +677,25 @@ export function FoodLogModal() {
           )}
 
           <div className="space-y-2">
-            {scannerResults.map((item) => (
-              <div key={item.name} className="bg-slate-700/50 rounded-lg p-3">
+            {scannerResults.map((item, index) => (
+              <div
+                key={`${item.name}-${index}`}
+                className="bg-slate-700/50 rounded-lg p-3"
+              >
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex-1">
                     <p className="text-white font-medium text-sm">
                       {item.name}
                     </p>
                     <p className="text-slate-400 text-xs">
-                      {Math.round(item.calories)} kcal
+                      {Math.round(item.calories)} kcal | P:{' '}
+                      {Math.round(item.protein_g)}g | C:{' '}
+                      {Math.round(item.carbs_g)}g | F: {Math.round(item.fat_g)}g
                     </p>
                   </div>
                   <button
                     type="button"
-                    onClick={() =>
-                      handleRemoveItem(scannerResults.indexOf(item))
-                    }
+                    onClick={() => handleScannerRemoveItem(index)}
                     className="text-slate-400 hover:text-red-400 p-1"
                   >
                     <X size={16} />
@@ -536,8 +705,8 @@ export function FoodLogModal() {
                   <button
                     type="button"
                     onClick={() =>
-                      handlePortionChange(
-                        scannerResults.indexOf(item),
+                      handleScannerPortionChange(
+                        index,
                         Math.max(10, item.portion_grams - 10),
                       )
                     }
@@ -546,15 +715,12 @@ export function FoodLogModal() {
                     <Minus size={14} className="text-white" />
                   </button>
                   <span className="text-white text-sm min-w-[60px] text-center">
-                    {item.portion_grams}g
+                    {Math.round(item.portion_grams)}g
                   </span>
                   <button
                     type="button"
                     onClick={() =>
-                      handlePortionChange(
-                        scannerResults.indexOf(item),
-                        item.portion_grams + 10,
-                      )
+                      handleScannerPortionChange(index, item.portion_grams + 10)
                     }
                     className="p-1 bg-slate-600 rounded hover:bg-slate-500"
                   >
@@ -570,11 +736,12 @@ export function FoodLogModal() {
               <p className="text-slate-400 text-xs mb-2">Total</p>
               <div className="flex justify-between text-sm">
                 <span className="text-white font-medium">
-                  {Math.round(totals.calories)} kcal
+                  {Math.round(scannerTotals.calories)} kcal
                 </span>
                 <span className="text-slate-400">
-                  P: {Math.round(totals.protein)}g | C:{' '}
-                  {Math.round(totals.carbs)}g | F: {Math.round(totals.fat)}g
+                  P: {Math.round(scannerTotals.protein)}g | C:{' '}
+                  {Math.round(scannerTotals.carbs)}g | F:{' '}
+                  {Math.round(scannerTotals.fat)}g
                 </span>
               </div>
             </div>
@@ -679,7 +846,7 @@ export function FoodLogModal() {
   };
 
   const renderManualMode = () => (
-    <form onSubmit={handleSubmit(onTextSubmit)} className="space-y-4">
+    <form onSubmit={handleSubmit(onManualSubmit)} className="space-y-4">
       <button
         type="button"
         onClick={() => setFoodLogModalMode('select')}
@@ -760,16 +927,16 @@ export function FoodLogModal() {
     }
   };
 
+  const isResultsView =
+    (foodLogModal.mode === 'text' && textStep === 'results') ||
+    (foodLogModal.mode === 'scanner' && scannerStep === 'results');
+
   return (
     <Modal
       isOpen={foodLogModal.isOpen}
       onClose={handleClose}
       title={getTitle()}
-      size={
-        foodLogModal.mode === 'scanner' && scannerStep === 'results'
-          ? 'md'
-          : 'sm'
-      }
+      size={isResultsView ? 'md' : 'sm'}
     >
       {foodLogModal.mode === 'select' && renderSelectMode()}
       {foodLogModal.mode === 'text' && renderTextMode()}

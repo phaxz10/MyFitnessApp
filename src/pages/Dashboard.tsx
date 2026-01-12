@@ -1,16 +1,22 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Plus,
   Utensils,
   Camera,
   Scale,
   Dumbbell,
   TrendingUp,
   Trophy,
-  Play,
+  FileText,
+  ChevronRight,
 } from 'lucide-react';
-import { Card, CardContent, Button, DashboardSkeleton } from '../components/ui';
+import {
+  Card,
+  CardContent,
+  Button,
+  Modal,
+  DashboardSkeleton,
+} from '../components/ui';
 import {
   WeeklyReviewButton,
   WeeklyReviewModal,
@@ -29,13 +35,13 @@ export function Dashboard() {
   const { profile, fetchProfile } = useProfile();
   const { fetchEntriesByDate, getDailySummary } = useCalories();
   const { getLatestLog } = useWeight();
-  const { logs, fetchLogs, activeWorkout, resumeWorkout, startWorkout } =
-    useWorkoutLogs();
+  const { logs, fetchLogs, activeWorkout, resumeWorkout } = useWorkoutLogs();
   const { getOverallProgress } = useExerciseProgress();
   const isOnline = useAppStore((state) => state.isOnline);
 
   const [latestWeight, setLatestWeight] = useState<number | null>(null);
   const [showWeeklyReview, setShowWeeklyReview] = useState(false);
+  const [showFoodLogOptions, setShowFoodLogOptions] = useState(false);
   const [weeklyWorkouts, setWeeklyWorkouts] = useState(0);
   const [recentPRsCount, setRecentPRsCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -214,69 +220,104 @@ export function Dashboard() {
       </Card>
 
       {/* Quick Actions */}
-      <div className="grid grid-cols-2 gap-3">
-        <Link to="/calories?action=add">
-          <Card className="hover:bg-slate-700 transition-colors">
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-600/20 rounded-lg flex items-center justify-center">
-                <Plus size={20} className="text-blue-400" />
+      <div className="grid grid-cols-3 gap-3">
+        <button
+          type="button"
+          onClick={() => setShowFoodLogOptions(true)}
+          className="w-full"
+        >
+          <Card className="hover:bg-slate-700 transition-colors h-full">
+            <CardContent className="p-4 flex flex-col items-center gap-2">
+              <div className="w-12 h-12 bg-blue-600/20 rounded-lg flex items-center justify-center">
+                <Utensils size={24} className="text-blue-400" />
               </div>
-              <div>
-                <p className="text-white font-medium">Log Food</p>
-                <p className="text-slate-400 text-xs">Add meal entry</p>
-              </div>
+              <p className="text-white font-medium text-sm">Log Food</p>
             </CardContent>
           </Card>
-        </Link>
-
-        <Link to="/scanner">
-          <Card
-            className={`transition-colors ${isOnline ? 'hover:bg-slate-700' : 'opacity-50'}`}
-          >
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="w-10 h-10 bg-purple-600/20 rounded-lg flex items-center justify-center">
-                <Camera size={20} className="text-purple-400" />
-              </div>
-              <div>
-                <p className="text-white font-medium">Scan Meal</p>
-                <p className="text-slate-400 text-xs">
-                  {isOnline ? 'AI analysis' : 'Requires internet'}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
+        </button>
 
         <Link to="/weight?action=add">
-          <Card className="hover:bg-slate-700 transition-colors">
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="w-10 h-10 bg-green-600/20 rounded-lg flex items-center justify-center">
-                <Scale size={20} className="text-green-400" />
+          <Card className="hover:bg-slate-700 transition-colors h-full">
+            <CardContent className="p-4 flex flex-col items-center gap-2">
+              <div className="w-12 h-12 bg-green-600/20 rounded-lg flex items-center justify-center">
+                <Scale size={24} className="text-green-400" />
               </div>
-              <div>
-                <p className="text-white font-medium">Log Weight</p>
-                <p className="text-slate-400 text-xs">
-                  {latestWeight ? `${latestWeight} kg` : 'Track progress'}
-                </p>
-              </div>
+              <p className="text-white font-medium text-sm">Log Weight</p>
+              {latestWeight && (
+                <p className="text-slate-400 text-xs">{latestWeight} kg</p>
+              )}
             </CardContent>
           </Card>
         </Link>
 
         <Link to="/workout">
-          <Card className="hover:bg-slate-700 transition-colors">
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="w-10 h-10 bg-orange-600/20 rounded-lg flex items-center justify-center">
-                <Dumbbell size={20} className="text-orange-400" />
+          <Card className="hover:bg-slate-700 transition-colors h-full">
+            <CardContent className="p-4 flex flex-col items-center gap-2">
+              <div className="w-12 h-12 bg-orange-600/20 rounded-lg flex items-center justify-center">
+                <Dumbbell size={24} className="text-orange-400" />
               </div>
-              <div>
-                <p className="text-white font-medium">Workout</p>
-                <p className="text-slate-400 text-xs">Start session</p>
-              </div>
+              <p className="text-white font-medium text-sm">Workout</p>
             </CardContent>
           </Card>
         </Link>
       </div>
+
+      {/* Food Log Options Modal */}
+      <Modal
+        isOpen={showFoodLogOptions}
+        onClose={() => setShowFoodLogOptions(false)}
+        title="Log Food"
+        size="sm"
+      >
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={() => {
+              setShowFoodLogOptions(false);
+              navigate('/calories?action=add');
+            }}
+            className="w-full flex items-center gap-4 p-4 bg-slate-700/50 hover:bg-slate-700 rounded-lg transition-colors"
+          >
+            <div className="w-12 h-12 bg-blue-600/20 rounded-lg flex items-center justify-center flex-shrink-0">
+              <FileText size={24} className="text-blue-400" />
+            </div>
+            <div className="text-left flex-1">
+              <p className="text-white font-medium">Log by Text</p>
+              <p className="text-slate-400 text-sm">
+                Describe your meal for AI analysis
+              </p>
+            </div>
+            <ChevronRight size={20} className="text-slate-500" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setShowFoodLogOptions(false);
+              navigate('/scanner');
+            }}
+            disabled={!isOnline}
+            className={`w-full flex items-center gap-4 p-4 rounded-lg transition-colors ${
+              isOnline
+                ? 'bg-slate-700/50 hover:bg-slate-700'
+                : 'bg-slate-800/50 opacity-50 cursor-not-allowed'
+            }`}
+          >
+            <div className="w-12 h-12 bg-purple-600/20 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Camera size={24} className="text-purple-400" />
+            </div>
+            <div className="text-left flex-1">
+              <p className="text-white font-medium">Scan Meal</p>
+              <p className="text-slate-400 text-sm">
+                {isOnline
+                  ? 'Take a photo for AI analysis'
+                  : 'Requires internet connection'}
+              </p>
+            </div>
+            <ChevronRight size={20} className="text-slate-500" />
+          </button>
+        </div>
+      </Modal>
 
       {/* Workout Summary Card */}
       <Card>
@@ -312,18 +353,7 @@ export function Dashboard() {
                 </Button>
               </div>
             </div>
-          ) : (
-            <Button
-              className="w-full mb-3"
-              onClick={async () => {
-                await startWorkout();
-                navigate('/workout/session');
-              }}
-            >
-              <Play size={16} className="mr-2" />
-              Start Workout
-            </Button>
-          )}
+          ) : null}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-slate-700/50 rounded-lg p-3 text-center">

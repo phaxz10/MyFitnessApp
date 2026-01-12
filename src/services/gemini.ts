@@ -74,7 +74,7 @@ Return format:
       temperature: 1,
       tools: [{ googleSearch: {} }],
       thinkingConfig: {
-        thinkingLevel: ThinkingLevel.HIGH,
+        thinkingLevel: ThinkingLevel.MEDIUM,
         includeThoughts: false,
       },
     },
@@ -133,7 +133,7 @@ Return JSON format only, no markdown code blocks:
       tools: [{ googleSearch: {} }],
       thinkingConfig: {
         includeThoughts: false,
-        thinkingLevel: ThinkingLevel.HIGH,
+        thinkingLevel: ThinkingLevel.MEDIUM,
       },
     },
   });
@@ -369,7 +369,7 @@ Return JSON format only, no markdown code blocks:
       tools: [{ googleSearch: {} }],
       thinkingConfig: {
         includeThoughts: false,
-        thinkingLevel: ThinkingLevel.HIGH,
+        thinkingLevel: ThinkingLevel.MEDIUM,
       },
     },
   });

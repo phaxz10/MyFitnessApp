@@ -134,6 +134,14 @@ async function initSchema(): Promise<void> {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- Exercise Notes Table (per-exercise notes tied to master exercise)
+    CREATE TABLE IF NOT EXISTS exercise_notes (
+      id SERIAL PRIMARY KEY,
+      exercise_id INTEGER NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
+      content TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- AI Goal Reviews Table
     CREATE TABLE IF NOT EXISTS ai_goal_reviews (
       id SERIAL PRIMARY KEY,
@@ -187,6 +195,7 @@ async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_program_exercises_session ON program_exercises(session_id);
     CREATE INDEX IF NOT EXISTS idx_workout_sets_log ON workout_sets(workout_log_id);
     CREATE INDEX IF NOT EXISTS idx_progress_photos_date ON progress_photos(date);
+    CREATE INDEX IF NOT EXISTS idx_exercise_notes_exercise ON exercise_notes(exercise_id);
   `);
 
   // Migration: Add video_url column to exercises if it doesn't exist

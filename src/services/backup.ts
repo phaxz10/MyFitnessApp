@@ -14,6 +14,7 @@ interface BackupData {
     program_exercises: unknown[];
     workout_logs: unknown[];
     workout_sets: unknown[];
+    exercise_notes: unknown[];
     ai_goal_reviews: unknown[];
     weekly_reviews: unknown[];
     progress_photos: unknown[];
@@ -72,6 +73,7 @@ export async function exportData(
     programExercises,
     workoutLogs,
     workoutSets,
+    exerciseNotes,
     aiGoalReviews,
     weeklyReviews,
     progressPhotos,
@@ -109,6 +111,11 @@ export async function exportData(
           'SELECT * FROM workout_sets ORDER BY workout_log_id, set_number',
         )
       : Promise.resolve({ rows: [] }),
+    options.exercises
+      ? db.query(
+          'SELECT * FROM exercise_notes ORDER BY exercise_id, created_at',
+        )
+      : Promise.resolve({ rows: [] }),
     options.aiReviews
       ? db.query('SELECT * FROM ai_goal_reviews ORDER BY review_date')
       : Promise.resolve({ rows: [] }),
@@ -121,7 +128,7 @@ export async function exportData(
   ]);
 
   const backup: BackupData = {
-    version: '1.2', // Bumped version for progress_photos
+    version: '1.4', // Bumped version for exercise_notes (replacing workout_notes)
     exported_at: new Date().toISOString(),
     data: {
       user_profile: userProfile.rows,
@@ -133,6 +140,7 @@ export async function exportData(
       program_exercises: programExercises.rows,
       workout_logs: workoutLogs.rows,
       workout_sets: workoutSets.rows,
+      exercise_notes: exerciseNotes.rows,
       ai_goal_reviews: aiGoalReviews.rows,
       weekly_reviews: weeklyReviews.rows,
       progress_photos: progressPhotos.rows,
@@ -170,6 +178,7 @@ export async function importData(jsonString: string): Promise<void> {
   // Build list of tables to clear in reverse dependency order
   if (hasData(data.weekly_reviews)) tablesToClear.push('weekly_reviews');
   if (hasData(data.ai_goal_reviews)) tablesToClear.push('ai_goal_reviews');
+  if (hasData(data.exercise_notes)) tablesToClear.push('exercise_notes');
   if (hasData(data.workout_sets)) tablesToClear.push('workout_sets');
   if (hasData(data.workout_logs)) tablesToClear.push('workout_logs');
   if (hasData(data.program_exercises)) tablesToClear.push('program_exercises');
@@ -379,6 +388,17 @@ export async function importData(jsonString: string): Promise<void> {
     }
   }
 
+  // Exercise notes (per-exercise notes tied to master exercise)
+  if (hasData(data.exercise_notes)) {
+    for (const row of data.exercise_notes as Record<string, unknown>[]) {
+      await db.query(
+        `INSERT INTO exercise_notes (id, exercise_id, content, created_at)
+         VALUES ($1, $2, $3, $4)`,
+        [row.id, row.exercise_id, row.content, row.created_at],
+      );
+    }
+  }
+
   // AI goal reviews
   if (hasData(data.ai_goal_reviews)) {
     for (const row of data.ai_goal_reviews as Record<string, unknown>[]) {
@@ -487,6 +507,11 @@ export async function importData(jsonString: string): Promise<void> {
   if (hasData(data.workout_sets)) {
     sequenceResets.push(
       "SELECT setval('workout_sets_id_seq', COALESCE((SELECT MAX(id) FROM workout_sets), 0) + 1, false)",
+    );
+  }
+  if (hasData(data.exercise_notes)) {
+    sequenceResets.push(
+      "SELECT setval('exercise_notes_id_seq', COALESCE((SELECT MAX(id) FROM exercise_notes), 0) + 1, false)",
     );
   }
   if (hasData(data.ai_goal_reviews)) {

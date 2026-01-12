@@ -123,6 +123,13 @@ export interface WorkoutSet {
   created_at: string;
 }
 
+export interface ExerciseNote {
+  id: number;
+  exercise_id: number;
+  content: string;
+  created_at: string;
+}
+
 // AI Goal Review Types
 export interface AIGoalReview {
   id: number;

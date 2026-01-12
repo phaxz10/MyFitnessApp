@@ -16,6 +16,8 @@ import {
   RotateCcw,
   Dumbbell,
   Clock,
+  MessageSquare,
+  Send,
 } from 'lucide-react';
 import {
   Card,
@@ -179,6 +181,9 @@ export function WorkoutSession() {
     cancelWorkout,
     addSet,
     deleteSet,
+    addExerciseNote,
+    getExerciseNotes,
+    deleteExerciseNote,
   } = useWorkoutLogs();
   const { activeProgram, fetchActiveProgram } = useWorkoutPrograms();
   const { exercises: allExercises, fetchExercises } = useExercises();
@@ -202,8 +207,25 @@ export function WorkoutSession() {
     targetSeconds: number;
   } | null>(null);
 
+  // Exercise notes state (for the currently open exercise notes modal)
+  const [exerciseNotesModal, setExerciseNotesModal] = useState<{
+    exerciseId: number;
+    exerciseName: string;
+    notes: Array<{ id: number; content: string; created_at: string }>;
+    currentWeight: string;
+  } | null>(null);
+  const [newExerciseNoteContent, setNewExerciseNoteContent] = useState('');
+
   // Wake lock to prevent screen sleep during workout
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const notesListRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom when exercise notes modal opens or notes change
+  useEffect(() => {
+    if (exerciseNotesModal && notesListRef.current) {
+      notesListRef.current.scrollTop = notesListRef.current.scrollHeight;
+    }
+  }, [exerciseNotesModal]);
 
   // Request wake lock when workout session starts
   useEffect(() => {
@@ -376,6 +398,71 @@ export function WorkoutSession() {
 
     return () => clearInterval(interval);
   }, [activeWorkout]);
+
+  // Open exercise notes modal
+  const handleOpenExerciseNotes = useCallback(
+    async (exerciseId: number, exerciseName: string, currentWeight: string) => {
+      const notes = await getExerciseNotes(exerciseId);
+      setExerciseNotesModal({
+        exerciseId,
+        exerciseName,
+        notes: notes.map((n) => ({
+          id: n.id,
+          content: n.content,
+          created_at: n.created_at,
+        })),
+        currentWeight,
+      });
+    },
+    [getExerciseNotes],
+  );
+
+  const handleAddExerciseNote = async () => {
+    if (!exerciseNotesModal || !newExerciseNoteContent.trim()) return;
+
+    // Append current weight to note if available
+    let noteContent = newExerciseNoteContent.trim();
+    if (
+      exerciseNotesModal.currentWeight &&
+      parseFloat(exerciseNotesModal.currentWeight) > 0
+    ) {
+      noteContent += ` @ ${exerciseNotesModal.currentWeight} lbs`;
+    }
+
+    const note = await addExerciseNote(
+      exerciseNotesModal.exerciseId,
+      noteContent,
+    );
+
+    setExerciseNotesModal((prev) =>
+      prev
+        ? {
+            ...prev,
+            notes: [
+              ...prev.notes,
+              {
+                id: note.id,
+                content: note.content,
+                created_at: note.created_at,
+              },
+            ],
+          }
+        : null,
+    );
+    setNewExerciseNoteContent('');
+  };
+
+  const handleDeleteExerciseNote = async (noteId: number) => {
+    await deleteExerciseNote(noteId);
+    setExerciseNotesModal((prev) =>
+      prev
+        ? {
+            ...prev,
+            notes: prev.notes.filter((n) => n.id !== noteId),
+          }
+        : null,
+    );
+  };
 
   const formatElapsedTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -714,12 +801,6 @@ export function WorkoutSession() {
     );
   };
 
-  const handleUpdateExerciseNotes = (index: number, notes: string) => {
-    setExercisesWithSets((prev) =>
-      prev.map((ex, i) => (i === index ? { ...ex, notes } : ex)),
-    );
-  };
-
   const handleEndWorkout = async (data: WorkoutNotesFormData) => {
     if (!activeWorkout) return;
     await endWorkout(activeWorkout.id, data.notes || undefined);
@@ -870,18 +951,26 @@ export function WorkoutSession() {
                 </div>
               )}
 
-            {/* Exercise Notes - Compact */}
-            <div className="mb-2">
-              <input
-                type="text"
-                value={exerciseData.notes}
-                onChange={(e) =>
-                  handleUpdateExerciseNotes(exerciseIndex, e.target.value)
-                }
-                placeholder="Add note (form cues, limitations...)"
-                className="w-full px-2 py-1 text-xs bg-slate-700/30 border border-slate-700 rounded text-slate-300 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
+            {/* Add Note Button */}
+            <button
+              type="button"
+              onClick={() => {
+                const exerciseId =
+                  'exercise_id' in exerciseData.exercise
+                    ? exerciseData.exercise.exercise_id
+                    : exerciseData.exercise.id;
+                const currentWeight = exerciseData.sets[0]?.weight || '0';
+                handleOpenExerciseNotes(
+                  exerciseId,
+                  exerciseName,
+                  currentWeight,
+                );
+              }}
+              className="mb-2 px-2 py-1.5 text-xs bg-slate-700/50 hover:bg-slate-700 border border-slate-600 rounded text-slate-300 flex items-center gap-1.5 transition-colors"
+            >
+              <MessageSquare size={12} />
+              Notes
+            </button>
 
             {/* Compact Sets List */}
             <div className="space-y-1.5">
@@ -1093,33 +1182,35 @@ export function WorkoutSession() {
           </div>
         </button>
 
-        {/* Exercise Notes for Superset (shown when expanded) */}
+        {/* Exercise Notes Buttons for Superset (shown when expanded) */}
         {allExpanded && (
-          <div className="mb-4 space-y-2">
+          <div className="mb-4 flex flex-wrap gap-2">
             {supersetExercises.map((ex) => {
-              const exerciseIndex = exercisesWithSets.indexOf(ex);
+              const exerciseId =
+                'exercise_id' in ex.exercise
+                  ? ex.exercise.exercise_id
+                  : ex.exercise.id;
               const exerciseName =
                 'exercise_name' in ex.exercise
                   ? ex.exercise.exercise_name
                   : ex.exercise.name;
+              const currentWeight = ex.sets[0]?.weight || '0';
               return (
-                <div
-                  key={`notes-${ex.exercise.id}`}
-                  className="flex items-center gap-2"
+                <button
+                  key={`notes-btn-${ex.exercise.id}`}
+                  type="button"
+                  onClick={() =>
+                    handleOpenExerciseNotes(
+                      exerciseId,
+                      exerciseName,
+                      currentWeight,
+                    )
+                  }
+                  className="px-2 py-1.5 text-xs bg-slate-700/50 hover:bg-slate-700 border border-slate-600 rounded text-slate-300 flex items-center gap-1.5 transition-colors"
                 >
-                  <span className="text-xs text-slate-500 min-w-[80px] truncate">
-                    {exerciseName}:
-                  </span>
-                  <input
-                    type="text"
-                    value={ex.notes}
-                    onChange={(e) =>
-                      handleUpdateExerciseNotes(exerciseIndex, e.target.value)
-                    }
-                    placeholder="Note..."
-                    className="flex-1 px-2 py-1 text-sm bg-slate-700/50 border border-slate-600 rounded text-slate-300 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
+                  <MessageSquare size={12} />
+                  {exerciseName}
+                </button>
               );
             })}
           </div>
@@ -1523,6 +1614,93 @@ export function WorkoutSession() {
         initialSeconds={timerInitialSeconds}
         setInitialSeconds={setTimerInitialSeconds}
       />
+
+      {/* Exercise Notes Modal */}
+      <Modal
+        isOpen={!!exerciseNotesModal}
+        onClose={() => {
+          setExerciseNotesModal(null);
+          setNewExerciseNoteContent('');
+        }}
+        title={`Notes: ${exerciseNotesModal?.exerciseName || ''}`}
+      >
+        <div className="flex flex-col h-[60vh]">
+          {/* Notes List - Chat style, oldest at top, newest at bottom */}
+          <div
+            className="flex-1 overflow-y-auto space-y-3 mb-4"
+            ref={notesListRef}
+          >
+            {exerciseNotesModal?.notes.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-center py-8">
+                <MessageSquare size={48} className="text-slate-600 mb-3" />
+                <p className="text-slate-400">No notes yet</p>
+                <p className="text-slate-500 text-sm">
+                  Add notes about form cues, progress, or anything you want to
+                  remember about this exercise.
+                </p>
+              </div>
+            ) : (
+              exerciseNotesModal?.notes.map((note) => (
+                <div
+                  key={note.id}
+                  className="bg-slate-700/50 rounded-lg p-3 group"
+                >
+                  <div className="flex items-start gap-3">
+                    {/* Timestamp badge */}
+                    <div className="flex-shrink-0 px-2 h-6 bg-slate-600 rounded text-xs text-slate-300 flex items-center justify-center">
+                      {new Date(note.created_at).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year:
+                          new Date(note.created_at).getFullYear() !==
+                          new Date().getFullYear()
+                            ? 'numeric'
+                            : undefined,
+                      })}
+                    </div>
+                    {/* Note content */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm whitespace-pre-wrap break-words">
+                        {note.content}
+                      </p>
+                    </div>
+                    {/* Delete button */}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteExerciseNote(note.id)}
+                      className="flex-shrink-0 p-1.5 text-red-400/50 hover:text-red-400 hover:bg-red-900/20 rounded transition-all opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Input Area */}
+          <div className="border-t border-slate-700 pt-4">
+            <textarea
+              value={newExerciseNoteContent}
+              onChange={(e) => setNewExerciseNoteContent(e.target.value)}
+              placeholder="Write a note..."
+              rows={3}
+              className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            />
+            <div className="flex justify-end mt-3">
+              <button
+                type="button"
+                onClick={handleAddExerciseNote}
+                disabled={!newExerciseNoteContent.trim()}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              >
+                <Send size={16} />
+                Add Note
+              </button>
+            </div>
+          </div>
+        </div>
+      </Modal>
 
       {/* Add Exercise Modal */}
       <Modal

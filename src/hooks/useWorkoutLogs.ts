@@ -1,7 +1,12 @@
 import { useState, useCallback } from 'react';
 import { getDB } from '../services/db';
 import { getLocalTimestamp, getLocalDateString } from '../utils/date';
-import type { WorkoutLog, WorkoutSet, WorkoutSetWithExercise } from '../types';
+import type {
+  WorkoutLog,
+  WorkoutSet,
+  WorkoutSetWithExercise,
+  ExerciseNote,
+} from '../types';
 
 export interface WorkoutLogWithSets extends WorkoutLog {
   sets: WorkoutSetWithExercise[];
@@ -454,6 +459,43 @@ export function useWorkoutLogs() {
     [fetchLogs],
   );
 
+  // Exercise Notes functions (per-exercise notes tied to master exercise)
+  const addExerciseNote = useCallback(
+    async (exerciseId: number, content: string): Promise<ExerciseNote> => {
+      const db = await getDB();
+      const result = await db.query(
+        `INSERT INTO exercise_notes (exercise_id, content)
+         VALUES ($1, $2)
+         RETURNING *`,
+        [exerciseId, content],
+      );
+      return (result.rows as ExerciseNote[])[0];
+    },
+    [],
+  );
+
+  const getExerciseNotes = useCallback(
+    async (exerciseId: number): Promise<ExerciseNote[]> => {
+      const db = await getDB();
+      const result = await db.query(
+        `SELECT * FROM exercise_notes 
+         WHERE exercise_id = $1 
+         ORDER BY created_at ASC`,
+        [exerciseId],
+      );
+      return result.rows as ExerciseNote[];
+    },
+    [],
+  );
+
+  const deleteExerciseNote = useCallback(
+    async (noteId: number): Promise<void> => {
+      const db = await getDB();
+      await db.query('DELETE FROM exercise_notes WHERE id = $1', [noteId]);
+    },
+    [],
+  );
+
   return {
     logs,
     activeWorkout,
@@ -473,5 +515,8 @@ export function useWorkoutLogs() {
     loadActiveWorkoutSets,
     resumeWorkout,
     deleteLog,
+    addExerciseNote,
+    getExerciseNotes,
+    deleteExerciseNote,
   };
 }

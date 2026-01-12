@@ -6,6 +6,7 @@ import type {
   WorkoutSet,
   WorkoutSetWithExercise,
   ExerciseNote,
+  WorkoutStatus,
 } from '../types';
 
 export interface WorkoutLogWithSets extends WorkoutLog {
@@ -141,8 +142,8 @@ export function useWorkoutLogs() {
         const today = getLocalDateString();
 
         const result = await db.query(
-          `INSERT INTO workout_logs (program_id, session_id, date, started_at)
-         VALUES ($1, $2, $3, $4)
+          `INSERT INTO workout_logs (program_id, session_id, date, started_at, status)
+         VALUES ($1, $2, $3, $4, 'in_progress')
          RETURNING *`,
           [programId, sessionId, today, localISOString],
         );
@@ -171,7 +172,7 @@ export function useWorkoutLogs() {
         const localISOString = getLocalTimestamp();
 
         await db.query(
-          `UPDATE workout_logs SET ended_at = $1, notes = $2 WHERE id = $3`,
+          `UPDATE workout_logs SET ended_at = $1, notes = $2, status = 'completed' WHERE id = $3`,
           [localISOString, notes || null, workoutId],
         );
         setActiveWorkout(null);
@@ -418,11 +419,11 @@ export function useWorkoutLogs() {
   const resumeWorkout = useCallback(async (): Promise<WorkoutLog | null> => {
     try {
       const db = await getDB();
-      // Find any workout that was started today and not ended
+      // Find any workout that is still in_progress for today
       const today = getLocalDateString();
       const result = await db.query(
         `SELECT * FROM workout_logs 
-         WHERE date = $1 AND ended_at IS NULL
+         WHERE date = $1 AND status = 'in_progress'
          ORDER BY started_at DESC
          LIMIT 1`,
         [today],
@@ -496,6 +497,95 @@ export function useWorkoutLogs() {
     [],
   );
 
+  // Mark stale in_progress workouts as incomplete or missed
+  // Called on app startup to handle workouts from previous days
+  const processStaleWorkouts = useCallback(async (): Promise<void> => {
+    try {
+      const db = await getDB();
+      const today = getLocalDateString();
+
+      // Find all in_progress workouts from before today
+      const result = await db.query(
+        `SELECT wl.id, 
+                (SELECT COUNT(*) FROM workout_sets WHERE workout_log_id = wl.id) as set_count
+         FROM workout_logs wl
+         WHERE wl.status = 'in_progress' AND wl.date < $1`,
+        [today],
+      );
+
+      const staleWorkouts = result.rows as { id: number; set_count: number }[];
+
+      for (const workout of staleWorkouts) {
+        // If has completed sets -> incomplete, otherwise -> missed
+        const newStatus: WorkoutStatus =
+          Number(workout.set_count) > 0 ? 'incomplete' : 'missed';
+
+        await db.query(`UPDATE workout_logs SET status = $1 WHERE id = $2`, [
+          newStatus,
+          workout.id,
+        ]);
+      }
+    } catch (err) {
+      console.error('Failed to process stale workouts:', err);
+    }
+  }, []);
+
+  // Check if a program session already has a completed workout today
+  const isSessionCompletedToday = useCallback(
+    async (sessionId: number): Promise<boolean> => {
+      try {
+        const db = await getDB();
+        const today = getLocalDateString();
+
+        const result = await db.query(
+          `SELECT COUNT(*) as count FROM workout_logs 
+           WHERE session_id = $1 AND date = $2 AND status = 'completed'`,
+          [sessionId, today],
+        );
+
+        const count = (result.rows as { count: number }[])[0].count;
+        return Number(count) > 0;
+      } catch {
+        return false;
+      }
+    },
+    [],
+  );
+
+  // Get today's workout status for a specific session (for UI display)
+  const getTodaySessionStatus = useCallback(
+    async (
+      sessionId: number,
+    ): Promise<{
+      hasWorkout: boolean;
+      status: WorkoutStatus | null;
+      workoutId: number | null;
+    }> => {
+      try {
+        const db = await getDB();
+        const today = getLocalDateString();
+
+        const result = await db.query(
+          `SELECT id, status FROM workout_logs 
+           WHERE session_id = $1 AND date = $2
+           ORDER BY started_at DESC
+           LIMIT 1`,
+          [sessionId, today],
+        );
+
+        if ((result.rows as WorkoutLog[]).length === 0) {
+          return { hasWorkout: false, status: null, workoutId: null };
+        }
+
+        const log = (result.rows as { id: number; status: WorkoutStatus }[])[0];
+        return { hasWorkout: true, status: log.status, workoutId: log.id };
+      } catch {
+        return { hasWorkout: false, status: null, workoutId: null };
+      }
+    },
+    [],
+  );
+
   return {
     logs,
     activeWorkout,
@@ -518,5 +608,8 @@ export function useWorkoutLogs() {
     addExerciseNote,
     getExerciseNotes,
     deleteExerciseNote,
+    processStaleWorkouts,
+    isSessionCompletedToday,
+    getTodaySessionStatus,
   };
 }

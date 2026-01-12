@@ -9,6 +9,7 @@ import {
 import { Header, BottomNav } from './components/ui';
 import { useAppStore } from './hooks/useAppStore';
 import { useProfile } from './hooks/useProfile';
+import { useWorkoutLogs } from './hooks/useWorkoutLogs';
 import { getDB, isOnboardingComplete } from './services/db';
 import { initGemini } from './services/gemini';
 
@@ -55,6 +56,7 @@ function AppRoutes() {
     setUserProfile,
   } = useAppStore();
   const { profile, fetchProfile } = useProfile();
+  const { processStaleWorkouts } = useWorkoutLogs();
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -69,6 +71,8 @@ function AppRoutes() {
 
         if (complete) {
           await fetchProfile();
+          // Process any stale in_progress workouts from previous days
+          await processStaleWorkouts();
         }
       } catch (err) {
         console.error('Failed to initialize app:', err);
@@ -78,7 +82,7 @@ function AppRoutes() {
     };
 
     init();
-  }, [setOnboardingComplete, fetchProfile]);
+  }, [setOnboardingComplete, fetchProfile, processStaleWorkouts]);
 
   // Initialize Gemini when profile is loaded
   useEffect(() => {

@@ -283,10 +283,22 @@ export function WorkoutSession() {
     init();
   }, [resumeWorkout, fetchActiveProgram, fetchExercises]);
 
-  // Initialize exercises from program session
+  // Initialize exercises from program session and merge with logged sets
   useEffect(() => {
     const initExercises = async () => {
       if (!activeWorkout) return;
+
+      // Group logged sets by exercise for easy lookup
+      const setsByExercise = activeWorkoutSets.reduce(
+        (acc, set) => {
+          if (!acc[set.exercise_id]) {
+            acc[set.exercise_id] = [];
+          }
+          acc[set.exercise_id].push(set);
+          return acc;
+        },
+        {} as Record<number, typeof activeWorkoutSets>,
+      );
 
       // If workout has a session, load those exercises
       if (activeWorkout.session_id && activeProgram) {
@@ -302,9 +314,31 @@ export function WorkoutSession() {
                 exerciseType === 'duration' ||
                 exerciseType === 'duration_weight';
 
-              // Create empty sets based on target
-              const sets = Array.from({ length: ex.target_sets }, (_, i) => {
+              // Check if we have logged sets for this exercise
+              const loggedSets = setsByExercise[ex.exercise_id] || [];
+
+              // Determine how many sets to show (at least target_sets, but more if logged)
+              const numSets = Math.max(ex.target_sets, loggedSets.length);
+
+              // Create sets, merging logged data where available
+              const sets = Array.from({ length: numSets }, (_, i) => {
+                const loggedSet = loggedSets[i];
                 const lastSet = lastPerf?.[i];
+
+                if (loggedSet) {
+                  // This set was already logged - mark as completed
+                  return {
+                    id: loggedSet.id,
+                    tempId: `logged-${loggedSet.id}-${i}`,
+                    reps: loggedSet.reps?.toString() || '',
+                    weight: loggedSet.weight_kg?.toString() || '',
+                    durationSeconds:
+                      loggedSet.duration_seconds?.toString() || '',
+                    completed: true,
+                  };
+                }
+
+                // Empty set - prefill from last performance or defaults
                 return {
                   tempId: `${ex.id}-${i}-${Date.now()}`,
                   reps: isDuration
@@ -318,6 +352,7 @@ export function WorkoutSession() {
                   completed: false,
                 };
               });
+
               return {
                 exercise: ex,
                 exerciseType,
@@ -331,59 +366,54 @@ export function WorkoutSession() {
           );
           setExercisesWithSets(exercisesData);
         }
-      }
+      } else if (activeWorkoutSets.length > 0) {
+        // Ad-hoc workout with logged sets but no program session
+        // Group by exercise and rebuild the exercises list
+        const exerciseIds = [
+          ...new Set(activeWorkoutSets.map((s) => s.exercise_id)),
+        ];
+        const exercisesDataRaw = await Promise.all(
+          exerciseIds.map(async (exerciseId) => {
+            const exercise = allExercises.find((e) => e.id === exerciseId);
+            if (!exercise) return null;
 
-      // Load any already logged sets
-      if (activeWorkoutSets.length > 0) {
-        // Group sets by exercise
-        const setsByExercise = activeWorkoutSets.reduce(
-          (acc, set) => {
-            if (!acc[set.exercise_id]) {
-              acc[set.exercise_id] = [];
-            }
-            acc[set.exercise_id].push(set);
-            return acc;
-          },
-          {} as Record<number, typeof activeWorkoutSets>,
+            const loggedSets = setsByExercise[exerciseId] || [];
+            const lastPerf = await getLastPerformance(exerciseId);
+            const exerciseType = exercise.exercise_type || 'reps_weight';
+
+            const sets = loggedSets.map((loggedSet, i) => ({
+              id: loggedSet.id,
+              tempId: `logged-${loggedSet.id}-${i}`,
+              reps: loggedSet.reps?.toString() || '',
+              weight: loggedSet.weight_kg?.toString() || '',
+              durationSeconds: loggedSet.duration_seconds?.toString() || '',
+              completed: true,
+            }));
+
+            return {
+              exercise,
+              exerciseType,
+              sets,
+              lastPerformance: lastPerf,
+              isExpanded: true,
+              notes: '',
+            } as ExerciseWithSets;
+          }),
         );
-
-        setExercisesWithSets((prev) => {
-          return prev.map((ex) => {
-            const exerciseId =
-              'exercise_id' in ex.exercise
-                ? ex.exercise.exercise_id
-                : ex.exercise.id;
-            const loggedSets = setsByExercise[exerciseId];
-            if (loggedSets) {
-              // Merge logged sets with existing sets
-              const mergedSets = ex.sets.map((existingSet, i) => {
-                const loggedSet = loggedSets[i];
-                if (loggedSet) {
-                  return {
-                    id: loggedSet.id,
-                    tempId: `logged-${loggedSet.id}-${i}`,
-                    reps: loggedSet.reps?.toString() || '',
-                    weight: loggedSet.weight_kg?.toString() || '',
-                    durationSeconds:
-                      loggedSet.duration_seconds?.toString() || '',
-                    completed: true,
-                  };
-                }
-                return existingSet;
-              });
-              return {
-                ...ex,
-                sets: mergedSets,
-              };
-            }
-            return ex;
-          });
-        });
+        setExercisesWithSets(
+          exercisesDataRaw.filter((e): e is ExerciseWithSets => e !== null),
+        );
       }
     };
 
     initExercises();
-  }, [activeWorkout, activeProgram, activeWorkoutSets, getLastPerformance]);
+  }, [
+    activeWorkout,
+    activeProgram,
+    activeWorkoutSets,
+    allExercises,
+    getLastPerformance,
+  ]);
 
   // Elapsed time timer
   useEffect(() => {
@@ -1821,14 +1851,14 @@ export function WorkoutSession() {
         </form>
       </Modal>
 
-      {/* Cancel Workout Modal */}
+      {/* Abandon Workout Modal */}
       <Modal
         isOpen={showCancelWorkout}
         onClose={() => setShowCancelWorkout(false)}
-        title="Cancel Workout?"
+        title="Abandon Workout?"
       >
         <p className="text-slate-300 mb-6">
-          Are you sure you want to cancel this workout? All logged sets will be
+          Are you sure you want to abandon this workout? All logged sets will be
           deleted.
         </p>
         <div className="flex gap-3">
@@ -1844,7 +1874,7 @@ export function WorkoutSession() {
             onClick={handleCancelWorkout}
           >
             <X size={18} className="mr-2" />
-            Cancel Workout
+            Abandon Workout
           </Button>
         </div>
       </Modal>

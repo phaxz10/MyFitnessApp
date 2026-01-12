@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Dumbbell,
@@ -21,7 +21,11 @@ import {
   type WorkoutLogWithSets,
 } from '../hooks/useWorkoutLogs';
 import { isToday, isYesterday, parseLocalTimestamp } from '../utils/date';
-import type { WorkoutProgram, ProgramSessionWithExercises } from '../types';
+import type {
+  WorkoutProgram,
+  ProgramSessionWithExercises,
+  WorkoutStatus,
+} from '../types';
 
 export function Workout() {
   const navigate = useNavigate();
@@ -33,8 +37,14 @@ export function Workout() {
     setActiveProgramById,
     deleteProgram,
   } = useWorkoutPrograms();
-  const { logs, activeWorkout, fetchLogs, resumeWorkout, startWorkout } =
-    useWorkoutLogs();
+  const {
+    logs,
+    activeWorkout,
+    fetchLogs,
+    resumeWorkout,
+    startWorkout,
+    getTodaySessionStatus,
+  } = useWorkoutLogs();
 
   const [showProgramMenu, setShowProgramMenu] = useState<number | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState<WorkoutProgram | null>(
@@ -44,6 +54,25 @@ export function Workout() {
   const [showAIGenerator, setShowAIGenerator] = useState(false);
   const [todaySession, setTodaySession] =
     useState<ProgramSessionWithExercises | null>(null);
+  const [todaySessionStatus, setTodaySessionStatus] = useState<{
+    hasWorkout: boolean;
+    status: WorkoutStatus | null;
+    workoutId: number | null;
+  }>({ hasWorkout: false, status: null, workoutId: null });
+
+  // Check today's session status
+  const checkTodaySessionStatus = useCallback(async () => {
+    if (todaySession) {
+      const status = await getTodaySessionStatus(todaySession.id);
+      setTodaySessionStatus(status);
+    } else {
+      setTodaySessionStatus({
+        hasWorkout: false,
+        status: null,
+        workoutId: null,
+      });
+    }
+  }, [todaySession, getTodaySessionStatus]);
 
   useEffect(() => {
     fetchPrograms();
@@ -64,6 +93,11 @@ export function Workout() {
       setTodaySession(null);
     }
   }, [activeProgram]);
+
+  // Check status when todaySession changes
+  useEffect(() => {
+    checkTodaySessionStatus();
+  }, [checkTodaySessionStatus]);
 
   const handleStartWorkout = async (session?: ProgramSessionWithExercises) => {
     if (activeWorkout) {
@@ -208,9 +242,17 @@ export function Workout() {
 
             {todaySession ? (
               <>
-                <h3 className="text-lg font-semibold text-white mb-2">
-                  {todaySession.name}
-                </h3>
+                <div className="flex items-center gap-2 mb-2">
+                  <h3 className="text-lg font-semibold text-white">
+                    {todaySession.name}
+                  </h3>
+                  {todaySessionStatus.status === 'completed' && (
+                    <span className="text-xs bg-green-600 text-white px-2 py-0.5 rounded flex items-center gap-1">
+                      <CheckCircle2 size={12} />
+                      Completed
+                    </span>
+                  )}
+                </div>
                 <div className="flex flex-wrap gap-2 mb-4">
                   {todaySession.exercises.slice(0, 4).map((ex) => (
                     <span
@@ -226,13 +268,28 @@ export function Workout() {
                     </span>
                   )}
                 </div>
-                <Button
-                  className="w-full"
-                  onClick={() => handleStartWorkout(todaySession)}
-                >
-                  <Play size={18} className="mr-2" />
-                  Start Workout
-                </Button>
+                {todaySessionStatus.status === 'completed' ? (
+                  <div className="space-y-2">
+                    <p className="text-green-400 text-sm text-center mb-2">
+                      Great job! You've completed today's scheduled workout.
+                    </p>
+                    <Button
+                      variant="secondary"
+                      className="w-full"
+                      onClick={() => handleStartWorkout()}
+                    >
+                      Start Empty Workout
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    className="w-full"
+                    onClick={() => handleStartWorkout(todaySession)}
+                  >
+                    <Play size={18} className="mr-2" />
+                    Start Workout
+                  </Button>
+                )}
               </>
             ) : (
               <div className="text-center py-4">

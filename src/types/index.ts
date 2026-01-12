@@ -100,6 +100,12 @@ export interface ProgramExercise {
 }
 
 // Workout Log Types
+export type WorkoutStatus =
+  | 'in_progress'
+  | 'completed'
+  | 'incomplete'
+  | 'missed';
+
 export interface WorkoutLog {
   id: number;
   program_id: number | null;
@@ -107,6 +113,7 @@ export interface WorkoutLog {
   date: string;
   started_at: string;
   ended_at: string | null;
+  status: WorkoutStatus;
   notes: string | null;
   created_at: string;
 }

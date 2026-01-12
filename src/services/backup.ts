@@ -128,7 +128,7 @@ export async function exportData(
   ]);
 
   const backup: BackupData = {
-    version: '1.4', // Bumped version for exercise_notes (replacing workout_notes)
+    version: '1.5', // Bumped version for workout_logs status field
     exported_at: new Date().toISOString(),
     data: {
       user_profile: userProfile.rows,
@@ -347,12 +347,15 @@ export async function importData(jsonString: string): Promise<void> {
     }
   }
 
-  // Workout logs
+  // Workout logs (updated with status field)
   if (hasData(data.workout_logs)) {
     for (const row of data.workout_logs as Record<string, unknown>[]) {
+      // Determine status: if status exists use it, otherwise infer from ended_at
+      const status = row.status ?? (row.ended_at ? 'completed' : 'in_progress');
+
       await db.query(
-        `INSERT INTO workout_logs (id, program_id, session_id, date, started_at, ended_at, notes, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        `INSERT INTO workout_logs (id, program_id, session_id, date, started_at, ended_at, status, notes, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           row.id,
           row.program_id,
@@ -360,6 +363,7 @@ export async function importData(jsonString: string): Promise<void> {
           row.date,
           row.started_at,
           row.ended_at,
+          status,
           row.notes,
           row.created_at,
         ],

@@ -117,6 +117,7 @@ async function initSchema(): Promise<void> {
       date DATE NOT NULL,
       started_at TIMESTAMP NOT NULL,
       ended_at TIMESTAMP,
+      status TEXT NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress', 'completed', 'incomplete', 'missed')),
       notes TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -240,6 +241,19 @@ async function initSchema(): Promise<void> {
   try {
     await db.exec(`
       ALTER TABLE workout_sets ADD COLUMN IF NOT EXISTS duration_seconds INTEGER;
+    `);
+  } catch {
+    // Column may already exist, ignore
+  }
+
+  // Migration: Add status column to workout_logs
+  try {
+    await db.exec(`
+      ALTER TABLE workout_logs ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'in_progress';
+    `);
+    // Set status for existing completed workouts (those with ended_at)
+    await db.exec(`
+      UPDATE workout_logs SET status = 'completed' WHERE ended_at IS NOT NULL AND (status IS NULL OR status = 'in_progress');
     `);
   } catch {
     // Column may already exist, ignore

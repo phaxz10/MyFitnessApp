@@ -7,19 +7,19 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur border-b border-slate-700">
-      <div className="flex items-center justify-between px-4 h-14 max-w-lg mx-auto">
-        <h1 className="text-lg font-bold text-white">MyPersonalFitness</h1>
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between px-3 h-12 max-w-lg mx-auto">
+        <h1 className="text-base font-bold text-white">MyPersonalFitness</h1>
+        <div className="flex items-center gap-1.5">
           {isOnline ? (
-            <Wifi size={18} className="text-green-500" />
+            <Wifi size={16} className="text-green-500" />
           ) : (
-            <WifiOff size={18} className="text-red-500" />
+            <WifiOff size={16} className="text-red-500" />
           )}
           <Link
             to="/settings"
-            className="p-2 text-slate-400 hover:text-white transition-colors rounded-lg hover:bg-slate-800"
+            className="p-1.5 text-slate-400 hover:text-white transition-colors rounded-lg hover:bg-slate-800"
           >
-            <Settings size={20} />
+            <Settings size={18} />
           </Link>
         </div>
       </div>

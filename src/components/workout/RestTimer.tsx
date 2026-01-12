@@ -280,6 +280,7 @@ export function RestTimer({
           <div className="relative w-12 h-12 flex items-center justify-center">
             <svg
               className="absolute inset-0 w-12 h-12 -rotate-90"
+              viewBox="0 0 48 48"
               role="img"
               aria-label={`Rest timer: ${formatTime(seconds)} remaining`}
             >
@@ -351,6 +352,7 @@ export function RestTimer({
                   {/* Background circle */}
                   <svg
                     className="w-full h-full transform -rotate-90"
+                    viewBox="0 0 128 128"
                     role="img"
                     aria-label={`Rest timer: ${formatTime(seconds)} remaining`}
                   >

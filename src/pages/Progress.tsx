@@ -85,7 +85,7 @@ export function Progress() {
         >
           <ArrowLeft size={20} />
         </Button>
-        <h1 className="text-2xl font-bold text-white">Strength Progress</h1>
+        <h1 className="text-xl font-bold text-white">Strength Progress</h1>
       </div>
 
       {/* Time Range Selector */}

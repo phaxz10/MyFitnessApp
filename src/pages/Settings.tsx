@@ -279,7 +279,7 @@ export function Settings() {
 
   return (
     <div className="p-4 pb-20">
-      <h1 className="text-2xl font-bold text-white mb-6">Settings</h1>
+      <h1 className="text-xl font-bold text-white mb-6">Settings</h1>
 
       {success && (
         <div className="bg-green-500/20 text-green-400 px-4 py-2 rounded-lg mb-4">

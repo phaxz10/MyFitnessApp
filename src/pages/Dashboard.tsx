@@ -110,8 +110,6 @@ export function Dashboard() {
 
   return (
     <div className="p-4 pb-20 space-y-4">
-
-
       {/* Weekly Consistency Tracker */}
       {weeklyConsistency.length > 0 && (
         <div className="flex justify-between gap-1 px-2">
@@ -206,6 +204,7 @@ export function Dashboard() {
             <div className="relative w-40 h-40">
               <svg
                 className="w-full h-full transform -rotate-90"
+                viewBox="0 0 160 160"
                 aria-label="Calorie progress indicator"
                 role="img"
               >

@@ -373,6 +373,12 @@ export function MealScanner() {
             />
           )}
 
+          <Select
+            label="Meal Type"
+            {...register('mealType')}
+            options={mealTypes}
+          />
+
           <Card>
             <CardContent className="p-4">
               <h3 className="text-lg font-semibold text-white mb-4">

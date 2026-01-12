@@ -3,23 +3,33 @@ import { Play, Pause, RotateCcw, X, Volume2, VolumeX } from 'lucide-react';
 import { Button } from '../ui';
 
 interface RestTimerProps {
-  defaultSeconds?: number;
-  onClose?: () => void;
-  isMinimized?: boolean;
-  onToggleMinimize?: () => void;
+  isVisible: boolean;
+  isMinimized: boolean;
+  onClose: () => void;
+  onToggleMinimize: () => void;
+  // External state control
+  seconds: number;
+  setSeconds: (seconds: number | ((prev: number) => number)) => void;
+  isRunning: boolean;
+  setIsRunning: (running: boolean) => void;
+  initialSeconds: number;
+  setInitialSeconds: (seconds: number) => void;
 }
 
 const PRESET_TIMES = [30, 60, 90, 120, 180];
 
 export function RestTimer({
-  defaultSeconds = 90,
+  isVisible,
+  isMinimized,
   onClose,
-  isMinimized = false,
   onToggleMinimize,
+  seconds,
+  setSeconds,
+  isRunning,
+  setIsRunning,
+  initialSeconds,
+  setInitialSeconds,
 }: RestTimerProps) {
-  const [seconds, setSeconds] = useState(defaultSeconds);
-  const [initialSeconds, setInitialSeconds] = useState(defaultSeconds);
-  const [isRunning, setIsRunning] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
 
   const playBeep = useCallback(() => {
@@ -69,42 +79,84 @@ export function RestTimer({
   const playBeepRef = useRef(playBeep);
   playBeepRef.current = playBeep;
 
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
+  // Use timestamp-based timing to handle background/sleep
+  const startTimeRef = useRef<number | null>(null);
+  const remainingAtStartRef = useRef<number>(seconds);
 
-    if (isRunning && seconds > 0) {
-      interval = setInterval(() => {
-        setSeconds((s) => s - 1);
-      }, 1000);
-    } else if (seconds === 0 && isRunning) {
-      setIsRunning(false);
-      // Play sound notification
-      if (soundEnabled) {
-        playBeepRef.current();
+  useEffect(() => {
+    if (isRunning && startTimeRef.current === null) {
+      // Timer just started
+      startTimeRef.current = Date.now();
+      remainingAtStartRef.current = seconds;
+    } else if (!isRunning) {
+      // Timer paused/stopped
+      startTimeRef.current = null;
+    }
+  }, [isRunning, seconds]);
+
+  useEffect(() => {
+    let animationFrame: number;
+    let lastUpdate = Date.now();
+
+    const tick = () => {
+      if (!isRunning || startTimeRef.current === null) return;
+
+      const now = Date.now();
+      const elapsed = Math.floor((now - startTimeRef.current) / 1000);
+      const newSeconds = Math.max(0, remainingAtStartRef.current - elapsed);
+
+      // Only update if second changed (avoid unnecessary renders)
+      if (now - lastUpdate >= 1000 || newSeconds === 0) {
+        lastUpdate = now;
+        setSeconds(newSeconds);
+
+        if (newSeconds === 0) {
+          setIsRunning(false);
+          startTimeRef.current = null;
+          // Play sound notification
+          if (soundEnabled) {
+            playBeepRef.current();
+          }
+          // Vibrate if supported
+          if (navigator.vibrate) {
+            navigator.vibrate([200, 100, 200, 100, 200]);
+          }
+          return;
+        }
       }
-      // Vibrate if supported
-      if (navigator.vibrate) {
-        navigator.vibrate([200, 100, 200, 100, 200]);
-      }
+
+      animationFrame = requestAnimationFrame(tick);
+    };
+
+    if (isRunning) {
+      animationFrame = requestAnimationFrame(tick);
     }
 
     return () => {
-      if (interval) clearInterval(interval);
+      if (animationFrame) cancelAnimationFrame(animationFrame);
     };
-  }, [isRunning, seconds, soundEnabled]);
+  }, [isRunning, soundEnabled, setSeconds, setIsRunning]);
 
   const toggleTimer = () => {
+    if (!isRunning) {
+      // Starting timer - set new start time
+      startTimeRef.current = Date.now();
+      remainingAtStartRef.current = seconds;
+    }
     setIsRunning(!isRunning);
   };
 
   const resetTimer = () => {
     setIsRunning(false);
     setSeconds(initialSeconds);
+    startTimeRef.current = null;
   };
 
   const setPresetTime = (time: number) => {
     setSeconds(time);
     setInitialSeconds(time);
+    startTimeRef.current = Date.now();
+    remainingAtStartRef.current = time;
     setIsRunning(true);
   };
 
@@ -117,7 +169,10 @@ export function RestTimer({
   const progress = initialSeconds > 0 ? (seconds / initialSeconds) * 100 : 0;
   const isFinished = seconds === 0;
 
-  // Minimized view
+  // Don't render if not visible at all
+  if (!isVisible && !isMinimized) return null;
+
+  // Minimized view - always show if timer is active (running or has time remaining)
   if (isMinimized) {
     return (
       <button
@@ -133,112 +188,115 @@ export function RestTimer({
     );
   }
 
-  return (
-    <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold text-white">Rest Timer</h3>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setSoundEnabled(!soundEnabled)}
-            className="p-2 text-slate-400 hover:text-white transition-colors"
-          >
-            {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
-          </button>
-          {onToggleMinimize && (
-            <button
-              onClick={onToggleMinimize}
-              className="p-2 text-slate-400 hover:text-white transition-colors"
-            >
-              <span className="text-xs">MIN</span>
-            </button>
-          )}
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="p-2 text-slate-400 hover:text-white transition-colors"
-            >
-              <X size={18} />
-            </button>
-          )}
-        </div>
-      </div>
+  // Full view
+  if (!isVisible) return null;
 
-      {/* Timer Display */}
-      <div
-        className={`relative flex items-center justify-center mb-4 ${isFinished ? 'animate-pulse' : ''}`}
-      >
-        <div className="w-32 h-32 relative">
-          {/* Background circle */}
-          <svg
-            className="w-full h-full transform -rotate-90"
-            role="img"
-            aria-label={`Rest timer: ${formatTime(seconds)} remaining`}
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <div className="w-full max-w-sm">
+        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold text-white">Rest Timer</h3>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setSoundEnabled(!soundEnabled)}
+                className="p-2 text-slate-400 hover:text-white transition-colors"
+              >
+                {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+              </button>
+              <button
+                onClick={onToggleMinimize}
+                className="p-2 text-slate-400 hover:text-white transition-colors"
+              >
+                <span className="text-xs">MIN</span>
+              </button>
+              <button
+                onClick={onClose}
+                className="p-2 text-slate-400 hover:text-white transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+
+          {/* Timer Display */}
+          <div
+            className={`relative flex items-center justify-center mb-4 ${isFinished ? 'animate-pulse' : ''}`}
           >
-            <circle
-              cx="64"
-              cy="64"
-              r="58"
-              fill="none"
-              stroke="#334155"
-              strokeWidth="8"
-            />
-            {/* Progress circle */}
-            <circle
-              cx="64"
-              cy="64"
-              r="58"
-              fill="none"
-              stroke={isFinished ? '#22c55e' : '#3b82f6'}
-              strokeWidth="8"
-              strokeLinecap="round"
-              strokeDasharray={`${2 * Math.PI * 58}`}
-              strokeDashoffset={`${2 * Math.PI * 58 * (1 - progress / 100)}`}
-              className="transition-all duration-1000"
-            />
-          </svg>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span
-              className={`text-3xl font-mono font-bold ${isFinished ? 'text-green-400' : 'text-white'}`}
+            <div className="w-32 h-32 relative">
+              {/* Background circle */}
+              <svg
+                className="w-full h-full transform -rotate-90"
+                role="img"
+                aria-label={`Rest timer: ${formatTime(seconds)} remaining`}
+              >
+                <circle
+                  cx="64"
+                  cy="64"
+                  r="58"
+                  fill="none"
+                  stroke="#334155"
+                  strokeWidth="8"
+                />
+                {/* Progress circle */}
+                <circle
+                  cx="64"
+                  cy="64"
+                  r="58"
+                  fill="none"
+                  stroke={isFinished ? '#22c55e' : '#3b82f6'}
+                  strokeWidth="8"
+                  strokeLinecap="round"
+                  strokeDasharray={`${2 * Math.PI * 58}`}
+                  strokeDashoffset={`${2 * Math.PI * 58 * (1 - progress / 100)}`}
+                  className="transition-all duration-1000"
+                />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span
+                  className={`text-3xl font-mono font-bold ${isFinished ? 'text-green-400' : 'text-white'}`}
+                >
+                  {formatTime(seconds)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Controls */}
+          <div className="flex justify-center gap-3 mb-4">
+            <Button
+              onClick={toggleTimer}
+              variant={isRunning ? 'secondary' : 'primary'}
+              className="w-24"
             >
-              {formatTime(seconds)}
-            </span>
+              {isRunning ? <Pause size={18} /> : <Play size={18} />}
+              <span className="ml-2">{isRunning ? 'Pause' : 'Start'}</span>
+            </Button>
+            <Button onClick={resetTimer} variant="secondary">
+              <RotateCcw size={18} />
+            </Button>
+          </div>
+
+          {/* Presets */}
+          <div className="flex flex-wrap justify-center gap-2">
+            {PRESET_TIMES.map((time) => (
+              <button
+                key={time}
+                onClick={() => setPresetTime(time)}
+                className={`px-3 py-1 rounded-full text-sm transition-colors
+                  ${
+                    initialSeconds === time && !isFinished
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                  }`}
+              >
+                {time < 60
+                  ? `${time}s`
+                  : `${time / 60}m${time % 60 > 0 ? ` ${time % 60}s` : ''}`}
+              </button>
+            ))}
           </div>
         </div>
-      </div>
-
-      {/* Controls */}
-      <div className="flex justify-center gap-3 mb-4">
-        <Button
-          onClick={toggleTimer}
-          variant={isRunning ? 'secondary' : 'primary'}
-          className="w-24"
-        >
-          {isRunning ? <Pause size={18} /> : <Play size={18} />}
-          <span className="ml-2">{isRunning ? 'Pause' : 'Start'}</span>
-        </Button>
-        <Button onClick={resetTimer} variant="secondary">
-          <RotateCcw size={18} />
-        </Button>
-      </div>
-
-      {/* Presets */}
-      <div className="flex flex-wrap justify-center gap-2">
-        {PRESET_TIMES.map((time) => (
-          <button
-            key={time}
-            onClick={() => setPresetTime(time)}
-            className={`px-3 py-1 rounded-full text-sm transition-colors
-              ${
-                initialSeconds === time && !isFinished
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-              }`}
-          >
-            {time < 60
-              ? `${time}s`
-              : `${time / 60}m${time % 60 > 0 ? ` ${time % 60}s` : ''}`}
-          </button>
-        ))}
       </div>
     </div>
   );

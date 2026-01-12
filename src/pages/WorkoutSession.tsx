@@ -190,6 +190,9 @@ export function WorkoutSession() {
   >([]);
   const [showTimer, setShowTimer] = useState(false);
   const [timerMinimized, setTimerMinimized] = useState(false);
+  const [timerSeconds, setTimerSeconds] = useState(90);
+  const [timerInitialSeconds, setTimerInitialSeconds] = useState(90);
+  const [timerRunning, setTimerRunning] = useState(false);
   const [showAddExercise, setShowAddExercise] = useState(false);
   const [showEndWorkout, setShowEndWorkout] = useState(false);
   const [showCancelWorkout, setShowCancelWorkout] = useState(false);
@@ -200,6 +203,43 @@ export function WorkoutSession() {
     setIndex: number;
     targetSeconds: number;
   } | null>(null);
+
+  // Wake lock to prevent screen sleep during workout
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+
+  // Request wake lock when workout session starts
+  useEffect(() => {
+    const requestWakeLock = async () => {
+      if ('wakeLock' in navigator && activeWorkout) {
+        try {
+          wakeLockRef.current = await navigator.wakeLock.request('screen');
+          console.log('Wake lock acquired');
+        } catch (err) {
+          console.log('Wake lock request failed:', err);
+        }
+      }
+    };
+
+    requestWakeLock();
+
+    // Re-acquire wake lock when page becomes visible again
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && activeWorkout) {
+        requestWakeLock();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release();
+        wakeLockRef.current = null;
+        console.log('Wake lock released');
+      }
+    };
+  }, [activeWorkout]);
 
   // Form for workout notes
   const {
@@ -421,7 +461,12 @@ export function WorkoutSession() {
       });
 
       setDurationTimerData(null);
-      setShowTimer(true);
+      // Start rest timer automatically (only if not already running)
+      if (!timerRunning) {
+        setTimerSeconds(timerInitialSeconds);
+        setTimerRunning(true);
+        setShowTimer(true);
+      }
     } catch (err) {
       console.error('Failed to log set:', err);
       setDurationTimerData(null);
@@ -474,8 +519,12 @@ export function WorkoutSession() {
         return updated;
       });
 
-      // Auto-start rest timer
-      setShowTimer(true);
+      // Auto-start rest timer (only if not already running)
+      if (!timerRunning) {
+        setTimerSeconds(timerInitialSeconds);
+        setTimerRunning(true);
+        setShowTimer(true);
+      }
     } catch (err) {
       console.error('Failed to log set:', err);
     }
@@ -1348,9 +1397,12 @@ export function WorkoutSession() {
         <button
           type="button"
           onClick={() => setShowTimer(true)}
-          className="p-2 text-slate-400 hover:text-white"
+          className={`p-2 relative ${timerRunning ? 'text-blue-400' : 'text-slate-400 hover:text-white'}`}
         >
           <Timer size={24} />
+          {timerRunning && (
+            <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+          )}
         </button>
       </div>
 
@@ -1471,25 +1523,22 @@ export function WorkoutSession() {
       )}
 
       {/* Rest Timer */}
-      {showTimer && !timerMinimized && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="w-full max-w-sm">
-            <RestTimer
-              defaultSeconds={90}
-              onClose={() => setShowTimer(false)}
-              onToggleMinimize={() => setTimerMinimized(true)}
-            />
-          </div>
-        </div>
-      )}
-
-      {timerMinimized && (
-        <RestTimer
-          defaultSeconds={90}
-          isMinimized={true}
-          onToggleMinimize={() => setTimerMinimized(false)}
-        />
-      )}
+      <RestTimer
+        isVisible={showTimer && !timerMinimized}
+        isMinimized={timerMinimized}
+        onClose={() => {
+          setShowTimer(false);
+          setTimerMinimized(false);
+          setTimerRunning(false);
+        }}
+        onToggleMinimize={() => setTimerMinimized(!timerMinimized)}
+        seconds={timerSeconds}
+        setSeconds={setTimerSeconds}
+        isRunning={timerRunning}
+        setIsRunning={setTimerRunning}
+        initialSeconds={timerInitialSeconds}
+        setInitialSeconds={setTimerInitialSeconds}
+      />
 
       {/* Add Exercise Modal */}
       <Modal

@@ -25,6 +25,7 @@ import { Settings } from './pages/Settings';
 import { Onboarding } from './pages/Onboarding';
 import { MealScanner } from './pages/MealScanner';
 import { Progress } from './pages/Progress';
+import { WorkoutDetail } from './pages/WorkoutDetail';
 
 function MainLayout() {
   return (
@@ -143,6 +144,7 @@ function AppRoutes() {
         <Route path="/workout/program/new" element={<ProgramEditor />} />
         <Route path="/workout/program/:id" element={<ProgramEditor />} />
         <Route path="/workout/progress" element={<Progress />} />
+        <Route path="/workout/history/:id" element={<WorkoutDetail />} />
       </Route>
 
       {/* Redirects */}

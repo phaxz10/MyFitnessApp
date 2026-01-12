@@ -462,9 +462,11 @@ export function Workout() {
           ) : (
             <div className="space-y-3">
               {logs.map((log: WorkoutLogWithSets) => (
-                <div
+                <button
+                  type="button"
                   key={log.id}
-                  className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg"
+                  onClick={() => navigate(`/workout/history/${log.id}`)}
+                  className="w-full flex items-center justify-between p-3 bg-slate-700/50 rounded-lg hover:bg-slate-700 transition-colors text-left"
                 >
                   <div>
                     <div className="flex items-center gap-2">
@@ -489,7 +491,7 @@ export function Workout() {
                     </div>
                   </div>
                   <ChevronRight size={20} className="text-slate-500" />
-                </div>
+                </button>
               ))}
             </div>
           )}

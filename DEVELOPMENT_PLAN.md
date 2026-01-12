@@ -15,6 +15,8 @@
    - [F3: AI Meal Scanner](#f3-ai-meal-scanner)
    - [F4: Weight Tracker & Trends](#f4-weight-tracker--trends)
    - [F5: AI Calorie Target Assistant](#f5-ai-calorie-target-assistant)
+   - [F6: Weekly Review System](#f6-weekly-review-system)
+   - [F7: AI Program Generator](#f7-ai-program-generator)
 5. [User Interface Structure](#user-interface-structure)
 6. [Onboarding Flow](#onboarding-flow)
 7. [Offline Strategy](#offline-strategy)
@@ -42,6 +44,8 @@ A personal-use fitness tracking application focused on simplicity and ease of us
 3. AI meal scanner (photo + text analysis)
 4. Weight and body composition tracking with trends
 5. AI-assisted calorie/macro target calculation
+6. **Weekly review system with metabolic response analysis** ✅ NEW
+7. **AI workout program generator with science-based principles** ✅ NEW
 
 ---
 
@@ -49,14 +53,15 @@ A personal-use fitness tracking application focused on simplicity and ease of us
 
 | Layer | Technology | Notes |
 |-------|------------|-------|
-| **Framework** | React 18+ | With TypeScript |
-| **Build Tool** | Vite | Fast development, PWA plugin available |
+| **Framework** | React 19 | With TypeScript |
+| **Build Tool** | Vite 7 | Fast development, PWA plugin available |
 | **PWA** | vite-plugin-pwa | Service worker, offline caching |
-| **Database** | PGlite | Postgres in WASM, excellent DX |
+| **Database** | PGlite | Postgres in WASM, stored in IndexedDB |
 | **Styling** | Tailwind CSS v4 | Utility-first, dark mode only |
 | **State Management** | Zustand | Lightweight, simple |
-| **AI Provider** | Google Gemini API | Vision + text capabilities |
+| **AI Provider** | Google Gemini API (2.0 Flash) | Vision + text capabilities |
 | **Charts** | Recharts | Simple line graphs |
+| **Forms** | React Hook Form + Zod | Validation and form state |
 | **Linting** | Biome | Fast, modern linter |
 
 ### Project Structure (Current)
@@ -64,23 +69,26 @@ A personal-use fitness tracking application focused on simplicity and ease of us
 ```
 src/
 ├── components/
-│   ├── ui/                 # Reusable UI components (Button, Input, Card, Modal, etc.)
-│   └── workout/            # Workout-specific components (RestTimer)
+│   ├── ui/                 # Reusable UI components (Button, Input, Card, Modal, Select, TextArea, Header, BottomNav)
+│   ├── workout/            # Workout-specific components (RestTimer)
+│   ├── weekly-review/      # WeeklyReviewButton, WeeklyReviewModal
+│   ├── program-generator/  # ProgramGeneratorWizard
+│   └── settings/           # ExportModal
 ├── pages/
 │   ├── Dashboard.tsx       # Main dashboard with calorie summary
-│   ├── CalorieLog.tsx      # Food entry management
+│   ├── CalorieLog.tsx      # Food entry management with AI analysis
 │   ├── MealScanner.tsx     # AI-powered meal scanning
 │   ├── Workout.tsx         # Workout overview and program list
-│   ├── WorkoutSession.tsx  # Active workout logging
-│   ├── ProgramEditor.tsx   # Create/edit workout programs
-│   ├── ExerciseLibrary.tsx # Manage exercise database
+│   ├── WorkoutSession.tsx  # Active workout logging with set notes
+│   ├── ProgramEditor.tsx   # Create/edit workout programs with supersets
+│   ├── ExerciseLibrary.tsx # Manage exercise database with duplicate detection
 │   ├── WeightTracker.tsx   # Weight logging and trends
 │   ├── Settings.tsx        # Profile, targets, data management
 │   └── Onboarding.tsx      # Initial setup flow
 ├── services/
-│   ├── db.ts               # PGlite database setup
-│   ├── gemini.ts           # Gemini AI integration
-│   └── backup.ts           # Export/import functionality
+│   ├── db.ts               # PGlite database setup with schema
+│   ├── gemini.ts           # All Gemini AI integrations
+│   └── backup.ts           # Export/import functionality (selective export)
 ├── hooks/
 │   ├── useAppStore.ts      # Global app state (Zustand)
 │   ├── useProfile.ts       # User profile operations
@@ -88,12 +96,18 @@ src/
 │   ├── useWeight.ts        # Weight log operations
 │   ├── useExercises.ts     # Exercise library operations
 │   ├── useWorkoutPrograms.ts # Program/session management
-│   └── useWorkoutLogs.ts   # Workout logging operations
+│   ├── useWorkoutLogs.ts   # Workout logging operations
+│   ├── useWeeklyReview.ts  # Weekly review data and logic
+│   └── useProgramGenerator.ts # AI program generation
 ├── types/
 │   └── index.ts            # TypeScript type definitions
+├── schemas/
+│   └── forms.ts            # Zod validation schemas
 ├── utils/
-│   ├── calculations.ts     # Body fat %, etc.
-│   └── date.ts             # Date utilities
+│   ├── calculations.ts     # Body fat %, macro calculations
+│   └── date.ts             # Date utilities (local time handling)
+├── constants/
+│   └── equipment.ts        # Equipment types for program generator
 └── App.tsx
 ```
 
@@ -101,7 +115,7 @@ src/
 
 ## Database Schema
 
-### Tables
+### Tables (11 tables)
 
 #### `user_profile`
 Stores user information for calculations.
@@ -166,6 +180,7 @@ Exercise library.
 | description | TEXT | How to perform (AI or manual) |
 | muscle_groups | TEXT | Target muscles (comma-separated) |
 | equipment | TEXT | Required equipment |
+| exercise_type | TEXT | 'reps_weight', 'reps_only', 'duration', 'duration_weight' |
 | is_ai_generated | BOOLEAN | True if AI generated |
 | created_at | TIMESTAMP | Record creation date |
 
@@ -203,9 +218,11 @@ Exercises within a program session.
 | session_id | INTEGER | Foreign key to program_sessions |
 | exercise_id | INTEGER | Foreign key to exercises |
 | target_sets | INTEGER | Recommended sets |
-| target_rep_min | INTEGER | Minimum rep range |
-| target_rep_max | INTEGER | Maximum rep range |
+| target_rep_min | INTEGER | Minimum rep range (nullable for duration exercises) |
+| target_rep_max | INTEGER | Maximum rep range (nullable for duration exercises) |
+| target_duration_seconds | INTEGER | For duration-based exercises |
 | order_index | INTEGER | Order within session |
+| superset_group | INTEGER | Group number for supersets (nullable) |
 | notes | TEXT | Additional notes |
 
 #### `workout_logs`
@@ -231,8 +248,9 @@ Individual sets logged during workout.
 | workout_log_id | INTEGER | Foreign key to workout_logs |
 | exercise_id | INTEGER | Foreign key to exercises |
 | set_number | INTEGER | Set number (1, 2, 3...) |
-| reps | INTEGER | Reps performed |
+| reps | INTEGER | Reps performed (nullable for duration) |
 | weight_kg | REAL | Weight used in kg |
+| duration_seconds | INTEGER | For duration exercises |
 | notes | TEXT | Set notes (optional) |
 | created_at | TIMESTAMP | Record creation date |
 
@@ -251,402 +269,128 @@ History of AI goal reviews.
 | was_accepted | BOOLEAN | If user accepted recommendations |
 | created_at | TIMESTAMP | Record creation date |
 
+#### `weekly_reviews`
+Weekly check-in reviews with metabolic analysis.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | SERIAL | Primary key |
+| week_start | DATE | Start of review week |
+| week_end | DATE | End of review week |
+| start_weight | REAL | Weight at week start |
+| end_weight | REAL | Weight at week end |
+| weight_change | REAL | Change during week |
+| avg_daily_calories | INTEGER | Average daily intake |
+| calorie_target | INTEGER | Target during week |
+| calorie_adherence | REAL | Percentage of target |
+| workouts_completed | INTEGER | Number of workouts |
+| previous_goal | TEXT | Goal at time of review |
+| new_goal | TEXT | New goal if changed |
+| previous_calorie_target | INTEGER | Target before review |
+| new_calorie_target | INTEGER | New target if changed |
+| ai_summary | TEXT | AI analysis summary |
+| recommendations_applied | TEXT | JSON of accepted recommendations |
+| created_at | TIMESTAMP | Record creation date |
+
 ---
 
 ## Feature Specifications
 
-### F1: Calorie Tracking
+### F1: Calorie Tracking ✅ COMPLETE
 
-#### Description
 Track daily calorie and macro intake through simple text input with AI-powered estimation.
 
-#### User Flow
-1. User navigates to calorie log or taps quick-add on dashboard
-2. Selects meal type (breakfast, lunch, dinner, snack)
-3. Enters food description (e.g., "50g cooked rice, 100g pork adobo")
-4. If online: AI analyzes and returns estimated calories/macros
-5. If offline: Manual entry form for calories/macros
-6. User can edit values before saving
-7. Entry saved to daily log
+**Features:**
+- AI food analysis from text description
+- Manual entry fallback for offline
+- Daily/weekly/historical views
+- Meal type sections (breakfast, lunch, dinner, snack)
+- Edit/delete entries
+- Macro breakdown display
 
-#### UI Components
-- **Daily View**: Shows total calories consumed vs target, remaining calories
-- **Meal Sections**: Collapsible sections for each meal type
-- **Entry Card**: Shows food description, portion, calories, macros
-- **Add Entry Modal**: Meal selector, text input, AI/manual toggle
-- **Edit Entry Modal**: Modify any field of existing entry
+### F2: Workout Tracker ✅ COMPLETE
 
-#### AI Prompt Template (Gemini)
-```
-Analyze the following food description and estimate nutritional information.
-Return JSON format only.
+Track resistance training workouts with programs, supersets, and progress tracking.
 
-Food: {user_input}
+**Features:**
+- Exercise library with AI generation and duplicate detection
+- Exercise types: reps_weight, reps_only, duration, duration_weight
+- Workout program creation with supersets
+- Session scheduling by day of week
+- Active workout logging with set notes
+- Rest timer component
+- Last session comparison display
+- Batch AI exercise generation
 
-Return format:
-{
-  "items": [
-    {
-      "name": "food item name",
-      "portion_grams": estimated_grams,
-      "calories": estimated_calories,
-      "protein_g": estimated_protein,
-      "carbs_g": estimated_carbs,
-      "fat_g": estimated_fat
-    }
-  ],
-  "total": {
-    "calories": total_calories,
-    "protein_g": total_protein,
-    "carbs_g": total_carbs,
-    "fat_g": total_fat
-  }
-}
-```
+### F3: AI Meal Scanner ✅ COMPLETE
 
-#### Offline Behavior
-- Manual entry only (text input + manual calorie/macro fields)
-- Queue AI requests when back online (optional enhancement)
-
-#### History View
-- Default: Current week (7 days)
-- Option: View all history (paginated or infinite scroll)
-- Handle missed days gracefully (show as empty, not broken)
-
----
-
-### F2: Workout Tracker
-
-#### Description
-Track resistance training workouts based on user-created programs with sets, reps, and weight logging.
-
-#### Components
-
-##### Exercise Library
-- List of exercises with name, description, muscle groups, equipment
-- Add manually or generate via AI
-- AI generates: proper form, execution tips, muscle targets
-
-##### Workout Programs
-- User creates program with:
-  - Name and description
-  - Sessions per week
-  - Which days for each session
-  - Exercises per session with target sets and rep range
-- Multiple programs allowed
-- One program set as "active"
-
-##### Workout Session
-- Start session from dashboard (today's scheduled workout)
-- Or start ad-hoc session
-- For each exercise:
-  - Show target sets/reps from program
-  - Show last session's actual performance (for progressive overload)
-  - Log actual sets: reps and weight
-  - Add/remove sets as needed
-- Rest timer: Simple countdown, select minutes (1-5), start/stop
-
-#### User Flow - Creating Program
-1. Navigate to Programs page
-2. Tap "Create Program"
-3. Enter name, description
-4. Set sessions per week
-5. For each session:
-   - Name the session (e.g., "Push Day")
-   - Assign day(s) of week
-   - Add exercises from library
-   - Set target sets and rep range per exercise
-6. Save program
-7. Set as active if desired
-
-#### User Flow - Logging Workout
-1. Dashboard shows today's scheduled workout (if any)
-2. Tap "Start Workout"
-3. See list of exercises with targets
-4. For each exercise:
-   - View last session's performance
-   - Log each set (reps, weight)
-   - Use rest timer between sets
-5. Complete workout
-6. Session saved with timestamp
-
-#### AI Prompt Template (Exercise Generation)
-```
-Generate exercise details for: {exercise_name}
-
-Return JSON format:
-{
-  "name": "exercise name",
-  "description": "Step-by-step execution instructions",
-  "muscle_groups": ["primary", "secondary"],
-  "equipment": "required equipment",
-  "tips": ["form tip 1", "form tip 2"]
-}
-```
-
-#### Offline Behavior
-- Full functionality (all data local)
-- AI exercise generation requires connection
-
----
-
-### F3: AI Meal Scanner
-
-#### Description
 Scan food photos with optional text description for AI-powered calorie/macro estimation.
 
-#### User Flow
-1. Navigate to meal scanner or tap scan icon
-2. Select meal type (breakfast, lunch, dinner, snack)
-3. Choose input method:
-   - Capture photo (camera)
-   - Upload from gallery
-4. Optionally add text description for better accuracy
-5. Submit for AI analysis
-6. AI returns:
-   - Identified food items
-   - Estimated portions (grams)
-   - Calories and macros per item
-7. User sees editable form:
-   - Each item with portion field (grams)
-   - Macros recalculate on portion change
-8. Save to meal log or continue editing
+**Features:**
+- Camera capture and gallery upload
+- Gemini Vision API integration
+- Editable results with portion adjustment
+- Macro recalculation on portion change
+- **Meal type selection in results before saving** ✅ NEW
+- Save to food entries
 
-#### UI Components
-- **Scanner Page**: Camera preview, gallery button, text input
-- **Results Form**: List of identified items, editable portions
-- **Macro Display**: Per-item and total calories/macros
-- **Action Buttons**: Save, Edit, Retry, Manual Entry
+### F4: Weight Tracker & Trends ✅ COMPLETE
 
-#### AI Prompt Template (Gemini Vision)
-```
-Analyze this food image and estimate nutritional information.
-Additional context from user: {text_description}
+Daily weight logging with body measurements and trend visualization.
 
-All portions should be estimated in grams.
+**Features:**
+- Weight and measurement logging
+- Navy method body fat calculation
+- Trend chart with time range selector (7d, 30d, 90d, all)
+- Goal progress indicator
 
-Return JSON format only:
-{
-  "items": [
-    {
-      "name": "identified food item",
-      "portion_grams": estimated_grams,
-      "calories": estimated_calories,
-      "protein_g": estimated_protein,
-      "carbs_g": estimated_carbs,
-      "fat_g": estimated_fat,
-      "confidence": "high/medium/low"
-    }
-  ],
-  "total": {
-    "calories": total_calories,
-    "protein_g": total_protein,
-    "carbs_g": total_carbs,
-    "fat_g": total_fat
-  }
-}
-```
+### F5: AI Calorie Target Assistant ✅ COMPLETE
 
-#### Portion Editing Logic
-When user edits portion_grams:
-- Recalculate calories and macros proportionally
-- Formula: `new_value = original_value * (new_portion / original_portion)`
+AI-powered calculation of daily calorie and macro targets.
 
-#### Fallback
-- If AI cannot identify: Show error, offer manual entry
-- If confidence is low: Highlight for user review
+**Features:**
+- Initial calculation during onboarding
+- Recalculation from settings
+- Manual override capability
+- TDEE-based calculations with goal adjustments
 
-#### Offline Behavior
-- Feature unavailable (requires AI)
-- Show message: "Meal scanner requires internet connection"
-- Offer manual entry as alternative
+### F6: Weekly Review System ✅ COMPLETE (NEW)
 
----
+Automated weekly check-in system with AI-powered progress analysis.
 
-### F4: Weight Tracker & Trends
+**Features:**
+- Triggers on Monday with minimum 5 logged days required
+- Analyzes weight, calories, and workout data from previous week
+- **Metabolic Response Analysis:**
+  - Detects "thrifty" (metabolic adaptation), "normal", or "spendthrift" metabolism
+  - Compares expected vs actual weight change based on calorie intake
+  - Uses 7700 kcal ≈ 1kg formula
+- **Recommendations:**
+  - Calorie target adjustments
+  - Goal change suggestions
+  - Diet break recommendations for metabolic adaptation
+  - Refeed day suggestions
+- Stores review history in database
 
-#### Description
-Daily weight logging with body measurements, body fat estimation, and visual trend tracking.
+### F7: AI Program Generator ✅ COMPLETE (NEW)
 
-#### Data Captured
-- **Weight**: In kilograms (required)
-- **Body Measurements** (optional):
-  - Waist circumference (cm)
-  - Neck circumference (cm)
-  - Arm circumference (cm)
-- **Body Fat %**: Auto-calculated from measurements using Navy formula
+Generate complete workout programs using evidence-based programming principles.
 
-#### Body Fat Calculation (Navy Method)
-**For Men:**
-```
-Body Fat % = 495 / (1.0324 - 0.19077 * log10(waist - neck) + 0.15456 * log10(height)) - 450
-```
-
-**For Women:**
-```
-Body Fat % = 495 / (1.29579 - 0.35004 * log10(waist + hip - neck) + 0.22100 * log10(height)) - 450
-```
-
-Note: We'll use the male formula since hip measurement isn't captured. Can add later if needed.
-
-#### User Flow
-1. Navigate to weight tracker
-2. Tap "Log Weight"
-3. Enter weight (required)
-4. Optionally enter body measurements
-5. Body fat % auto-calculated if measurements provided
-6. Save entry
-
-#### Visualization
-- **Line Graph**: Weight over time
-- **Default View**: Last 30 days
-- **Options**: 7 days, 30 days, 90 days, all time
-- **Goal Indicator**: 
-  - Green line/zone: On track with goal
-  - Red line/zone: Off track
-
-#### Goal Progress Logic
-Based on user's goal:
-- **Bulk/Lean Bulk**: Weight should trend upward
-- **Cut**: Weight should trend downward
-- **Maintain/Recomp**: Weight should stay stable
-
-Compare weekly average to previous week:
-- If direction matches goal: Green indicator
-- If direction opposes goal: Red indicator
-
-#### AI Goal Review Feature
-- Manual trigger button (e.g., "Review My Progress")
-- Recommended after 3-6 months of data
-- AI analyzes:
-  - Weight trend over time
-  - Current vs target progress
-  - Adherence to calorie targets
-- AI outputs:
-  - Updated calorie target recommendation
-  - Program adjustment suggestions
-  - Goal change recommendation if appropriate
-- User can accept or dismiss recommendations
-
-#### AI Prompt Template (Goal Review)
-```
-Review my fitness progress and provide recommendations.
-
-Current Profile:
-- Age: {age}, Gender: {gender}, Height: {height}cm
-- Goal: {goal}
-- Target rate: {target_rate}kg/week
-- Current calorie target: {calorie_target}
-
-Weight History (last {n} months):
-{weight_data_summary}
-
-Calorie Adherence:
-- Average daily intake: {avg_calories}
-- Days logged: {days_logged}
-- Target adherence: {adherence_pct}%
-
-Current weight: {current_weight}kg
-Starting weight: {starting_weight}kg
-Weight change: {weight_change}kg over {period}
-
-Analyze my progress and provide:
-1. Assessment of current progress vs goal
-2. Recommended calorie target adjustment (if any)
-3. Suggested goal change (if appropriate)
-4. Any other recommendations
-
-Return JSON format:
-{
-  "assessment": "text analysis of progress",
-  "on_track": true/false,
-  "recommendations": {
-    "calorie_target": new_target_or_null,
-    "protein_g": new_protein_or_null,
-    "carbs_g": new_carbs_or_null,
-    "fat_g": new_fat_or_null,
-    "goal_change": "suggested_goal_or_null",
-    "reasoning": "why these changes"
-  },
-  "program_suggestions": "any workout program advice"
-}
-```
-
-#### Offline Behavior
-- Weight logging: Full functionality
-- Trend graph: Full functionality
-- AI Goal Review: Requires connection
-
----
-
-### F5: AI Calorie Target Assistant
-
-#### Description
-AI-powered calculation of daily calorie and macro targets based on user profile and goals.
-
-#### Initial Setup (Onboarding)
-Collects:
-1. **Age**: Number input
-2. **Gender**: Male/Female selection
-3. **Height**: In centimeters
-4. **Current Weight**: In kilograms
-5. **Activity Level**: 
-   - Sedentary (little or no exercise)
-   - Light (light exercise 1-3 days/week)
-   - Moderate (moderate exercise 3-5 days/week)
-   - Active (hard exercise 6-7 days/week)
-6. **Goal**:
-   - Bulk (aggressive muscle gain)
-   - Lean Bulk (slow muscle gain, minimize fat)
-   - Recomp (maintain weight, change composition)
-   - Cut (fat loss)
-   - Maintain (stay current)
-7. **Target Rate**: kg per week (for bulk/cut goals)
-
-#### AI Calculation
-Send profile to Gemini for personalized targets:
-
-```
-Calculate daily calorie and macro targets for:
-
-Profile:
-- Age: {age}
-- Gender: {gender}
-- Height: {height}cm
-- Weight: {weight}kg
-- Activity Level: {activity_level}
-- Goal: {goal}
-- Target Rate: {target_rate}kg/week
-
-Provide personalized daily targets considering the goal and sustainable progress.
-
-Return JSON format:
-{
-  "calorie_target": daily_calories,
-  "protein_g": protein_grams,
-  "carbs_g": carb_grams,
-  "fat_g": fat_grams,
-  "reasoning": "brief explanation of calculation"
-}
-```
-
-#### Manual Override
-- User can manually edit any target
-- Edited values persist until next recalculation
-- Clear indication when values are manually overridden
-
-#### Recalculation
-- Available anytime via Settings
-- Uses current profile data (including latest weight)
-- Replaces current targets with new AI recommendations
-- User confirms before applying
-
-#### Display
-- **Dashboard**: Always visible
-  - Calorie target (e.g., "2500 kcal")
-  - Remaining calories (e.g., "1200 remaining")
-  - Progress bar or ring
-- **Macro targets**: Visible in detailed view or daily log
+**Features:**
+- Equipment selection with always-available items (bodyweight, bands)
+- Experience level consideration (beginner/intermediate/advanced)
+- Goal-based programming (bulk, cut, recomp, maintain)
+- **Science-Based Programming:**
+  - Training split selection by frequency (full body, upper/lower, PPL)
+  - Volume guidelines (10-20 sets/muscle/week)
+  - Training frequency optimization (2x/week per muscle = 38% more growth)
+  - Exercise selection rules (stretch exercises, muscle function coverage)
+  - Rep ranges by goal with scientific backing
+  - Recovery and day spacing guidelines
+  - Specific exercise recommendations by muscle group
+- Generates sessions with exercises, sets, reps, and notes
+- Superset suggestions for time efficiency
+- Weekly volume summary with muscle group breakdown
 
 ---
 
@@ -661,80 +405,26 @@ Bottom navigation bar with 4 main sections:
 
 Additional access via:
 - **Settings**: Gear icon in header
-- **Meal Scanner**: Camera icon (quick access from Calories or Dashboard)
+- **Meal Scanner**: Camera icon (quick access from Dashboard)
 
-### Pages
+### Routes
+- `/` - Dashboard
+- `/calories` - Calorie log
+- `/scanner` - Meal scanner
+- `/workout` - Workout overview
+- `/workout/session` - Active workout (no bottom nav)
+- `/workout/program/new` - New program
+- `/workout/program/:id` - Edit program
+- `/exercises` - Exercise library
+- `/weight` - Weight tracker
+- `/settings` - Settings
+- `/onboarding` - Initial setup
 
-#### Dashboard
-- **Header**: App name, settings icon
-- **Calorie Summary Card**:
-  - Target calories
-  - Consumed calories
-  - Remaining calories
-  - Macro breakdown (P/C/F)
-- **Today's Workout Card** (if scheduled):
-  - Session name
-  - "Start Workout" button
-- **Quick Actions**:
-  - Log Food
-  - Scan Meal
-  - Log Weight
-- **Weight Trend Mini-Graph**: Last 7 days
+---
 
-#### Calories Page
-- **Date Selector**: Navigate between days
-- **Daily Summary**: Total calories/macros
-- **Meal Sections**: 
-  - Breakfast (collapsible)
-  - Lunch (collapsible)
-  - Dinner (collapsible)
-  - Snacks (collapsible)
-- **Add Entry FAB**: Opens meal type selector then input
+## Onboarding Flow ✅ COMPLETE
 
-#### Workout Page
-- **Active Program Card**: Current program name and schedule
-- **Today's Session**: If scheduled, show exercises
-- **Quick Actions**: Start Workout, View Programs
-- **Recent Workouts**: Last 3-5 sessions
-
-#### Programs Sub-page
-- **Program List**: All created programs
-- **Active Badge**: Indicates current active program
-- **Create Program Button**
-
-#### Workout Session Page (Active)
-- **Header**: Session name, timer
-- **Exercise List**: 
-  - Exercise name
-  - Target sets x reps
-  - Last session's performance
-  - Logged sets (reps @ weight)
-  - Add set button
-- **Rest Timer**: Floating or fixed component
-- **Complete Workout Button**
-
-#### Weight Page
-- **Log Weight Button**
-- **Current Stats**: Latest weight, body fat %
-- **Trend Graph**: Weight over time
-- **Goal Indicator**: On/off track
-- **Time Range Selector**: 7d, 30d, 90d, All
-- **AI Review Button**: "Review My Progress"
-
-#### Settings Page
-- **Profile Section**: Edit age, gender, height, activity level
-- **Goals Section**: Edit goal, target rate
-- **Targets Section**: View/edit calorie and macro targets
-- **Recalculate Button**: Trigger AI recalculation
-- **API Key**: Manage Gemini API key
-- **Data Management**:
-  - Export Data (JSON)
-  - Import Data (restore backup)
-  - Clear All Data (with confirmation)
-- **About**: App version, links
-
-#### Onboarding Pages
-Multi-step form:
+10-step onboarding process:
 1. Welcome screen
 2. Basic info (age, gender, height)
 3. Current weight
@@ -748,69 +438,7 @@ Multi-step form:
 
 ---
 
-## Onboarding Flow
-
-### Step-by-Step
-
-1. **Welcome**
-   - App logo and name
-   - Brief description
-   - "Get Started" button
-
-2. **Basic Information**
-   - Age (number input)
-   - Gender (male/female toggle)
-   - Height (cm input)
-
-3. **Current Weight**
-   - Weight input (kg)
-   - This becomes first weight log entry
-
-4. **Activity Level**
-   - Visual cards for each level
-   - Description of what each means
-
-5. **Fitness Goal**
-   - Cards: Bulk, Lean Bulk, Recomp, Cut, Maintain
-   - Brief description of each
-
-6. **Target Rate** (skip if Maintain/Recomp)
-   - Slider or input: 0.25 - 1.0 kg/week
-   - Recommendation shown based on goal
-
-7. **API Setup**
-   - Gemini API key input
-   - Link to get API key
-   - "Skip for now" option (limits AI features)
-
-8. **Calculating...**
-   - Loading state
-   - AI calculates personalized targets
-
-9. **Your Targets**
-   - Display calculated targets
-   - Option to adjust manually
-   - "Confirm" button
-
-10. **Ready!**
-    - Success message
-    - "Go to Dashboard" button
-
-### Skip/Later Handling
-- API key can be added later in Settings
-- Without API key: Manual-only mode for all features
-
----
-
-## Offline Strategy
-
-### Service Worker Caching
-Using vite-plugin-pwa with Workbox:
-
-**Cache Strategies:**
-- **App Shell**: Cache-first (HTML, CSS, JS, fonts)
-- **Images**: Cache-first with fallback
-- **API Calls**: Network-first, fall back to cache (for Gemini)
+## Offline Strategy ✅ COMPLETE
 
 ### Feature Availability
 
@@ -827,62 +455,24 @@ Using vite-plugin-pwa with Workbox:
 | Add Exercise (AI) | No | Yes |
 | Log Weight | Yes | Yes |
 | View Weight Graph | Yes | Yes |
-| AI Goal Review | No | Yes |
+| Weekly Review | No | Yes |
+| AI Program Generator | No | Yes |
 | Export Data | Yes | Yes |
 | Import Data | Yes | Yes |
 
-### Offline Indicators
-- Show connection status in header
-- Toast notification when going offline/online
-- Disable AI buttons with tooltip when offline
-
 ---
 
-## Data Export & Backup
+## Data Export & Backup ✅ COMPLETE
 
-### Export Format
-JSON file containing all tables:
+### Export Features
+- **Selective Export**: Choose categories to export (Profile, Weight, Calories, Exercises, Programs, Workouts)
+- Full JSON export with timestamp
+- Proper handling of new columns (exercise_type, superset_group, etc.)
 
-```json
-{
-  "version": "1.0",
-  "exported_at": "2024-01-15T10:30:00Z",
-  "data": {
-    "user_profile": { ... },
-    "weight_logs": [ ... ],
-    "food_entries": [ ... ],
-    "exercises": [ ... ],
-    "workout_programs": [ ... ],
-    "program_sessions": [ ... ],
-    "program_exercises": [ ... ],
-    "workout_logs": [ ... ],
-    "workout_sets": [ ... ],
-    "ai_goal_reviews": [ ... ]
-  }
-}
-```
-
-### Export Process
-1. User taps "Export Data" in Settings
-2. App queries all tables
-3. Generates JSON with timestamp
-4. Triggers download: `mypersonalfitness-backup-{date}.json`
-
-### Import Process
-1. User taps "Import Data" in Settings
-2. File picker opens for JSON
-3. App validates file structure
-4. Confirmation dialog: "This will replace all existing data"
-5. If confirmed:
-   - Clear all existing data
-   - Insert imported data
-   - Refresh app state
-6. Success/error toast
-
-### Validation
-- Check file has correct version/structure
-- Validate required fields exist
-- Handle missing optional fields gracefully
+### Import Features
+- Full data restore from JSON backup
+- Data validation before import
+- Confirmation dialog
 
 ---
 
@@ -894,20 +484,20 @@ JSON file containing all tables:
 - [x] PGlite database setup and schema
 - [x] Basic routing structure
 - [x] Dark mode theme setup
-- [x] Basic UI components (Button, Input, Card, Modal, Select, TextArea, Header, BottomNav)
+- [x] Basic UI components
 - [x] Navigation bar
 
 ### Phase 2: Onboarding & Profile ✅ COMPLETED
 - [x] Onboarding flow UI (10 steps)
 - [x] User profile storage
-- [x] Gemini API integration (basic)
+- [x] Gemini API integration
 - [x] AI calorie target calculation
-- [x] Settings page (profile, targets, API key)
+- [x] Settings page
 
 ### Phase 3: Calorie Tracking ✅ COMPLETED
 - [x] Food entries CRUD operations
 - [x] Daily calorie view UI
-- [x] Meal sections (breakfast, lunch, dinner, snacks)
+- [x] Meal sections
 - [x] AI food analysis integration
 - [x] Manual entry fallback
 - [x] Edit/delete entries
@@ -915,12 +505,15 @@ JSON file containing all tables:
 
 ### Phase 4: Workout Tracker ✅ COMPLETED
 - [x] Exercise library CRUD
-- [x] AI exercise generation
+- [x] AI exercise generation (single + batch)
 - [x] Workout program creation
 - [x] Program sessions and exercises
+- [x] Superset functionality
+- [x] Duration-based exercises
 - [x] Active program management
 - [x] Workout logging session
 - [x] Sets/reps/weight tracking
+- [x] Set notes during workout
 - [x] Rest timer component
 - [x] Last session comparison display
 
@@ -930,6 +523,7 @@ JSON file containing all tables:
 - [x] Gemini Vision API integration
 - [x] Results form with editable portions
 - [x] Macro recalculation logic
+- [x] Meal type selection in results
 - [x] Save to food entries
 
 ### Phase 6: Weight Tracker ✅ COMPLETED
@@ -939,7 +533,6 @@ JSON file containing all tables:
 - [x] Weight trend chart
 - [x] Goal progress indicator
 - [x] Time range selector
-- [ ] AI goal review feature (UI exists, needs implementation)
 
 ### Phase 7: Dashboard & Polish ✅ COMPLETED
 - [x] Dashboard layout
@@ -947,137 +540,87 @@ JSON file containing all tables:
 - [x] Today's workout widget
 - [x] Quick action buttons
 - [x] Weight mini-graph
-- [x] Offline indicators (basic)
 - [x] Loading states
 - [x] Error handling
 - [x] Empty states
 
-### Phase 8: Data Management & Testing ✅ COMPLETED
-- [x] Export functionality
+### Phase 8: Data Management ✅ COMPLETED
+- [x] Export functionality (selective)
 - [x] Import functionality
 - [x] Data validation
-- [ ] Cross-browser testing
-- [ ] Mobile responsiveness testing
-- [ ] Offline functionality testing
-- [ ] PWA installation testing
-- [ ] Bug fixes and polish
+
+### Phase 9: Weekly Review System ✅ COMPLETED (NEW)
+- [x] Weekly review data collection
+- [x] Sufficiency checking (5-day minimum)
+- [x] AI weekly analysis prompt
+- [x] Metabolic response analysis
+- [x] Diet break recommendations
+- [x] Weekly review modal UI
+- [x] Review history storage
+
+### Phase 10: AI Program Generator ✅ COMPLETED (NEW)
+- [x] Equipment selection UI
+- [x] Program generator wizard
+- [x] Science-based prompt engineering
+- [x] Training split selection by frequency
+- [x] Volume and exercise guidelines
+- [x] Program import to database
+
+### Phase 11: Deployment & Production ✅ COMPLETED
+- [x] Vercel SPA routing configuration (vercel.json)
+- [x] PWA icons (192x192, 512x512, maskable variants)
+- [x] Apple touch icon
+- [x] Favicon
 
 ---
 
 ## Progress Tracking
 
-### Checklist
+### What's Complete ✅
+- All core features (calorie tracking, workout tracking, meal scanner, weight tracking)
+- AI integrations (food analysis, exercise generation, program generation, weekly review)
+- Weekly review with metabolic response analysis
+- AI program generator with science-based principles
+- Superset and duration exercise support
+- Selective data export
+- PWA deployment ready
 
-#### Foundation ✅
-- [x] Vite + React + TypeScript setup
-- [x] Tailwind CSS v4 configuration
-- [x] PWA manifest and service worker
-- [x] PGlite integration
-- [x] Database schema implementation
-- [x] Basic component library
-- [x] Routing setup
-- [x] Navigation component
+### What's Remaining
 
-#### User Profile & Settings ✅
-- [x] Onboarding flow (all steps)
-- [x] Profile CRUD
-- [x] Settings page
-- [x] API key management
-- [x] Manual target override
+#### Testing & QA
+- [ ] Cross-browser testing (Chrome, Safari, Firefox)
+- [ ] PWA installation testing (iOS, Android)
+- [ ] Offline functionality testing
+- [ ] Mobile responsiveness testing
 
-#### Calorie Tracking ✅
-- [x] Add food entry (manual)
-- [x] Add food entry (AI)
-- [x] Edit food entry
-- [x] Delete food entry
-- [x] Daily view
-- [x] Meal type sections
-- [x] Weekly view
-- [x] Historical view
-- [x] Calorie/macro totals
-
-#### Workout Tracker ✅
-- [x] Exercise library view
-- [x] Add exercise (manual)
-- [x] Add exercise (AI)
-- [x] Create workout program
-- [x] Edit workout program
-- [x] Delete workout program
-- [x] Set active program
-- [x] View program schedule
-- [x] Start workout session
-- [x] Log sets/reps/weight
-- [x] View last session data
-- [x] Rest timer
-- [x] Complete workout
-
-#### Meal Scanner ✅
-- [x] Camera capture
-- [x] Gallery upload
-- [x] Text description input
-- [x] AI image analysis
-- [x] Editable results form
-- [x] Portion adjustment
-- [x] Save to log
-
-#### Weight Tracker ✅
-- [x] Log weight
-- [x] Log measurements
-- [x] Body fat calculation
-- [x] Weight history view
-- [x] Trend chart
-- [x] Goal progress indicator
-- [ ] AI goal review (partial - needs implementation)
-
-#### Dashboard ✅
-- [x] Calorie summary card
-- [x] Today's workout card
-- [x] Quick action buttons
-- [x] Weight mini-chart
-- [x] Remaining calories display
-
-#### Data Management ✅
-- [x] Export to JSON
-- [x] Import from JSON
-- [x] Data validation
-- [ ] Clear data function (in Settings)
-
-#### Polish (In Progress)
-- [x] Loading states
-- [x] Error handling
-- [x] Empty states
-- [x] Responsive design (mobile-first)
-- [ ] PWA installation testing
-- [ ] Offline indicators enhancement
+#### Known Issues
+- [ ] None currently tracked
 
 ---
 
-## What's Next
+## Potential Improvements (Big Wins)
 
-### Immediate Tasks
-1. **AI Goal Review Implementation** - Wire up the "Review My Progress" button in Weight Tracker to call the AI and display recommendations
-2. **Clear All Data Function** - Add confirmation modal and implement in Settings
-3. **Offline Indicator Enhancement** - Show clearer status when offline, disable AI features gracefully
+### High Priority - Quick Wins
+1. **Clear All Data Function** - Button in Settings to reset app (with confirmation)
+2. **Offline Indicator Enhancement** - Clearer status when offline, disable AI features gracefully with tooltips
 
-### Testing & Polish
-1. Test PWA installation on iOS and Android
-2. Test offline functionality thoroughly
-3. Cross-browser testing (Chrome, Safari, Firefox)
-4. Performance optimization (lazy loading, code splitting)
-5. Fix any remaining linter warnings
+### Medium Priority - Good Enhancements
+3. **Workout History View** - View past workout logs with details (not just comparison)
+4. **AI Goal Review in Weight Tracker** - The "Review My Progress" button exists but could use the weekly review system
+5. **Exercise Search/Filter** - Search by name, muscle group, or equipment in library
+6. **Toast Notifications** - Visual feedback for save/delete/error actions
 
-### Optional Enhancements
-1. Workout history detail view (view past workout logs)
-2. Exercise search/filter improvements
-3. Charts enhancements (better tooltips, animations)
-4. Toast notifications for actions
-5. Swipe gestures for navigation
+### Lower Priority - Nice to Have
+7. **Charts Improvements** - Better tooltips, animations, body fat trend line
+8. **Swipe Gestures** - Swipe between days in calorie log
+9. **Quick Copy Meals** - Copy previous day's meals
+10. **Water Intake Tracking** - Simple daily water logging
+11. **Progress Photos** - Store photos linked to weight entries
+12. **Workout Templates** - Quick-start templates for common programs
 
 ---
 
 ## Notes & Decisions Log
-
-Use this section to track important decisions and changes during development.
 
 | Date | Decision | Reasoning |
 |------|----------|-----------|
@@ -1085,6 +628,9 @@ Use this section to track important decisions and changes during development.
 | 2026-01-07 | Used Tailwind v4 | Latest version with improved performance |
 | 2026-01-07 | Dark mode only | Simplified theming, matches personal preference |
 | 2026-01-07 | Zustand for state | Lightweight, simple API, no boilerplate |
+| 2026-01-10 | Weekly review on Monday | Better reflection on full week, 5-day minimum data requirement |
+| 2026-01-10 | Metabolic response analysis | Detect adaptation early, suggest diet breaks proactively |
+| 2026-01-12 | Science-based program generator | Used Built With Science research for evidence-based programming |
 
 ---
 
@@ -1092,18 +638,16 @@ Use this section to track important decisions and changes during development.
 
 Ideas for future versions (not in current scope):
 - Barcode scanning for packaged foods
-- Water intake tracking
 - Sleep tracking
-- Custom meal recipes
+- Custom meal recipes (save meals for quick re-entry)
 - Social sharing
 - Multiple user profiles
 - Cloud sync
-- Workout history analytics
-- Progress photos
-- AI-generated workout programs
+- Workout analytics (volume trends, strength progression)
 - Integration with fitness wearables
+- AI form check from video
 
 ---
 
-*Last Updated: January 7, 2026*
-*Version: 1.0*
+*Last Updated: January 12, 2026*
+*Version: 1.1*

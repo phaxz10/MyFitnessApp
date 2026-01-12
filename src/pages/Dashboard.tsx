@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Plus, Utensils, Camera, Scale, Dumbbell } from 'lucide-react';
-import { Card, CardContent } from '../components/ui';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  Plus,
+  Utensils,
+  Camera,
+  Scale,
+  Dumbbell,
+  TrendingUp,
+  Trophy,
+  Play,
+} from 'lucide-react';
+import { Card, CardContent, Button } from '../components/ui';
 import {
   WeeklyReviewButton,
   WeeklyReviewModal,
@@ -9,27 +18,50 @@ import {
 import { useProfile } from '../hooks/useProfile';
 import { useCalories } from '../hooks/useCalories';
 import { useWeight } from '../hooks/useWeight';
+import { useWorkoutLogs } from '../hooks/useWorkoutLogs';
+import { useExerciseProgress } from '../hooks/useExerciseProgress';
 import { useAppStore } from '../hooks/useAppStore';
 import { formatDate, formatDisplayDate } from '../utils/date';
 import { formatCalories, calculateProgress } from '../utils/calculations';
 
 export function Dashboard() {
+  const navigate = useNavigate();
   const { profile, fetchProfile } = useProfile();
   const { fetchEntriesByDate, getDailySummary } = useCalories();
   const { getLatestLog } = useWeight();
+  const { logs, fetchLogs, activeWorkout, resumeWorkout, startWorkout } =
+    useWorkoutLogs();
+  const { getOverallProgress } = useExerciseProgress();
   const isOnline = useAppStore((state) => state.isOnline);
 
   const [latestWeight, setLatestWeight] = useState<number | null>(null);
   const [showWeeklyReview, setShowWeeklyReview] = useState(false);
+  const [weeklyWorkouts, setWeeklyWorkouts] = useState(0);
+  const [recentPRsCount, setRecentPRsCount] = useState(0);
   const today = formatDate(new Date());
 
   useEffect(() => {
     fetchProfile();
     fetchEntriesByDate(today);
+    fetchLogs(5);
+    resumeWorkout();
     getLatestLog().then((log) => {
       if (log) setLatestWeight(log.weight_kg);
     });
-  }, [fetchProfile, fetchEntriesByDate, getLatestLog, today]);
+    // Fetch workout stats for the week
+    getOverallProgress('7d').then((data) => {
+      setWeeklyWorkouts(data.totalWorkouts);
+      setRecentPRsCount(data.recentPRs.length);
+    });
+  }, [
+    fetchProfile,
+    fetchEntriesByDate,
+    fetchLogs,
+    resumeWorkout,
+    getLatestLog,
+    getOverallProgress,
+    today,
+  ]);
 
   const summary = getDailySummary(today);
   const caloriesConsumed = summary.total_calories;
@@ -228,6 +260,86 @@ export function Dashboard() {
           </Card>
         </Link>
       </div>
+
+      {/* Workout Summary Card */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+              <Dumbbell size={18} className="text-orange-400" />
+              Workouts
+            </h3>
+            <Link
+              to="/workout/progress"
+              className="text-blue-400 text-sm flex items-center gap-1"
+            >
+              <TrendingUp size={14} />
+              Progress
+            </Link>
+          </div>
+
+          {activeWorkout ? (
+            <div className="bg-blue-600/20 border border-blue-500/30 rounded-lg p-3 mb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" />
+                  <span className="text-blue-400 font-medium">
+                    Workout in Progress
+                  </span>
+                </div>
+                <Button
+                  onClick={() => navigate('/workout/session')}
+                  className="py-1 px-3 text-sm"
+                >
+                  Resume
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button
+              className="w-full mb-3"
+              onClick={async () => {
+                await startWorkout();
+                navigate('/workout/session');
+              }}
+            >
+              <Play size={16} className="mr-2" />
+              Start Workout
+            </Button>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-slate-700/50 rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-white">{weeklyWorkouts}</p>
+              <p className="text-slate-400 text-xs">This Week</p>
+            </div>
+            <div className="bg-slate-700/50 rounded-lg p-3 text-center">
+              <div className="flex items-center justify-center gap-1">
+                <Trophy
+                  size={16}
+                  className={
+                    recentPRsCount > 0 ? 'text-yellow-400' : 'text-slate-500'
+                  }
+                />
+                <p className="text-2xl font-bold text-white">
+                  {recentPRsCount}
+                </p>
+              </div>
+              <p className="text-slate-400 text-xs">Recent PRs</p>
+            </div>
+          </div>
+
+          {logs.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-slate-700">
+              <p className="text-slate-400 text-xs mb-2">Last workout</p>
+              <p className="text-white text-sm">
+                {logs[0].session_name || 'Quick Workout'} -{' '}
+                {logs[0].sets?.length || 0} sets
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Today's Meals Summary */}
       <Card>

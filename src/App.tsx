@@ -24,6 +24,7 @@ import { WeightTracker } from './pages/WeightTracker';
 import { Settings } from './pages/Settings';
 import { Onboarding } from './pages/Onboarding';
 import { MealScanner } from './pages/MealScanner';
+import { Progress } from './pages/Progress';
 
 function MainLayout() {
   return (
@@ -141,6 +142,7 @@ function AppRoutes() {
         <Route path="/workout/session" element={<WorkoutSession />} />
         <Route path="/workout/program/new" element={<ProgramEditor />} />
         <Route path="/workout/program/:id" element={<ProgramEditor />} />
+        <Route path="/workout/progress" element={<Progress />} />
       </Route>
 
       {/* Redirects */}

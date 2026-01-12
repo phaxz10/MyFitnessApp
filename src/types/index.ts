@@ -430,3 +430,63 @@ export interface ProgressPhoto {
   notes: string | null;
   created_at: string;
 }
+
+// Strength Progress Types
+export type ProgressTrend = 'progressing' | 'plateau' | 'regressing';
+
+export interface PersonalRecord {
+  exerciseId: number;
+  exerciseName: string;
+  type: 'weight' | 'reps' | 'volume' | '1rm';
+  value: number;
+  date: string;
+  details: string; // e.g., "225 lbs × 8 reps"
+}
+
+export interface ExercisePR {
+  maxWeight: { value: number; reps: number; date: string } | null;
+  maxReps: { value: number; weight: number; date: string } | null;
+  maxVolume: { value: number; date: string } | null;
+  max1RM: { value: number; date: string } | null;
+}
+
+export interface ExerciseProgressSummary {
+  exerciseId: number;
+  exerciseName: string;
+  muscleGroups: string;
+  exerciseType: ExerciseType;
+  trend: ProgressTrend;
+  lastPerformed: string | null;
+  estimated1RM: number | null;
+  totalSessions: number;
+  prs: ExercisePR;
+}
+
+export interface OverallProgressMetrics {
+  totalVolume: number;
+  totalWorkouts: number;
+  totalTimeMinutes: number;
+  uniqueExercises: number;
+  volumeChange: number; // percentage vs previous period
+  recentPRs: PersonalRecord[];
+}
+
+export interface ExerciseSessionData {
+  date: string;
+  estimated1RM: number | null;
+  bestWeight: number | null;
+  bestReps: number | null;
+  totalVolume: number;
+  totalSets: number;
+  sets: {
+    weight: number | null;
+    reps: number | null;
+    volume: number;
+  }[];
+}
+
+export interface VolumeChartData {
+  date: string;
+  volume: number;
+  workouts: number;
+}

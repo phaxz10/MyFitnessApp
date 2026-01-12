@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Clock,
   Sparkles,
+  TrendingUp,
 } from 'lucide-react';
 import { Card, CardContent, Button, Modal } from '../components/ui';
 import { ProgramGeneratorWizard } from '../components/program-generator';
@@ -440,9 +441,19 @@ export function Workout() {
       {/* Recent Workouts */}
       <Card>
         <CardContent className="p-4">
-          <h3 className="text-lg font-semibold text-white mb-4">
-            Recent Workouts
-          </h3>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold text-white">
+              Recent Workouts
+            </h3>
+            <button
+              type="button"
+              onClick={() => navigate('/workout/progress')}
+              className="text-blue-400 text-sm flex items-center gap-1"
+            >
+              <TrendingUp size={14} />
+              View Progress
+            </button>
+          </div>
 
           {logs.length === 0 ? (
             <p className="text-slate-500 text-center py-8">

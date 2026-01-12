@@ -35,53 +35,110 @@ export function RestTimer({
   setInitialSeconds,
 }: RestTimerProps) {
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [isAlarming, setIsAlarming] = useState(false);
+  const alarmIntervalRef = useRef<number | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
-  const playBeep = useCallback(() => {
+  // Play a single alarm beep pattern (3 beeps)
+  const playAlarmBeep = useCallback(() => {
     try {
-      const audioContext = new (
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext })
-          .webkitAudioContext
-      )();
-      const oscillator = audioContext.createOscillator();
+      // Reuse or create audio context
+      if (
+        !audioContextRef.current ||
+        audioContextRef.current.state === 'closed'
+      ) {
+        audioContextRef.current = new (
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext })
+            .webkitAudioContext
+        )();
+      }
+
+      const audioContext = audioContextRef.current;
+
+      // Resume if suspended (needed for some browsers)
+      if (audioContext.state === 'suspended') {
+        audioContext.resume();
+      }
+
       const gainNode = audioContext.createGain();
-
-      oscillator.connect(gainNode);
       gainNode.connect(audioContext.destination);
+      gainNode.gain.value = 0.4;
 
-      oscillator.frequency.value = 800;
-      oscillator.type = 'sine';
-      gainNode.gain.value = 0.3;
+      // Beep 1
+      const osc1 = audioContext.createOscillator();
+      osc1.connect(gainNode);
+      osc1.frequency.value = 880;
+      osc1.type = 'sine';
+      osc1.start(audioContext.currentTime);
+      osc1.stop(audioContext.currentTime + 0.15);
 
-      oscillator.start();
-      oscillator.stop(audioContext.currentTime + 0.3);
+      // Beep 2
+      const osc2 = audioContext.createOscillator();
+      osc2.connect(gainNode);
+      osc2.frequency.value = 880;
+      osc2.type = 'sine';
+      osc2.start(audioContext.currentTime + 0.25);
+      osc2.stop(audioContext.currentTime + 0.4);
 
-      // Play 3 beeps
-      setTimeout(() => {
-        const osc2 = audioContext.createOscillator();
-        osc2.connect(gainNode);
-        osc2.frequency.value = 800;
-        osc2.type = 'sine';
-        osc2.start();
-        osc2.stop(audioContext.currentTime + 0.3);
-      }, 400);
-
-      setTimeout(() => {
-        const osc3 = audioContext.createOscillator();
-        osc3.connect(gainNode);
-        osc3.frequency.value = 1000;
-        osc3.type = 'sine';
-        osc3.start();
-        osc3.stop(audioContext.currentTime + 0.5);
-      }, 800);
+      // Beep 3 (higher pitch)
+      const osc3 = audioContext.createOscillator();
+      osc3.connect(gainNode);
+      osc3.frequency.value = 1100;
+      osc3.type = 'sine';
+      osc3.start(audioContext.currentTime + 0.5);
+      osc3.stop(audioContext.currentTime + 0.7);
     } catch {
       // Audio not supported
     }
   }, []);
 
-  // Use ref for playBeep to avoid re-running effect when it changes
-  const playBeepRef = useRef(playBeep);
-  playBeepRef.current = playBeep;
+  // Start looping alarm
+  const startAlarm = useCallback(() => {
+    if (alarmIntervalRef.current) return; // Already alarming
+
+    setIsAlarming(true);
+    playAlarmBeep(); // Play immediately
+
+    // Loop every 1.5 seconds
+    alarmIntervalRef.current = window.setInterval(() => {
+      playAlarmBeep();
+    }, 1500);
+
+    // Vibrate pattern (loops via interval)
+    if (navigator.vibrate) {
+      navigator.vibrate([200, 100, 200, 100, 300]);
+    }
+  }, [playAlarmBeep]);
+
+  // Stop the alarm
+  const stopAlarm = useCallback(() => {
+    if (alarmIntervalRef.current) {
+      clearInterval(alarmIntervalRef.current);
+      alarmIntervalRef.current = null;
+    }
+    setIsAlarming(false);
+
+    // Stop vibration
+    if (navigator.vibrate) {
+      navigator.vibrate(0);
+    }
+  }, []);
+
+  // Cleanup alarm on unmount
+  useEffect(() => {
+    return () => {
+      if (alarmIntervalRef.current) {
+        clearInterval(alarmIntervalRef.current);
+      }
+      if (
+        audioContextRef.current &&
+        audioContextRef.current.state !== 'closed'
+      ) {
+        audioContextRef.current.close();
+      }
+    };
+  }, []);
 
   // Use timestamp-based timing to handle background/sleep
   const startTimeRef = useRef<number | null>(null);
@@ -117,12 +174,11 @@ export function RestTimer({
         if (newSeconds === 0) {
           setIsRunning(false);
           startTimeRef.current = null;
-          // Play sound notification
+          // Start looping alarm sound
           if (soundEnabled) {
-            playBeepRef.current();
-          }
-          // Vibrate if supported
-          if (navigator.vibrate) {
+            startAlarm();
+          } else if (navigator.vibrate) {
+            // Even without sound, vibrate once
             navigator.vibrate([200, 100, 200, 100, 200]);
           }
           return;
@@ -139,7 +195,7 @@ export function RestTimer({
     return () => {
       if (animationFrame) cancelAnimationFrame(animationFrame);
     };
-  }, [isRunning, soundEnabled, setSeconds, setIsRunning]);
+  }, [isRunning, soundEnabled, setSeconds, setIsRunning, startAlarm]);
 
   const toggleTimer = () => {
     if (!isRunning) {
@@ -151,12 +207,14 @@ export function RestTimer({
   };
 
   const resetTimer = () => {
+    stopAlarm();
     setIsRunning(false);
     setSeconds(initialSeconds);
     startTimeRef.current = null;
   };
 
   const setPresetTime = (time: number) => {
+    stopAlarm(); // Stop alarm if user selects a new time
     setSeconds(time);
     setInitialSeconds(time);
     startTimeRef.current = Date.now();
@@ -165,6 +223,7 @@ export function RestTimer({
   };
 
   const dismissTimer = () => {
+    stopAlarm(); // Stop the looping alarm
     setIsRunning(false);
     setSeconds(initialSeconds);
     startTimeRef.current = null;
@@ -186,23 +245,37 @@ export function RestTimer({
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference * (1 - progress / 100);
 
+  // Handle FAB click - if alarming, stop alarm and dismiss
+  const handleFabClick = () => {
+    if (isAlarming) {
+      dismissTimer();
+    } else {
+      onOpenChange(true);
+    }
+  };
+
   return (
     <>
       {/* Floating Action Button - Always visible */}
       <button
         type="button"
-        onClick={() => onOpenChange(true)}
+        onClick={handleFabClick}
         className={`fixed bottom-20 right-4 z-40 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-300 ${
-          isFinished
-            ? 'bg-green-600 animate-pulse'
-            : isRunning
-              ? 'bg-blue-600'
-              : isActive
-                ? 'bg-slate-700'
-                : 'bg-slate-700 hover:bg-slate-600'
+          isAlarming
+            ? 'bg-green-600 animate-pulse ring-4 ring-green-400/50'
+            : isFinished
+              ? 'bg-green-600 animate-pulse'
+              : isRunning
+                ? 'bg-blue-600'
+                : isActive
+                  ? 'bg-slate-700'
+                  : 'bg-slate-700 hover:bg-slate-600'
         }`}
       >
-        {isRunning || isActive ? (
+        {isAlarming ? (
+          // Show "TAP" when alarm is ringing
+          <span className="text-white font-bold text-xs">TAP</span>
+        ) : isRunning || isActive ? (
           // Show timer countdown with circular progress
           <div className="relative w-12 h-12 flex items-center justify-center">
             <svg

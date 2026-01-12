@@ -1,16 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Utensils,
-  Camera,
   Scale,
   Dumbbell,
   TrendingUp,
   TrendingDown,
   Trophy,
-  FileText,
   ChevronRight,
-  Flame,
   Target,
 } from 'lucide-react';
 import {
@@ -29,6 +26,10 @@ import { useCalories } from '../hooks/useCalories';
 import { useWeight } from '../hooks/useWeight';
 import { useWorkoutLogs } from '../hooks/useWorkoutLogs';
 import { useExerciseProgress } from '../hooks/useExerciseProgress';
+import {
+  useWeeklyConsistency,
+  type DayConsistency,
+} from '../hooks/useWeeklyConsistency';
 import { useAppStore } from '../hooks/useAppStore';
 import { formatDate, formatDisplayDate } from '../utils/date';
 import { formatCalories, calculateProgress } from '../utils/calculations';
@@ -36,53 +37,51 @@ import { formatCalories, calculateProgress } from '../utils/calculations';
 export function Dashboard() {
   const navigate = useNavigate();
   const { profile, fetchProfile } = useProfile();
-  const { fetchEntriesByDate, getDailySummary, getLoggingStreak } =
-    useCalories();
+  const { fetchEntriesByDate, getDailySummary } = useCalories();
   const { getLatestLog, getFirstWeight } = useWeight();
   const { logs, fetchLogs, activeWorkout, resumeWorkout } = useWorkoutLogs();
   const { getOverallProgress } = useExerciseProgress();
-  const isOnline = useAppStore((state) => state.isOnline);
+  const { getWeeklyConsistency } = useWeeklyConsistency();
+  const { openFoodLogModal, openWeightLogModal } = useAppStore();
 
   const [latestWeight, setLatestWeight] = useState<number | null>(null);
   const [showWeeklyReview, setShowWeeklyReview] = useState(false);
-  const [showFoodLogOptions, setShowFoodLogOptions] = useState(false);
   const [weeklyWorkouts, setWeeklyWorkouts] = useState(0);
   const [recentPRsCount, setRecentPRsCount] = useState(0);
-  const [loggingStreak, setLoggingStreak] = useState(0);
+  const [weeklyConsistency, setWeeklyConsistency] = useState<DayConsistency[]>(
+    [],
+  );
   const [startWeight, setStartWeight] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedDay, setSelectedDay] = useState<DayConsistency | null>(null);
   const today = formatDate(new Date());
 
-  useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      try {
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      await Promise.all([
+        fetchProfile(),
+        fetchEntriesByDate(today),
+        fetchLogs(5),
+        resumeWorkout(),
+      ]);
+
+      const [weightLog, progressData, consistency, firstWeight] =
         await Promise.all([
-          fetchProfile(),
-          fetchEntriesByDate(today),
-          fetchLogs(5),
-          resumeWorkout(),
+          getLatestLog(),
+          getOverallProgress('7d'),
+          getWeeklyConsistency(),
+          getFirstWeight(),
         ]);
 
-        const [weightLog, progressData, streak, firstWeight] =
-          await Promise.all([
-            getLatestLog(),
-            getOverallProgress('7d'),
-            getLoggingStreak(),
-            getFirstWeight(),
-          ]);
-
-        if (weightLog) setLatestWeight(weightLog.weight_kg);
-        setWeeklyWorkouts(progressData.totalWorkouts);
-        setRecentPRsCount(progressData.recentPRs.length);
-        setLoggingStreak(streak);
-        setStartWeight(firstWeight);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadData();
+      if (weightLog) setLatestWeight(weightLog.weight_kg);
+      setWeeklyWorkouts(progressData.totalWorkouts);
+      setRecentPRsCount(progressData.recentPRs.length);
+      setWeeklyConsistency(consistency.days);
+      setStartWeight(firstWeight);
+    } finally {
+      setIsLoading(false);
+    }
   }, [
     fetchProfile,
     fetchEntriesByDate,
@@ -90,10 +89,14 @@ export function Dashboard() {
     resumeWorkout,
     getLatestLog,
     getOverallProgress,
-    getLoggingStreak,
+    getWeeklyConsistency,
     getFirstWeight,
     today,
   ]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const summary = getDailySummary(today);
   const caloriesConsumed = summary.total_calories;
@@ -108,27 +111,73 @@ export function Dashboard() {
   return (
     <div className="p-4 pb-20 space-y-4">
       {/* Date Header */}
-      <div className="text-center mb-6">
+      <div className="text-center mb-4">
         <p className="text-slate-400 text-sm">Today</p>
         <h2 className="text-xl font-semibold text-white">
           {formatDisplayDate(today)}
         </h2>
-        {loggingStreak > 0 && (
-          <div className="flex items-center justify-center gap-1.5 mt-2">
-            <Flame
-              size={16}
-              className={
-                loggingStreak >= 7 ? 'text-orange-400' : 'text-slate-400'
-              }
-            />
-            <span
-              className={`text-sm font-medium ${loggingStreak >= 7 ? 'text-orange-400' : 'text-slate-400'}`}
-            >
-              {loggingStreak} day{loggingStreak !== 1 ? 's' : ''} streak
-            </span>
-          </div>
-        )}
       </div>
+
+      {/* Weekly Consistency Tracker */}
+      {weeklyConsistency.length > 0 && (
+        <div className="flex justify-between gap-1 px-2">
+          {weeklyConsistency.map((day) => {
+            return (
+              <button
+                key={day.date}
+                type="button"
+                onClick={() => {
+                  if (!day.isFuture) {
+                    setSelectedDay(day);
+                  }
+                }}
+                disabled={day.isFuture}
+                className={`flex-1 flex flex-col items-center py-2 px-1 rounded-lg transition-colors ${
+                  day.isToday
+                    ? 'bg-slate-700 ring-1 ring-blue-500'
+                    : day.isFuture
+                      ? 'opacity-40'
+                      : 'hover:bg-slate-700/50'
+                }`}
+              >
+                <span
+                  className={`text-xs font-medium mb-1.5 ${
+                    day.isToday ? 'text-blue-400' : 'text-slate-400'
+                  }`}
+                >
+                  {day.dayLabel}
+                </span>
+                <div className="flex gap-0.5">
+                  {/* Weight dot */}
+                  <div
+                    className={`w-2 h-2 rounded-full ${
+                      day.isFuture
+                        ? 'bg-slate-700'
+                        : day.hasWeight
+                          ? 'bg-green-500'
+                          : 'bg-slate-600'
+                    }`}
+                  />
+                  {/* Food dot */}
+                  <div
+                    className={`w-2 h-2 rounded-full ${
+                      day.isFuture
+                        ? 'bg-slate-700'
+                        : day.hasFood
+                          ? 'bg-blue-500'
+                          : 'bg-slate-600'
+                    }`}
+                  />
+                  {/* Workout dot - only show if there was a workout */}
+                  {day.hasWorkout && (
+                    <div className="w-2 h-2 rounded-full bg-orange-500" />
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Weekly Review Button - Shows on Mondays with at least 5 logged days */}
       <WeeklyReviewButton
@@ -311,7 +360,7 @@ export function Dashboard() {
       <div className="grid grid-cols-3 gap-3">
         <button
           type="button"
-          onClick={() => setShowFoodLogOptions(true)}
+          onClick={() => openFoodLogModal({ date: today, onSuccess: loadData })}
           className="w-full"
         >
           <Card className="hover:bg-slate-700 transition-colors h-full">
@@ -324,7 +373,13 @@ export function Dashboard() {
           </Card>
         </button>
 
-        <Link to="/weight?action=add">
+        <button
+          type="button"
+          onClick={() =>
+            openWeightLogModal({ date: today, onSuccess: loadData })
+          }
+          className="w-full"
+        >
           <Card className="hover:bg-slate-700 transition-colors h-full">
             <CardContent className="p-4 flex flex-col items-center gap-2">
               <div className="w-12 h-12 bg-green-600/20 rounded-lg flex items-center justify-center">
@@ -336,7 +391,7 @@ export function Dashboard() {
               )}
             </CardContent>
           </Card>
-        </Link>
+        </button>
 
         <Link to="/workout">
           <Card className="hover:bg-slate-700 transition-colors h-full">
@@ -349,63 +404,6 @@ export function Dashboard() {
           </Card>
         </Link>
       </div>
-
-      {/* Food Log Options Modal */}
-      <Modal
-        isOpen={showFoodLogOptions}
-        onClose={() => setShowFoodLogOptions(false)}
-        title="Log Food"
-        size="sm"
-      >
-        <div className="space-y-3">
-          <button
-            type="button"
-            onClick={() => {
-              setShowFoodLogOptions(false);
-              navigate('/calories?action=add');
-            }}
-            className="w-full flex items-center gap-4 p-4 bg-slate-700/50 hover:bg-slate-700 rounded-lg transition-colors"
-          >
-            <div className="w-12 h-12 bg-blue-600/20 rounded-lg flex items-center justify-center flex-shrink-0">
-              <FileText size={24} className="text-blue-400" />
-            </div>
-            <div className="text-left flex-1">
-              <p className="text-white font-medium">Log by Text</p>
-              <p className="text-slate-400 text-sm">
-                Describe your meal for AI analysis
-              </p>
-            </div>
-            <ChevronRight size={20} className="text-slate-500" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setShowFoodLogOptions(false);
-              navigate('/scanner');
-            }}
-            disabled={!isOnline}
-            className={`w-full flex items-center gap-4 p-4 rounded-lg transition-colors ${
-              isOnline
-                ? 'bg-slate-700/50 hover:bg-slate-700'
-                : 'bg-slate-800/50 opacity-50 cursor-not-allowed'
-            }`}
-          >
-            <div className="w-12 h-12 bg-purple-600/20 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Camera size={24} className="text-purple-400" />
-            </div>
-            <div className="text-left flex-1">
-              <p className="text-white font-medium">Scan Meal</p>
-              <p className="text-slate-400 text-sm">
-                {isOnline
-                  ? 'Take a photo for AI analysis'
-                  : 'Requires internet connection'}
-              </p>
-            </div>
-            <ChevronRight size={20} className="text-slate-500" />
-          </button>
-        </div>
-      </Modal>
 
       {/* Workout Summary Card */}
       <Card>
@@ -604,6 +602,108 @@ export function Dashboard() {
           })()}
         </CardContent>
       </Card>
+
+      {/* Day Details Bottom Sheet */}
+      <Modal
+        isOpen={selectedDay !== null}
+        onClose={() => setSelectedDay(null)}
+        title={selectedDay ? formatDisplayDate(selectedDay.date) : ''}
+        size="sm"
+      >
+        {selectedDay && (
+          <div className="space-y-3">
+            {/* Status summary */}
+            <div className="flex items-center justify-center gap-4 py-2">
+              <div className="flex items-center gap-1.5">
+                <div
+                  className={`w-3 h-3 rounded-full ${selectedDay.hasWeight ? 'bg-green-500' : 'bg-slate-600'}`}
+                />
+                <span className="text-sm text-slate-300">Weight</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div
+                  className={`w-3 h-3 rounded-full ${selectedDay.hasFood ? 'bg-blue-500' : 'bg-slate-600'}`}
+                />
+                <span className="text-sm text-slate-300">Food</span>
+              </div>
+              {selectedDay.hasWorkout && (
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-full bg-orange-500" />
+                  <span className="text-sm text-slate-300">Workout</span>
+                </div>
+              )}
+            </div>
+
+            {/* Action buttons for missing items */}
+            {(!selectedDay.hasWeight || !selectedDay.hasFood) && (
+              <div className="space-y-2 pt-2 border-t border-slate-700">
+                <p className="text-slate-400 text-xs text-center mb-3">
+                  {selectedDay.isToday
+                    ? 'Complete your daily logs'
+                    : 'Log missed items'}
+                </p>
+
+                {!selectedDay.hasWeight && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const date = selectedDay.date;
+                      setSelectedDay(null);
+                      openWeightLogModal({ date, onSuccess: loadData });
+                    }}
+                    className="w-full flex items-center gap-3 p-3 bg-slate-700/50 hover:bg-slate-700 rounded-lg transition-colors"
+                  >
+                    <div className="w-10 h-10 bg-green-600/20 rounded-lg flex items-center justify-center">
+                      <Scale size={20} className="text-green-400" />
+                    </div>
+                    <div className="text-left flex-1">
+                      <p className="text-white font-medium text-sm">
+                        Log Weight
+                      </p>
+                      <p className="text-slate-400 text-xs">
+                        Record your weight for this day
+                      </p>
+                    </div>
+                    <ChevronRight size={18} className="text-slate-500" />
+                  </button>
+                )}
+
+                {!selectedDay.hasFood && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const date = selectedDay.date;
+                      setSelectedDay(null);
+                      openFoodLogModal({ date, onSuccess: loadData });
+                    }}
+                    className="w-full flex items-center gap-3 p-3 bg-slate-700/50 hover:bg-slate-700 rounded-lg transition-colors"
+                  >
+                    <div className="w-10 h-10 bg-blue-600/20 rounded-lg flex items-center justify-center">
+                      <Utensils size={20} className="text-blue-400" />
+                    </div>
+                    <div className="text-left flex-1">
+                      <p className="text-white font-medium text-sm">Log Food</p>
+                      <p className="text-slate-400 text-xs">
+                        Record meals for this day
+                      </p>
+                    </div>
+                    <ChevronRight size={18} className="text-slate-500" />
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* All complete message */}
+            {selectedDay.hasWeight && selectedDay.hasFood && (
+              <div className="text-center py-4">
+                <p className="text-green-400 text-sm">
+                  All logged for this day!
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

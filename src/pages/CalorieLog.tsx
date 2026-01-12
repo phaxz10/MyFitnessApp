@@ -50,7 +50,11 @@ export function CalorieLog() {
   } = useCalories();
   const isOnline = useAppStore((state) => state.isOnline);
 
-  const [currentDate, setCurrentDate] = useState(formatDate(new Date()));
+  const [currentDate, setCurrentDate] = useState(() => {
+    // Initialize from URL param or default to today
+    const urlDate = new URLSearchParams(window.location.search).get('date');
+    return urlDate || formatDate(new Date());
+  });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingEntry, setEditingEntry] = useState<FoodEntry | null>(null);
@@ -87,6 +91,14 @@ export function CalorieLog() {
   useEffect(() => {
     fetchProfile();
   }, [fetchProfile]);
+
+  // Sync currentDate with URL param when it changes
+  useEffect(() => {
+    const urlDate = searchParams.get('date');
+    if (urlDate && urlDate !== currentDate) {
+      setCurrentDate(urlDate);
+    }
+  }, [searchParams, currentDate]);
 
   useEffect(() => {
     const loadData = async () => {

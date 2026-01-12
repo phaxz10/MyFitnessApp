@@ -26,6 +26,7 @@ import { Onboarding } from './pages/Onboarding';
 import { MealScanner } from './pages/MealScanner';
 import { Progress } from './pages/Progress';
 import { WorkoutDetail } from './pages/WorkoutDetail';
+import { GlobalModalContainer } from './components/modals';
 
 function MainLayout() {
   return (
@@ -158,6 +159,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AppRoutes />
+      <GlobalModalContainer />
     </BrowserRouter>
   );
 }

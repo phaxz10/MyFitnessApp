@@ -111,18 +111,22 @@ export function WeightTracker() {
     }
   }, [searchParams]);
 
-  // Check if there's already an entry for today
-  const todayStr = formatDate(new Date());
-  const todayLog = logs.find((log) => formatDate(log.date) === todayStr);
+  // Get selected date from URL param or default to today
+  const selectedDate = searchParams.get('date') || formatDate(new Date());
 
-  // Auto-populate form when modal opens if there's a today entry
+  // Check if there's already an entry for the selected date
+  const selectedDateLog = logs.find(
+    (log) => formatDate(log.date) === selectedDate,
+  );
+
+  // Auto-populate form when modal opens if there's an entry for selected date
   const handleOpenModal = useCallback(() => {
-    if (todayLog) {
+    if (selectedDateLog) {
       reset({
-        weight: todayLog.weight_kg.toString(),
-        waist: todayLog.waist_cm?.toString() || '',
-        neck: todayLog.neck_cm?.toString() || '',
-        arm: todayLog.arm_cm?.toString() || '',
+        weight: selectedDateLog.weight_kg.toString(),
+        waist: selectedDateLog.waist_cm?.toString() || '',
+        neck: selectedDateLog.neck_cm?.toString() || '',
+        arm: selectedDateLog.arm_cm?.toString() || '',
       });
       setIsEditingToday(true);
     } else {
@@ -135,7 +139,7 @@ export function WeightTracker() {
       setIsEditingToday(false);
     }
     setIsModalOpen(true);
-  }, [todayLog, reset]);
+  }, [selectedDateLog, reset]);
 
   const getFilteredLogs = () => {
     if (timeRange === 'all') return [...logs].reverse();
@@ -188,7 +192,7 @@ export function WeightTracker() {
       }
 
       await addLog({
-        date: formatDate(new Date()),
+        date: selectedDate,
         weight_kg: parseFloat(data.weight),
         waist_cm: data.waist ? parseFloat(data.waist) : null,
         neck_cm: data.neck ? parseFloat(data.neck) : null,
@@ -611,13 +615,17 @@ export function WeightTracker() {
       <Modal
         isOpen={isModalOpen}
         onClose={handleCloseModal}
-        title={isEditingToday ? "Update Today's Weight" : 'Log Weight'}
+        title={
+          isEditingToday
+            ? `Update Weight - ${formatDisplayDate(selectedDate)}`
+            : `Log Weight - ${formatDisplayDate(selectedDate)}`
+        }
       >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {isEditingToday && (
             <p className="text-slate-400 text-sm bg-slate-700/50 p-2 rounded">
-              You already logged weight today. This will update your existing
-              entry.
+              You already logged weight for this day. This will update your
+              existing entry.
             </p>
           )}
           <Input

@@ -92,7 +92,7 @@ export async function analyzeFoodImage(
 ): Promise<AIFoodAnalysisResponse> {
   if (!ai) throw new Error('Gemini API not initialized');
 
-  const prompt = `Analyze this food image and use the internet to search for the nutrient values, if not found the exact values estimate nutritional information.
+  const prompt = `Analyze this food image and use the internet to search for the nutrient values, if not found the exact values estimate nutritional information. please throw error if the image is not food.
 ${textDescription ? `Additional context from user: ${textDescription}` : ''}
 
 All portions should be estimated in grams.

@@ -607,7 +607,7 @@ export async function generateWorkoutProgram(
       ? 'Choose the most appropriate training split based on the frequency'
       : `Use a ${input.preferredTrainingSplit?.replace(/_/g, ' ')} split`;
 
-  const prompt = `You are an expert strength and conditioning coach. Create a complete workout program based on these specifications:
+  const prompt = `You are an expert strength and conditioning coach using evidence-based programming principles. Create a complete workout program based on these specifications:
 
 USER PREFERENCES:
 - Training frequency: ${input.trainingDaysPerWeek} days per week
@@ -627,33 +627,134 @@ IMPORTANT: You may ONLY program exercises that can be performed with the equipme
 EXISTING EXERCISE LIBRARY (prefer using these exact names when applicable):
 ${existingExercisesList || 'No existing exercises'}
 
-PROGRAM DESIGN GUIDELINES:
-1. For ${input.experienceLevel} level:
-   ${input.experienceLevel === 'beginner' ? '- Focus on compound movements, 2-3 sets per exercise, full body or simple splits' : ''}
-   ${input.experienceLevel === 'intermediate' ? '- Mix of compound and isolation, 3-4 sets per exercise, can use more complex splits' : ''}
-   ${input.experienceLevel === 'advanced' ? '- Can include advanced techniques, 3-5 sets, specialized programming' : ''}
+=== SCIENCE-BASED PROGRAMMING PRINCIPLES ===
 
-2. Rep ranges by goal:
-   - Bulk/Lean Bulk: 6-12 reps for hypertrophy
-   - Cut: 8-15 reps, higher volume
-   - Recomp: Mix of 5-8 (strength) and 10-15 (metabolic)
-   - Maintain: 6-10 reps
+1. TRAINING SPLIT SELECTION (based on frequency):
+   Research shows training each muscle 2x/week produces 38% more growth than 1x/week.
+   
+   ${
+     input.trainingDaysPerWeek <= 3
+       ? `With ${input.trainingDaysPerWeek} days: Use FULL BODY split
+   - Each session hits all major muscle groups
+   - 1-2 exercises per muscle group per session
+   - Allows each muscle to be trained 2-3x per week
+   - Best for beginners and time-constrained lifters`
+       : ''
+   }
+   ${
+     input.trainingDaysPerWeek === 4
+       ? `With 4 days: Use UPPER/LOWER split
+   - 2 upper body days, 2 lower body days
+   - Each muscle trained 2x per week
+   - More volume per session than full body
+   - Good balance of frequency and volume`
+       : ''
+   }
+   ${
+     input.trainingDaysPerWeek >= 5
+       ? `With ${input.trainingDaysPerWeek} days: Use PUSH/PULL/LEGS split
+   - Push: Chest, Shoulders, Triceps
+   - Pull: Back, Biceps, Rear Delts
+   - Legs: Quads, Hamstrings, Glutes, Calves
+   - Each muscle trained 1.5-2x per week with high volume
+   - Best for advanced lifters seeking maximum volume`
+       : ''
+   }
 
-3. Session structure:
-   - Start with compound movements
-   - Progress to isolation exercises
-   - Include appropriate warm-up movements
-   - Consider supersets for time efficiency if session is short
+2. WEEKLY VOLUME GUIDELINES (sets per muscle per week):
+   ${input.experienceLevel === 'beginner' ? '- Beginners: 10-12 sets per major muscle group' : ''}
+   ${input.experienceLevel === 'intermediate' ? '- Intermediate: 12-16 sets per major muscle group' : ''}
+   ${input.experienceLevel === 'advanced' ? '- Advanced: 16-20 sets per major muscle group' : ''}
+   - Arms (biceps, triceps): 6-10 direct sets (they get indirect work from compounds)
+   - Rear delts: 8-12 sets (often undertrained)
+   - Spread volume across 2+ sessions per week for each muscle
 
-4. Weekly volume guidelines:
-   - Major muscle groups: 10-20 sets per week
-   - Smaller muscles (biceps, triceps): 8-14 sets per week
-   - Prioritize ${input.focusAreas?.length ? input.focusAreas.join(' and ') : 'balanced development'}
+3. EXERCISE SELECTION RULES:
+   A) Use 2-4 different exercises per muscle group per week
+   B) Max 3-4 exercises per muscle per individual workout
+   C) Include exercises that STRETCH the muscle under load (enhances growth):
+      - Chest: Dumbbell flyes, incline pressing
+      - Back: Lat pulldowns, pull-ups, Romanian deadlifts
+      - Shoulders: Cable lateral raises (behind body)
+      - Biceps: Incline curls
+      - Triceps: Overhead extensions
+      - Quads: Lunges, sissy squats, leg extensions
+      - Hamstrings: Romanian deadlifts
+   D) Cover different muscle FUNCTIONS:
+      - Chest: Horizontal press + incline press + fly pattern
+      - Back: Vertical pull (lats) + horizontal row (thickness) + pullover
+      - Shoulders: Press (front/side) + lateral raise (side) + rear delt work
+      - Quads: Knee extension + hip flexion patterns
+      - Hamstrings: Hip extension (RDL) + knee flexion (leg curl)
+   E) Vary grips and angles for regional development
 
-5. Day of week assignment:
+4. SESSION STRUCTURE:
+   - Start with heavy compound movements (freshest state)
+   - Progress to lighter isolation exercises
+   - Use supersets for antagonist muscles to save time (e.g., biceps/triceps, chest/back)
+   - Save abs/core for end of session
+
+5. REP RANGES BY GOAL (evidence-based):
+   ${
+     input.goal === 'bulk' || input.goal === 'lean_bulk'
+       ? `For ${input.goal}:
+   - Primary: 6-12 reps (optimal hypertrophy range)
+   - Compounds: 6-8 reps (heavier for strength base)
+   - Isolation: 10-15 reps (metabolic stress, safer)
+   - Focus on progressive overload`
+       : ''
+   }
+   ${
+     input.goal === 'cut'
+       ? `For cutting:
+   - Maintain strength: Keep some heavy work (4-6 reps) on main lifts
+   - Volume work: 8-15 reps for muscle retention
+   - Avoid excessive volume (recovery is compromised in deficit)
+   - Prioritize compound movements to preserve muscle`
+       : ''
+   }
+   ${
+     input.goal === 'recomp'
+       ? `For recomposition:
+   - Strength days: 4-6 reps on compounds
+   - Hypertrophy days: 8-12 reps
+   - Mix both approaches across the week
+   - Focus on progressive overload despite maintenance calories`
+       : ''
+   }
+   ${
+     input.goal === 'maintain'
+       ? `For maintenance:
+   - Moderate rep range: 6-10 reps
+   - Maintain current intensity (weight on bar)
+   - Can reduce volume by ~30% from building phase
+   - Focus on movement quality`
+       : ''
+   }
+
+6. RECOVERY & DAY SPACING:
+   - Allow 48-72 hours between training the same muscle group
+   - Don't schedule heavy leg day before/after heavy deadlift work
+   - Consider: Mon/Tue training leaves Wed for recovery
+   - Avoid training chest/triceps day before shoulder day
+   ${input.trainingDaysPerWeek <= 3 ? `- With ${input.trainingDaysPerWeek} days: Mon/Wed/Fri or similar alternating pattern` : ''}
+   ${input.trainingDaysPerWeek === 4 ? '- With 4 days: Mon/Tue/Thu/Fri or Mon/Wed/Fri/Sat' : ''}
+   ${input.trainingDaysPerWeek >= 5 ? `- With ${input.trainingDaysPerWeek} days: Push/Pull/Legs/Push/Pull or similar rotation` : ''}
+
+7. SPECIFIC EXERCISE RECOMMENDATIONS BY MUSCLE:
+   - CHEST: Incline press (upper), flat press (mid), flyes (stretch), dips (lower)
+   - BACK: Pull-ups/pulldowns (width), rows (thickness), face pulls (rear delts)
+   - SHOULDERS: Overhead press (front), lateral raises (side), reverse flyes (rear)
+   - QUADS: Squats, lunges, leg press, leg extensions
+   - HAMSTRINGS: Romanian deadlifts (hip hinge), leg curls (knee flexion)
+   - GLUTES: Hip thrusts, Bulgarian split squats, Romanian deadlifts
+   - BICEPS: Different curl variations (barbell, dumbbell, hammer for brachialis)
+   - TRICEPS: Close-grip press (medial/lateral), overhead extension (long head)
+
+8. Day of week assignment:
    - Assign each session a specific day (0=Sunday through 6=Saturday)
-   - Allow adequate rest between sessions hitting the same muscles
-   - For ${input.trainingDaysPerWeek} days: suggest optimal spacing
+   - For ${input.trainingDaysPerWeek} days: optimal spacing with rest days between
+   - Don't cluster all training days together
 
 Return JSON format only, no markdown code blocks:
 {

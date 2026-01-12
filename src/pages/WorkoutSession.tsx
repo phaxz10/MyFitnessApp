@@ -816,7 +816,7 @@ export function WorkoutSession() {
                   {exerciseData.lastPerformance
                     .map((s) =>
                       s.duration_seconds
-                        ? `${s.duration_seconds}s${s.weight_kg ? `@${s.weight_kg}kg` : ''}`
+                        ? `${s.duration_seconds}s${s.weight_kg ? `@${s.weight_kg}lbs` : ''}`
                         : `${s.weight_kg || 0}×${s.reps || 0}`,
                     )
                     .join(' | ')}
@@ -869,9 +869,9 @@ export function WorkoutSession() {
                           }
                           className="w-16 h-8 text-center text-sm p-1"
                           disabled={set.completed}
-                          placeholder="kg"
+                          placeholder="lbs"
                         />
-                        <span className="text-slate-500 text-xs">kg</span>
+                        <span className="text-slate-500 text-xs">lbs</span>
                       </div>
                     )}
 
@@ -1210,9 +1210,11 @@ export function WorkoutSession() {
                                 }
                                 className="w-16 h-8 text-center text-sm p-1"
                                 disabled={set.completed}
-                                placeholder="kg"
+                                placeholder="lbs"
                               />
-                              <span className="text-slate-500 text-xs">kg</span>
+                              <span className="text-slate-500 text-xs">
+                                lbs
+                              </span>
                             </div>
                           )}
 
@@ -1405,7 +1407,7 @@ export function WorkoutSession() {
               )
               .toFixed(0)}
           </p>
-          <p className="text-xs text-slate-400">Volume (kg)</p>
+          <p className="text-xs text-slate-400">Volume (lbs)</p>
         </div>
       </div>
 

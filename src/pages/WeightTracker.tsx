@@ -22,7 +22,14 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from 'recharts';
-import { Card, CardContent, Button, Modal, Input } from '../components/ui';
+import {
+  Card,
+  CardContent,
+  Button,
+  Modal,
+  Input,
+  WeightTrackerSkeleton,
+} from '../components/ui';
 import { useWeight } from '../hooks/useWeight';
 import { useProfile } from '../hooks/useProfile';
 import { useProgressPhotos } from '../hooks/useProgressPhotos';
@@ -51,6 +58,7 @@ export function WeightTracker() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | 'all'>(
     '30d',
   );
@@ -86,9 +94,15 @@ export function WeightTracker() {
   });
 
   useEffect(() => {
-    fetchProfile();
-    fetchLogs();
-    fetchAllPhotos();
+    const loadData = async () => {
+      setInitialLoading(true);
+      try {
+        await Promise.all([fetchProfile(), fetchLogs(), fetchAllPhotos()]);
+      } finally {
+        setInitialLoading(false);
+      }
+    };
+    loadData();
   }, [fetchProfile, fetchLogs, fetchAllPhotos]);
 
   useEffect(() => {
@@ -351,6 +365,10 @@ export function WeightTracker() {
     side: 'Side',
     back: 'Back',
   };
+
+  if (initialLoading) {
+    return <WeightTrackerSkeleton />;
+  }
 
   return (
     <div className="p-4 pb-20">

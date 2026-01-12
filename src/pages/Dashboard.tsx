@@ -10,7 +10,7 @@ import {
   Trophy,
   Play,
 } from 'lucide-react';
-import { Card, CardContent, Button } from '../components/ui';
+import { Card, CardContent, Button, DashboardSkeleton } from '../components/ui';
 import {
   WeeklyReviewButton,
   WeeklyReviewModal,
@@ -38,21 +38,34 @@ export function Dashboard() {
   const [showWeeklyReview, setShowWeeklyReview] = useState(false);
   const [weeklyWorkouts, setWeeklyWorkouts] = useState(0);
   const [recentPRsCount, setRecentPRsCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
   const today = formatDate(new Date());
 
   useEffect(() => {
-    fetchProfile();
-    fetchEntriesByDate(today);
-    fetchLogs(5);
-    resumeWorkout();
-    getLatestLog().then((log) => {
-      if (log) setLatestWeight(log.weight_kg);
-    });
-    // Fetch workout stats for the week
-    getOverallProgress('7d').then((data) => {
-      setWeeklyWorkouts(data.totalWorkouts);
-      setRecentPRsCount(data.recentPRs.length);
-    });
+    const loadData = async () => {
+      setIsLoading(true);
+      try {
+        await Promise.all([
+          fetchProfile(),
+          fetchEntriesByDate(today),
+          fetchLogs(5),
+          resumeWorkout(),
+        ]);
+
+        const [weightLog, progressData] = await Promise.all([
+          getLatestLog(),
+          getOverallProgress('7d'),
+        ]);
+
+        if (weightLog) setLatestWeight(weightLog.weight_kg);
+        setWeeklyWorkouts(progressData.totalWorkouts);
+        setRecentPRsCount(progressData.recentPRs.length);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
   }, [
     fetchProfile,
     fetchEntriesByDate,
@@ -68,6 +81,10 @@ export function Dashboard() {
   const calorieTarget = profile?.calorie_target || 2000;
   const caloriesRemaining = calorieTarget - caloriesConsumed;
   const progress = calculateProgress(caloriesConsumed, calorieTarget);
+
+  if (isLoading) {
+    return <DashboardSkeleton />;
+  }
 
   return (
     <div className="p-4 pb-20 space-y-4">

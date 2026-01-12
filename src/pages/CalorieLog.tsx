@@ -18,6 +18,7 @@ import {
   Input,
   Select,
   TextArea,
+  CalorieLogSkeleton,
 } from '../components/ui';
 import { useCalories } from '../hooks/useCalories';
 import { useProfile } from '../hooks/useProfile';
@@ -57,6 +58,7 @@ export function CalorieLog() {
   const [error, setError] = useState<string | null>(null);
   const [useAI, setUseAI] = useState(true);
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   // React Hook Form
   const {
@@ -87,7 +89,15 @@ export function CalorieLog() {
   }, [fetchProfile]);
 
   useEffect(() => {
-    fetchEntriesByDate(currentDate);
+    const loadData = async () => {
+      setInitialLoading(true);
+      try {
+        await fetchEntriesByDate(currentDate);
+      } finally {
+        setInitialLoading(false);
+      }
+    };
+    loadData();
   }, [currentDate, fetchEntriesByDate]);
 
   const openAddModal = useCallback(() => {
@@ -267,6 +277,10 @@ export function CalorieLog() {
       setError(err instanceof Error ? err.message : 'Failed to copy meals');
     }
   };
+
+  if (initialLoading) {
+    return <CalorieLogSkeleton />;
+  }
 
   return (
     <div className="p-4 pb-20">

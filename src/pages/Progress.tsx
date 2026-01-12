@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import { Button } from '../components/ui';
+import { Button, ProgressSkeleton } from '../components/ui';
 import {
   OverviewTab,
   ExercisesTab,
@@ -26,11 +26,17 @@ export function Progress() {
 
   // Fetch exercises for name lookup
   const [exercises, setExercises] = useState<ExerciseProgressSummary[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const fetchExercises = async () => {
-      const data = await getAllExercisesProgress(timeRange);
-      setExercises(data);
+      setIsLoading(true);
+      try {
+        const data = await getAllExercisesProgress(timeRange);
+        setExercises(data);
+      } finally {
+        setIsLoading(false);
+      }
     };
     fetchExercises();
   }, [timeRange, getAllExercisesProgress]);
@@ -48,6 +54,11 @@ export function Progress() {
     setSelectedExerciseId(null);
     setSelectedExerciseName('');
   };
+
+  // If loading, show skeleton
+  if (isLoading) {
+    return <ProgressSkeleton />;
+  }
 
   // If an exercise is selected, show the detail view
   if (selectedExerciseId) {

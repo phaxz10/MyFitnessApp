@@ -14,7 +14,13 @@ import {
   Sparkles,
   TrendingUp,
 } from 'lucide-react';
-import { Card, CardContent, Button, Modal } from '../components/ui';
+import {
+  Card,
+  CardContent,
+  Button,
+  Modal,
+  WorkoutSkeleton,
+} from '../components/ui';
 import { ProgramGeneratorWizard } from '../components/program-generator';
 import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
 import {
@@ -60,6 +66,7 @@ export function Workout() {
     status: WorkoutStatus | null;
     workoutId: number | null;
   }>({ hasWorkout: false, status: null, workoutId: null });
+  const [isLoading, setIsLoading] = useState(true);
 
   // Check today's session status
   const checkTodaySessionStatus = useCallback(async () => {
@@ -76,10 +83,20 @@ export function Workout() {
   }, [todaySession, getTodaySessionStatus]);
 
   useEffect(() => {
-    fetchPrograms();
-    fetchActiveProgram();
-    fetchLogs(10);
-    resumeWorkout();
+    const loadData = async () => {
+      setIsLoading(true);
+      try {
+        await Promise.all([
+          fetchPrograms(),
+          fetchActiveProgram(),
+          fetchLogs(10),
+          resumeWorkout(),
+        ]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadData();
   }, [fetchPrograms, fetchActiveProgram, fetchLogs, resumeWorkout]);
 
   // Find today's session from active program
@@ -149,6 +166,10 @@ export function Workout() {
       day: 'numeric',
     });
   };
+
+  if (isLoading) {
+    return <WorkoutSkeleton />;
+  }
 
   return (
     <div className="p-4 pb-20">

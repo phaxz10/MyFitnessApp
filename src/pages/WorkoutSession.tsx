@@ -32,6 +32,7 @@ import { useWorkoutLogs } from '../hooks/useWorkoutLogs';
 import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
 import { useExercises } from '../hooks/useExercises';
 import { parseLocalTimestamp } from '../utils/date';
+import { getExerciseCoaching, isGeminiInitialized } from '../services/gemini';
 import {
   workoutNotesSchema,
   type WorkoutNotesFormData,
@@ -41,6 +42,8 @@ import type {
   ProgramExerciseWithDetails,
   WorkoutSet,
   ExerciseType,
+  AIExerciseCoachingResponse,
+  ProgressionDirection,
 } from '../types';
 
 interface SetData {
@@ -184,10 +187,11 @@ export function WorkoutSession() {
     addExerciseNote,
     getExerciseNotes,
     deleteExerciseNote,
+    getLastPerformance,
+    getRecentExerciseHistoryBySession,
   } = useWorkoutLogs();
   const { activeProgram, fetchActiveProgram } = useWorkoutPrograms();
   const { exercises: allExercises, fetchExercises } = useExercises();
-  const { getLastPerformance } = useWorkoutLogs();
 
   const [exercisesWithSets, setExercisesWithSets] = useState<
     ExerciseWithSets[]
@@ -206,6 +210,14 @@ export function WorkoutSession() {
     setIndex: number;
     targetSeconds: number;
   } | null>(null);
+
+  // AI coaching state - maps exercise ID to coaching recommendations
+  const [exerciseCoaching, setExerciseCoaching] = useState<
+    Map<number, AIExerciseCoachingResponse>
+  >(new Map());
+  const [coachingLoading, setCoachingLoading] = useState<Set<number>>(
+    new Set(),
+  );
 
   // Exercise notes state (for the currently open exercise notes modal)
   const [exerciseNotesModal, setExerciseNotesModal] = useState<{
@@ -493,6 +505,110 @@ export function WorkoutSession() {
         : null,
     );
   };
+
+  // Fetch AI coaching for an exercise
+  const fetchExerciseCoaching = useCallback(
+    async (
+      exerciseId: number,
+      exerciseName: string,
+      targetRepMin: number,
+      targetRepMax: number,
+      targetSets: number,
+    ) => {
+      // Skip if AI not initialized or already loading/loaded
+      if (!isGeminiInitialized()) return;
+      if (coachingLoading.has(exerciseId)) return;
+      if (exerciseCoaching.has(exerciseId)) return;
+
+      setCoachingLoading((prev) => new Set(prev).add(exerciseId));
+
+      try {
+        const history = await getRecentExerciseHistoryBySession(exerciseId, 5);
+
+        // Only fetch if there's history to analyze
+        if (history.length === 0) {
+          setCoachingLoading((prev) => {
+            const next = new Set(prev);
+            next.delete(exerciseId);
+            return next;
+          });
+          return;
+        }
+
+        const coaching = await getExerciseCoaching(
+          exerciseName,
+          history,
+          targetRepMin,
+          targetRepMax,
+          targetSets,
+        );
+
+        // Add exerciseId to the response
+        coaching.exerciseId = exerciseId;
+
+        setExerciseCoaching((prev) => new Map(prev).set(exerciseId, coaching));
+      } catch (err) {
+        console.error('Failed to fetch exercise coaching:', err);
+      } finally {
+        setCoachingLoading((prev) => {
+          const next = new Set(prev);
+          next.delete(exerciseId);
+          return next;
+        });
+      }
+    },
+    [coachingLoading, exerciseCoaching, getRecentExerciseHistoryBySession],
+  );
+
+  // Get coaching direction indicator
+  const getProgressionArrow = (direction: ProgressionDirection | undefined) => {
+    if (!direction || direction === 'maintain') return null;
+    if (direction === 'increase') {
+      return <ChevronUp size={14} className="text-green-400" />;
+    }
+    return <ChevronDown size={14} className="text-red-400" />;
+  };
+
+  // Fetch AI coaching for exercises when they're loaded
+  useEffect(() => {
+    if (!isGeminiInitialized()) return;
+    if (exercisesWithSets.length === 0) return;
+
+    exercisesWithSets.forEach((ex) => {
+      const exerciseId =
+        'exercise_id' in ex.exercise ? ex.exercise.exercise_id : ex.exercise.id;
+      const exerciseName =
+        'exercise_name' in ex.exercise
+          ? ex.exercise.exercise_name
+          : ex.exercise.name;
+
+      // Only fetch for reps-based exercises (not duration)
+      if (
+        ex.exerciseType === 'duration' ||
+        ex.exerciseType === 'duration_weight'
+      ) {
+        return;
+      }
+
+      // Get target reps from program exercise or defaults
+      const targetRepMin =
+        'target_rep_min' in ex.exercise ? (ex.exercise.target_rep_min ?? 8) : 8;
+      const targetRepMax =
+        'target_rep_max' in ex.exercise
+          ? (ex.exercise.target_rep_max ?? 12)
+          : 12;
+      const targetSets =
+        'target_sets' in ex.exercise ? (ex.exercise.target_sets ?? 3) : 3;
+
+      fetchExerciseCoaching(
+        exerciseId,
+        exerciseName,
+        targetRepMin,
+        targetRepMax,
+        targetSets,
+      );
+    });
+  }, [exercisesWithSets, fetchExerciseCoaching]);
 
   const formatElapsedTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -966,20 +1082,22 @@ export function WorkoutSession() {
         {/* Sets */}
         {exerciseData.isExpanded && (
           <div className="mt-3">
-            {/* Last Performance */}
-            {exerciseData.lastPerformance &&
-              exerciseData.lastPerformance.length > 0 && (
-                <div className="mb-2 px-2 py-1.5 bg-slate-700/50 rounded text-xs text-slate-400">
-                  <span className="text-slate-500">Last: </span>
-                  {exerciseData.lastPerformance
-                    .map((s) =>
-                      s.duration_seconds
-                        ? `${s.duration_seconds}s${s.weight_kg ? `@${s.weight_kg}lbs` : ''}`
-                        : `${s.weight_kg || 0}×${s.reps || 0}`,
-                    )
-                    .join(' | ')}
-                </div>
-              )}
+            {/* AI Coaching Tip - shown if available */}
+            {(() => {
+              const exerciseId =
+                'exercise_id' in exerciseData.exercise
+                  ? exerciseData.exercise.exercise_id
+                  : exerciseData.exercise.id;
+              const coaching = exerciseCoaching.get(exerciseId);
+              if (coaching?.coachingTip) {
+                return (
+                  <div className="mb-2 px-2 py-1.5 bg-blue-900/30 border border-blue-700/50 rounded text-xs text-blue-300">
+                    {coaching.coachingTip}
+                  </div>
+                );
+              }
+              return null;
+            })()}
 
             {/* Add Note Button */}
             <button
@@ -1005,7 +1123,13 @@ export function WorkoutSession() {
             {/* Compact Sets List */}
             <div className="space-y-1.5">
               {exerciseData.sets.map((set, setIndex) => {
-                const prevSet = exerciseData.lastPerformance?.[setIndex];
+                // Get AI coaching for this exercise and set
+                const exerciseId =
+                  'exercise_id' in exerciseData.exercise
+                    ? exerciseData.exercise.exercise_id
+                    : exerciseData.exercise.id;
+                const coaching = exerciseCoaching.get(exerciseId);
+                const setCoaching = coaching?.sets?.[setIndex];
 
                 return (
                   <div
@@ -1022,6 +1146,8 @@ export function WorkoutSession() {
                     {/* Weight Input (if applicable) */}
                     {hasWeight && (
                       <div className="flex items-center gap-1">
+                        {!set.completed &&
+                          getProgressionArrow(setCoaching?.weight)}
                         <Input
                           type="number"
                           value={set.weight}
@@ -1068,6 +1194,8 @@ export function WorkoutSession() {
                       </div>
                     ) : (
                       <div className="flex items-center gap-1">
+                        {!set.completed &&
+                          getProgressionArrow(setCoaching?.reps)}
                         <Input
                           type="number"
                           value={set.reps}
@@ -1084,16 +1212,6 @@ export function WorkoutSession() {
                           placeholder="reps"
                         />
                       </div>
-                    )}
-
-                    {/* Previous indicator */}
-                    {prevSet && !set.completed && (
-                      <span className="text-slate-500 text-xs ml-auto mr-1">
-                        prev:{' '}
-                        {prevSet.duration_seconds
-                          ? `${prevSet.duration_seconds}s`
-                          : `${prevSet.weight_kg || 0}×${prevSet.reps || 0}`}
-                      </span>
                     )}
 
                     {/* Action buttons */}
@@ -1325,7 +1443,14 @@ export function WorkoutSession() {
                       const hasWeight =
                         ex.exerciseType === 'reps_weight' ||
                         ex.exerciseType === 'duration_weight';
-                      const prevSet = ex.lastPerformance?.[roundNumber];
+
+                      // Get AI coaching for this exercise
+                      const exerciseId =
+                        'exercise_id' in ex.exercise
+                          ? ex.exercise.exercise_id
+                          : ex.exercise.id;
+                      const coaching = exerciseCoaching.get(exerciseId);
+                      const setCoaching = coaching?.sets?.[roundNumber];
 
                       // Get target info for duration exercises
                       const targetDuration =
@@ -1351,6 +1476,8 @@ export function WorkoutSession() {
                           {/* Weight Input (if applicable) */}
                           {hasWeight && (
                             <div className="flex items-center gap-1">
+                              {!set.completed &&
+                                getProgressionArrow(setCoaching?.weight)}
                               <Input
                                 type="number"
                                 value={set.weight}
@@ -1407,6 +1534,8 @@ export function WorkoutSession() {
                             </div>
                           ) : (
                             <div className="flex items-center gap-1">
+                              {!set.completed &&
+                                getProgressionArrow(setCoaching?.reps)}
                               <Input
                                 type="number"
                                 value={set.reps}
@@ -1423,16 +1552,6 @@ export function WorkoutSession() {
                                 placeholder="reps"
                               />
                             </div>
-                          )}
-
-                          {/* Previous indicator */}
-                          {prevSet && !set.completed && (
-                            <span className="text-slate-500 text-xs ml-auto mr-1">
-                              prev:{' '}
-                              {prevSet.duration_seconds
-                                ? `${prevSet.duration_seconds}s`
-                                : `${prevSet.weight_kg || 0}×${prevSet.reps || 0}`}
-                            </span>
                           )}
 
                           {/* Action buttons */}

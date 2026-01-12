@@ -615,6 +615,56 @@ export function useWorkoutLogs() {
     [],
   );
 
+  // Get exercise history organized by session for AI coaching analysis
+  // Returns array of sessions, each with date and sets for that session
+  const getRecentExerciseHistoryBySession = useCallback(
+    async (
+      exerciseId: number,
+      sessionCount = 5,
+    ): Promise<{ date: string; sets: WorkoutSet[] }[]> => {
+      try {
+        const db = await getDB();
+
+        // Get the most recent workout logs that include this exercise
+        const logsResult = await db.query(
+          `SELECT DISTINCT wl.id, wl.date
+           FROM workout_logs wl
+           JOIN workout_sets ws ON wl.id = ws.workout_log_id
+           WHERE ws.exercise_id = $1 AND (wl.status = 'completed' OR wl.ended_at IS NOT NULL)
+           ORDER BY wl.date DESC
+           LIMIT $2`,
+          [exerciseId, sessionCount],
+        );
+        const logs = logsResult.rows as { id: number; date: string }[];
+
+        if (logs.length === 0) return [];
+
+        // Get sets for each session separately
+        const sessions: { date: string; sets: WorkoutSet[] }[] = [];
+
+        for (const log of logs) {
+          const setsResult = await db.query(
+            `SELECT * FROM workout_sets
+             WHERE workout_log_id = $1 AND exercise_id = $2
+             ORDER BY set_number`,
+            [log.id, exerciseId],
+          );
+
+          sessions.push({
+            date: log.date,
+            sets: setsResult.rows as WorkoutSet[],
+          });
+        }
+
+        // Return in chronological order (oldest first, most recent last)
+        return sessions.reverse();
+      } catch {
+        return [];
+      }
+    },
+    [],
+  );
+
   return {
     logs,
     activeWorkout,
@@ -640,5 +690,6 @@ export function useWorkoutLogs() {
     processStaleWorkouts,
     isSessionCompletedToday,
     getTodaySessionStatus,
+    getRecentExerciseHistoryBySession,
   };
 }

@@ -395,6 +395,24 @@ export interface AIProgramGeneratorResponse {
   recommendations: string[]; // Tips for the user
 }
 
+// AI Exercise Coaching Types
+export type ProgressionDirection = 'increase' | 'maintain' | 'decrease';
+
+export interface SetProgression {
+  setNumber: number;
+  weight: ProgressionDirection;
+  reps: ProgressionDirection;
+  suggestedWeight: number;
+  suggestedReps: number;
+}
+
+export interface AIExerciseCoachingResponse {
+  exerciseId: number;
+  overallTrend: 'progressing' | 'plateau' | 'regressing';
+  sets: SetProgression[];
+  coachingTip: string;
+}
+
 // App State Types
 export interface AppSettings {
   isOnboardingComplete: boolean;

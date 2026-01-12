@@ -7,10 +7,12 @@ import type {
   AIWeeklyReviewResponse,
   AIProgramGeneratorInput,
   AIProgramGeneratorResponse,
+  AIExerciseCoachingResponse,
   UserProfile,
   WeightLog,
   Exercise,
   WeeklyReviewData,
+  WorkoutSet,
 } from '../types';
 import { ALWAYS_AVAILABLE_EQUIPMENT } from '../constants/equipment';
 
@@ -811,4 +813,90 @@ CRITICAL RULES:
     .trim();
 
   return JSON.parse(cleanedResponse) as AIProgramGeneratorResponse;
+}
+
+// Get AI coaching recommendations for exercise progression
+export async function getExerciseCoaching(
+  exerciseName: string,
+  exerciseHistory: { date: string; sets: WorkoutSet[] }[],
+  targetRepMin: number,
+  targetRepMax: number,
+  targetSets: number,
+): Promise<AIExerciseCoachingResponse> {
+  if (!genAI) throw new Error('Gemini API not initialized');
+
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+  // Format history for the prompt (weights stored in kg but user uses lbs for display)
+  const historyFormatted = exerciseHistory
+    .slice(-5) // Last 5 sessions
+    .map((session) => {
+      const setsStr = session.sets
+        .map((s, i) => `Set ${i + 1}: ${s.weight_kg ?? 0}lbs × ${s.reps ?? 0}`)
+        .join(', ');
+      return `${session.date}: ${setsStr}`;
+    })
+    .join('\n');
+
+  // Get the most recent session for baseline
+  const lastSession = exerciseHistory[exerciseHistory.length - 1];
+  const lastSets = lastSession?.sets || [];
+
+  const prompt = `You are an expert strength coach analyzing exercise progression data. Based on the training history, provide recommendations for the next workout.
+
+EXERCISE: ${exerciseName}
+TARGET: ${targetSets} sets × ${targetRepMin}-${targetRepMax} reps
+
+RECENT TRAINING HISTORY (most recent last):
+${historyFormatted || 'No previous history'}
+
+LAST SESSION SETS:
+${lastSets.map((s, i) => `Set ${i + 1}: ${s.weight_kg ?? 0}lbs × ${s.reps ?? 0} reps`).join('\n') || 'No data'}
+
+PROGRESSIVE OVERLOAD PRINCIPLES:
+1. If athlete hit the TOP of rep range (${targetRepMax} reps) on all sets with good form → INCREASE weight by 5-10lbs next session
+2. If athlete hit MIDDLE of rep range (${Math.floor((targetRepMin + targetRepMax) / 2)} reps) → MAINTAIN weight, focus on adding 1-2 reps
+3. If athlete FAILED to hit minimum reps (${targetRepMin}) → DECREASE weight or maintain and focus on form
+4. Consider consistency: multiple sessions at same weight hitting high reps = ready to progress
+5. Consider fatigue: declining reps across sets is normal, but dramatic drops suggest too heavy
+
+ANALYSIS REQUIRED:
+1. Assess the overall trend: Is the athlete progressing, plateauing, or regressing?
+2. For EACH set (up to ${targetSets} sets), recommend:
+   - Weight direction: increase, maintain, or decrease
+   - Rep direction: increase, maintain, or decrease  
+   - Suggested weight (in lbs)
+   - Suggested reps
+
+Return JSON format only, no markdown code blocks:
+{
+  "exerciseId": 0,
+  "overallTrend": "progressing|plateau|regressing",
+  "sets": [
+    {
+      "setNumber": 1,
+      "weight": "increase|maintain|decrease",
+      "reps": "increase|maintain|decrease",
+      "suggestedWeight": number_in_lbs,
+      "suggestedReps": number
+    }
+  ],
+  "coachingTip": "Brief actionable advice for this exercise"
+}
+
+RULES:
+- Return exactly ${targetSets} sets in the response
+- suggestedWeight should be a realistic number based on history (use last weight as baseline)
+- suggestedReps should be within the target range (${targetRepMin}-${targetRepMax})
+- If no history, suggest conservative starting weights and recommend "maintain" for first session
+- Weight increments should be practical: 5lb for upper body, 5-10lb for lower body`;
+
+  const result = await model.generateContent(prompt);
+  const response = result.response.text();
+  const cleanedResponse = response
+    .replace(/```json\n?/g, '')
+    .replace(/```\n?/g, '')
+    .trim();
+
+  return JSON.parse(cleanedResponse) as AIExerciseCoachingResponse;
 }

@@ -41,6 +41,7 @@ export function ExportModal({
       workoutPrograms: false,
       workoutHistory: false,
       aiReviews: false,
+      progressPhotos: false,
     });
   };
 

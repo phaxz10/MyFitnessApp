@@ -169,6 +169,16 @@ async function initSchema(): Promise<void> {
       UNIQUE(week_start, week_end)
     );
 
+    -- Progress Photos Table
+    CREATE TABLE IF NOT EXISTS progress_photos (
+      id SERIAL PRIMARY KEY,
+      date DATE NOT NULL,
+      photo_data TEXT NOT NULL,
+      photo_type TEXT DEFAULT 'front',
+      notes TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- Create indexes for common queries
     CREATE INDEX IF NOT EXISTS idx_food_entries_date ON food_entries(date);
     CREATE INDEX IF NOT EXISTS idx_weight_logs_date ON weight_logs(date);
@@ -176,6 +186,7 @@ async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_program_sessions_program ON program_sessions(program_id);
     CREATE INDEX IF NOT EXISTS idx_program_exercises_session ON program_exercises(session_id);
     CREATE INDEX IF NOT EXISTS idx_workout_sets_log ON workout_sets(workout_log_id);
+    CREATE INDEX IF NOT EXISTS idx_progress_photos_date ON progress_photos(date);
   `);
 
   // Migration: Add video_url column to exercises if it doesn't exist
@@ -240,6 +251,8 @@ export async function isOnboardingComplete(): Promise<boolean> {
 export async function resetDatabase(): Promise<void> {
   const database = await getDB();
   await database.exec(`
+    DROP TABLE IF EXISTS weekly_reviews CASCADE;
+    DROP TABLE IF EXISTS progress_photos CASCADE;
     DROP TABLE IF EXISTS ai_goal_reviews CASCADE;
     DROP TABLE IF EXISTS workout_sets CASCADE;
     DROP TABLE IF EXISTS workout_logs CASCADE;

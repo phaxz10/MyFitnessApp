@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { getDB } from '../services/db';
 import type { FoodEntry, MealType, DailyCalorieSummary } from '../types';
-import { formatDate } from '../utils/date';
+import { formatDate, getPreviousDay } from '../utils/date';
 
 export function useCalories() {
   const [entries, setEntries] = useState<FoodEntry[]>([]);
@@ -79,6 +79,103 @@ export function useCalories() {
       }
     },
     [fetchEntriesByDate],
+  );
+
+  const addEntriesBatch = useCallback(
+    async (
+      entriesToAdd: Omit<FoodEntry, 'id' | 'created_at' | 'updated_at'>[],
+    ) => {
+      if (entriesToAdd.length === 0) return;
+
+      setLoading(true);
+      setError(null);
+      try {
+        const db = await getDB();
+        for (const entry of entriesToAdd) {
+          await db.query(
+            `INSERT INTO food_entries (date, meal_type, food_description, portion_grams, calories, protein_g, carbs_g, fat_g, is_ai_generated)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [
+              entry.date,
+              entry.meal_type,
+              entry.food_description,
+              entry.portion_grams,
+              entry.calories,
+              entry.protein_g,
+              entry.carbs_g,
+              entry.fat_g,
+              entry.is_ai_generated,
+            ],
+          );
+        }
+        // Refresh entries for the target date
+        await fetchEntriesByDate(entriesToAdd[0].date);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to add entries');
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [fetchEntriesByDate],
+  );
+
+  const copyMealsFromDate = useCallback(
+    async (sourceDate: string, targetDate: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const db = await getDB();
+        // Fetch entries from source date
+        const result = await db.query(
+          'SELECT * FROM food_entries WHERE date = $1',
+          [sourceDate],
+        );
+        const sourceEntries = result.rows as FoodEntry[];
+
+        if (sourceEntries.length === 0) {
+          throw new Error('No meals found on the source date');
+        }
+
+        // Insert entries with new date
+        for (const entry of sourceEntries) {
+          await db.query(
+            `INSERT INTO food_entries (date, meal_type, food_description, portion_grams, calories, protein_g, carbs_g, fat_g, is_ai_generated)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [
+              targetDate,
+              entry.meal_type,
+              entry.food_description,
+              entry.portion_grams,
+              entry.calories,
+              entry.protein_g,
+              entry.carbs_g,
+              entry.fat_g,
+              false, // Mark as not AI generated since it's a copy
+            ],
+          );
+        }
+
+        await fetchEntriesByDate(targetDate);
+        return sourceEntries.length;
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : 'Failed to copy meals';
+        setError(errorMessage);
+        throw new Error(errorMessage);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [fetchEntriesByDate],
+  );
+
+  const copyMealsFromPreviousDay = useCallback(
+    async (targetDate: string) => {
+      const previousDate = getPreviousDay(targetDate);
+      return copyMealsFromDate(previousDate, targetDate);
+    },
+    [copyMealsFromDate],
   );
 
   const updateEntry = useCallback(
@@ -184,9 +281,12 @@ export function useCalories() {
     fetchEntriesByDate,
     fetchEntriesByDateRange,
     addEntry,
+    addEntriesBatch,
     updateEntry,
     deleteEntry,
     getDailySummary,
     getTodaySummary,
+    copyMealsFromDate,
+    copyMealsFromPreviousDay,
   };
 }

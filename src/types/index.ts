@@ -386,3 +386,15 @@ export interface AppSettings {
   isOnboardingComplete: boolean;
   isOnline: boolean;
 }
+
+// Progress Photo Types
+export type PhotoType = 'front' | 'side' | 'back';
+
+export interface ProgressPhoto {
+  id: number;
+  date: string;
+  photo_data: string; // Base64 encoded image
+  photo_type: PhotoType;
+  notes: string | null;
+  created_at: string;
+}

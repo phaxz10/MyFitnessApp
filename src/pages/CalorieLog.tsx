@@ -2,7 +2,14 @@ import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Plus, ChevronLeft, ChevronRight, Trash2, Edit2 } from 'lucide-react';
+import {
+  Plus,
+  ChevronLeft,
+  ChevronRight,
+  Trash2,
+  Edit2,
+  Copy,
+} from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -16,7 +23,7 @@ import { useCalories } from '../hooks/useCalories';
 import { useProfile } from '../hooks/useProfile';
 import { useAppStore } from '../hooks/useAppStore';
 import { analyzeFoodText } from '../services/gemini';
-import { formatDate, formatDisplayDate } from '../utils/date';
+import { formatDate, formatDisplayDate, getPreviousDay } from '../utils/date';
 import { formatCalories } from '../utils/calculations';
 import { foodEntrySchema, type FoodEntryFormData } from '../schemas/forms';
 import type { MealType, FoodEntry } from '../types';
@@ -37,6 +44,8 @@ export function CalorieLog() {
     updateEntry,
     deleteEntry,
     getDailySummary,
+    copyMealsFromPreviousDay,
+    loading: caloriesLoading,
   } = useCalories();
   const isOnline = useAppStore((state) => state.isOnline);
 
@@ -47,6 +56,7 @@ export function CalorieLog() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [useAI, setUseAI] = useState(true);
+  const [copySuccess, setCopySuccess] = useState<string | null>(null);
 
   // React Hook Form
   const {
@@ -243,6 +253,21 @@ export function CalorieLog() {
     setIsModalOpen(true);
   };
 
+  const handleCopyPreviousDay = async () => {
+    try {
+      setCopySuccess(null);
+      setError(null);
+      const count = await copyMealsFromPreviousDay(currentDate);
+      setCopySuccess(
+        `Copied ${count} meal${count !== 1 ? 's' : ''} from ${formatDisplayDate(getPreviousDay(currentDate))}`,
+      );
+      // Auto-hide success message after 3 seconds
+      setTimeout(() => setCopySuccess(null), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to copy meals');
+    }
+  };
+
   return (
     <div className="p-4 pb-20">
       {/* Date Navigation */}
@@ -308,8 +333,31 @@ export function CalorieLog() {
               <p className="text-slate-400 text-xs">Fat</p>
             </div>
           </div>
+
+          {/* Copy Previous Day Button */}
+          <button
+            type="button"
+            onClick={handleCopyPreviousDay}
+            disabled={caloriesLoading}
+            className="mt-4 w-full py-2 border border-dashed border-slate-600 rounded-lg text-slate-400 hover:text-white hover:border-slate-500 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            <Copy size={16} />
+            Copy meals from yesterday
+          </button>
         </CardContent>
       </Card>
+
+      {/* Success/Error Messages */}
+      {copySuccess && (
+        <div className="bg-green-500/20 text-green-400 px-4 py-2 rounded-lg mb-4">
+          {copySuccess}
+        </div>
+      )}
+      {error && (
+        <div className="bg-red-500/20 text-red-400 px-4 py-2 rounded-lg mb-4">
+          {error}
+        </div>
+      )}
 
       {/* Meal Sections */}
       {mealTypes.map(({ value, label }) => {

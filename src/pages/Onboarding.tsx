@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Dumbbell } from 'lucide-react';
+import { Dumbbell, Upload } from 'lucide-react';
 import { Button, Input, Select } from '../components/ui';
 import { useAppStore } from '../hooks/useAppStore';
 import { useProfile } from '../hooks/useProfile';
@@ -11,6 +11,7 @@ import { initGemini } from '../services/gemini';
 import { calculateTargets } from '../services/gemini';
 import { formatDate } from '../utils/date';
 import { onboardingSchema, type OnboardingFormData } from '../schemas/forms';
+import { importData, readBackupFile } from '../services/backup';
 
 type Step =
   | 'welcome'
@@ -44,11 +45,13 @@ export function Onboarding() {
   const setOnboardingComplete = useAppStore(
     (state) => state.setOnboardingComplete,
   );
-  const { createProfile } = useProfile();
+  const { createProfile, fetchProfile } = useProfile();
   const { addLog } = useWeight();
 
   const [step, setStep] = useState<Step>('welcome');
   const [error, setError] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Use React Hook Form for form state management
   const {
@@ -240,6 +243,52 @@ export function Onboarding() {
     navigate('/');
   };
 
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    setError(null);
+
+    try {
+      const jsonString = await readBackupFile(file);
+      const backup = JSON.parse(jsonString);
+
+      // Check if backup contains profile data
+      const hasProfile =
+        backup.data?.user_profile && backup.data.user_profile.length > 0;
+
+      // Import the data
+      await importData(jsonString);
+
+      if (hasProfile) {
+        // Profile exists in backup, skip onboarding
+        setOnboardingComplete(true);
+        // Refresh profile state
+        await fetchProfile();
+        navigate('/');
+      } else {
+        // No profile in backup, continue with onboarding
+        setError('Data imported, but no profile found. Please complete setup.');
+        setStep('basic');
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to import backup file',
+      );
+    } finally {
+      setIsImporting(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -258,6 +307,31 @@ export function Onboarding() {
             <Button onClick={handleNext} size="lg" className="w-full">
               Get Started
             </Button>
+
+            {/* Import option */}
+            <div className="mt-6 pt-6 border-t border-slate-700">
+              <p className="text-slate-500 text-sm mb-3">
+                Already have a backup?
+              </p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <Button
+                variant="secondary"
+                onClick={handleImportClick}
+                size="lg"
+                className="w-full"
+                isLoading={isImporting}
+              >
+                <Upload size={18} className="mr-2" />
+                Import Backup
+              </Button>
+              {error && <p className="text-red-400 text-sm mt-3">{error}</p>}
+            </div>
           </div>
         )}
 

@@ -161,3 +161,27 @@ export function isYesterday(dateString: string): boolean {
 export function getDaysAgo(days: number): string {
   return formatDate(subDays(new Date(), days));
 }
+
+/**
+ * Gets the previous day from a given date string.
+ *
+ * @param dateString - Date string in 'yyyy-MM-dd' format
+ * @returns Previous day as date string (e.g., "2026-01-07")
+ */
+export function getPreviousDay(dateString: string): string {
+  const date = parseISO(dateString);
+  return formatDate(subDays(date, 1));
+}
+
+/**
+ * Gets the next day from a given date string.
+ *
+ * @param dateString - Date string in 'yyyy-MM-dd' format
+ * @returns Next day as date string (e.g., "2026-01-09")
+ */
+export function getNextDay(dateString: string): string {
+  const date = parseISO(dateString);
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + 1);
+  return formatDate(nextDate);
+}

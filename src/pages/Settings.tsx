@@ -11,8 +11,16 @@ import {
   Upload,
   Trash2,
   RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
-import { Card, CardContent, Button, Input, Select } from '../components/ui';
+import {
+  Card,
+  CardContent,
+  Button,
+  Input,
+  Select,
+  Modal,
+} from '../components/ui';
 import { ExportModal } from '../components/settings/ExportModal';
 import { useProfile } from '../hooks/useProfile';
 import { useAppStore } from '../hooks/useAppStore';
@@ -62,6 +70,8 @@ export function Settings() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showClearDataModal, setShowClearDataModal] = useState(false);
+  const [clearDataConfirmText, setClearDataConfirmText] = useState('');
 
   // Profile form
   const profileForm = useForm<ProfileFormData>({
@@ -254,14 +264,6 @@ export function Settings() {
   };
 
   const handleClearData = async () => {
-    if (
-      !confirm(
-        'Are you sure you want to clear all data? This cannot be undone.',
-      )
-    ) {
-      return;
-    }
-
     setIsLoading(true);
     try {
       await resetDatabase();
@@ -270,6 +272,8 @@ export function Settings() {
     } catch (_err) {
       setError('Failed to clear data');
       setIsLoading(false);
+      setShowClearDataModal(false);
+      setClearDataConfirmText('');
     }
   };
 
@@ -512,7 +516,7 @@ export function Settings() {
 
           <Button
             variant="danger"
-            onClick={handleClearData}
+            onClick={() => setShowClearDataModal(true)}
             className="w-full justify-start"
           >
             <Trash2 size={18} className="mr-2" />
@@ -534,6 +538,71 @@ export function Settings() {
         onExport={handleExport}
         isLoading={isLoading}
       />
+
+      {/* Clear Data Confirmation Modal */}
+      <Modal
+        isOpen={showClearDataModal}
+        onClose={() => {
+          setShowClearDataModal(false);
+          setClearDataConfirmText('');
+        }}
+        title="Clear All Data"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+            <AlertTriangle
+              className="text-red-400 mt-0.5 flex-shrink-0"
+              size={20}
+            />
+            <div>
+              <p className="text-red-400 font-medium">
+                This action cannot be undone
+              </p>
+              <p className="text-slate-400 text-sm mt-1">
+                All your data including profile, weight logs, food entries,
+                exercises, workout programs, and workout history will be
+                permanently deleted.
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-slate-300 text-sm mb-2">
+              Type{' '}
+              <span className="font-mono font-bold text-white">DELETE</span> to
+              confirm:
+            </p>
+            <Input
+              value={clearDataConfirmText}
+              onChange={(e) => setClearDataConfirmText(e.target.value)}
+              placeholder="Type DELETE to confirm"
+              className="font-mono"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowClearDataModal(false);
+                setClearDataConfirmText('');
+              }}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleClearData}
+              disabled={clearDataConfirmText !== 'DELETE' || isLoading}
+              isLoading={isLoading}
+              className="flex-1"
+            >
+              Clear All Data
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

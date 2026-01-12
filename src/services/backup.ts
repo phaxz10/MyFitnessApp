@@ -16,6 +16,7 @@ interface BackupData {
     workout_sets: unknown[];
     ai_goal_reviews: unknown[];
     weekly_reviews: unknown[];
+    progress_photos: unknown[];
   };
 }
 
@@ -30,6 +31,7 @@ export interface ExportOptions {
   workoutPrograms: boolean; // Includes program_sessions and program_exercises
   workoutHistory: boolean; // Includes workout_logs and workout_sets
   aiReviews: boolean; // Includes ai_goal_reviews and weekly_reviews
+  progressPhotos: boolean;
 }
 
 export const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
@@ -40,6 +42,7 @@ export const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
   workoutPrograms: true,
   workoutHistory: true,
   aiReviews: true,
+  progressPhotos: true,
 };
 
 export const EXPORT_OPTION_LABELS: Record<keyof ExportOptions, string> = {
@@ -50,6 +53,7 @@ export const EXPORT_OPTION_LABELS: Record<keyof ExportOptions, string> = {
   workoutPrograms: 'Workout Programs',
   workoutHistory: 'Workout History',
   aiReviews: 'AI Reviews (Goal & Weekly)',
+  progressPhotos: 'Progress Photos',
 };
 
 export async function exportData(
@@ -70,6 +74,7 @@ export async function exportData(
     workoutSets,
     aiGoalReviews,
     weeklyReviews,
+    progressPhotos,
   ] = await Promise.all([
     options.userProfile
       ? db.query('SELECT * FROM user_profile')
@@ -110,10 +115,13 @@ export async function exportData(
     options.aiReviews
       ? db.query('SELECT * FROM weekly_reviews ORDER BY week_start')
       : Promise.resolve({ rows: [] }),
+    options.progressPhotos
+      ? db.query('SELECT * FROM progress_photos ORDER BY date, created_at')
+      : Promise.resolve({ rows: [] }),
   ]);
 
   const backup: BackupData = {
-    version: '1.1', // Bumped version for new schema
+    version: '1.2', // Bumped version for progress_photos
     exported_at: new Date().toISOString(),
     data: {
       user_profile: userProfile.rows,
@@ -127,6 +135,7 @@ export async function exportData(
       workout_sets: workoutSets.rows,
       ai_goal_reviews: aiGoalReviews.rows,
       weekly_reviews: weeklyReviews.rows,
+      progress_photos: progressPhotos.rows,
     },
   };
 
@@ -168,6 +177,7 @@ export async function importData(jsonString: string): Promise<void> {
   if (hasData(data.workout_programs)) tablesToClear.push('workout_programs');
   if (hasData(data.exercises)) tablesToClear.push('exercises');
   if (hasData(data.food_entries)) tablesToClear.push('food_entries');
+  if (hasData(data.progress_photos)) tablesToClear.push('progress_photos');
   if (hasData(data.weight_logs)) tablesToClear.push('weight_logs');
   if (hasData(data.user_profile)) tablesToClear.push('user_profile');
 
@@ -419,6 +429,24 @@ export async function importData(jsonString: string): Promise<void> {
     }
   }
 
+  // Progress photos
+  if (hasData(data.progress_photos)) {
+    for (const row of data.progress_photos as Record<string, unknown>[]) {
+      await db.query(
+        `INSERT INTO progress_photos (id, date, photo_data, photo_type, notes, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          row.id,
+          row.date,
+          row.photo_data,
+          row.photo_type,
+          row.notes,
+          row.created_at,
+        ],
+      );
+    }
+  }
+
   // Reset sequences only for tables that were imported
   const sequenceResets: string[] = [];
   if (hasData(data.weight_logs)) {
@@ -469,6 +497,11 @@ export async function importData(jsonString: string): Promise<void> {
   if (hasData(data.weekly_reviews)) {
     sequenceResets.push(
       "SELECT setval('weekly_reviews_id_seq', COALESCE((SELECT MAX(id) FROM weekly_reviews), 0) + 1, false)",
+    );
+  }
+  if (hasData(data.progress_photos)) {
+    sequenceResets.push(
+      "SELECT setval('progress_photos_id_seq', COALESCE((SELECT MAX(id) FROM progress_photos), 0) + 1, false)",
     );
   }
 

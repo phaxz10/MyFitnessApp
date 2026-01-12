@@ -110,13 +110,7 @@ export function Dashboard() {
 
   return (
     <div className="p-4 pb-20 space-y-4">
-      {/* Date Header */}
-      <div className="text-center mb-4">
-        <p className="text-slate-400 text-sm">Today</p>
-        <h2 className="text-xl font-semibold text-white">
-          {formatDisplayDate(today)}
-        </h2>
-      </div>
+
 
       {/* Weekly Consistency Tracker */}
       {weeklyConsistency.length > 0 && (

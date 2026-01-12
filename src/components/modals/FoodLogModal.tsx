@@ -10,6 +10,7 @@ import {
   Minus,
   X,
   Loader2,
+  PenLine,
 } from 'lucide-react';
 import { Modal, Button, Input, Select, TextArea } from '../ui';
 import { useCalories } from '../../hooks/useCalories';
@@ -329,7 +330,12 @@ export function FoodLogModal() {
       <button
         type="button"
         onClick={() => setFoodLogModalMode('text')}
-        className="w-full flex items-center gap-4 p-4 bg-slate-700/50 hover:bg-slate-700 rounded-lg transition-colors"
+        disabled={!isOnline}
+        className={`w-full flex items-center gap-4 p-4 rounded-lg transition-colors ${
+          isOnline
+            ? 'bg-slate-700/50 hover:bg-slate-700'
+            : 'bg-slate-800/50 opacity-50 cursor-not-allowed'
+        }`}
       >
         <div className="w-12 h-12 bg-blue-600/20 rounded-lg flex items-center justify-center flex-shrink-0">
           <FileText size={24} className="text-blue-400" />
@@ -337,7 +343,9 @@ export function FoodLogModal() {
         <div className="text-left flex-1">
           <p className="text-white font-medium">Log by Text</p>
           <p className="text-slate-400 text-sm">
-            Describe your meal for AI analysis
+            {isOnline
+              ? 'Describe your meal for AI analysis'
+              : 'Requires internet connection'}
           </p>
         </div>
         <ChevronRight size={20} className="text-slate-500" />
@@ -362,6 +370,23 @@ export function FoodLogModal() {
             {isOnline
               ? 'Take a photo for AI analysis'
               : 'Requires internet connection'}
+          </p>
+        </div>
+        <ChevronRight size={20} className="text-slate-500" />
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setFoodLogModalMode('manual')}
+        className="w-full flex items-center gap-4 p-4 bg-slate-700/50 hover:bg-slate-700 rounded-lg transition-colors"
+      >
+        <div className="w-12 h-12 bg-green-600/20 rounded-lg flex items-center justify-center flex-shrink-0">
+          <PenLine size={24} className="text-green-400" />
+        </div>
+        <div className="text-left flex-1">
+          <p className="text-white font-medium">Manual Entry</p>
+          <p className="text-slate-400 text-sm">
+            Enter macros directly (works offline)
           </p>
         </div>
         <ChevronRight size={20} className="text-slate-500" />
@@ -653,6 +678,74 @@ export function FoodLogModal() {
     );
   };
 
+  const renderManualMode = () => (
+    <form onSubmit={handleSubmit(onTextSubmit)} className="space-y-4">
+      <button
+        type="button"
+        onClick={() => setFoodLogModalMode('select')}
+        className="flex items-center gap-1 text-slate-400 hover:text-white text-sm mb-2"
+      >
+        <ChevronLeft size={16} />
+        Back
+      </button>
+
+      <Select label="Meal Type" options={mealTypes} {...register('mealType')} />
+
+      <TextArea
+        label="Food Description"
+        {...register('foodDescription')}
+        placeholder="e.g., grilled chicken breast with rice"
+        rows={2}
+      />
+
+      <div className="grid grid-cols-2 gap-3">
+        <Input
+          label="Portion (g)"
+          type="number"
+          {...register('portionGrams')}
+          placeholder="100"
+        />
+        <Input
+          label="Calories"
+          type="number"
+          {...register('calories')}
+          placeholder="kcal"
+          error={errors.calories?.message}
+        />
+        <Input
+          label="Protein (g)"
+          type="number"
+          step="0.1"
+          {...register('protein')}
+          placeholder="0"
+          error={errors.protein?.message}
+        />
+        <Input
+          label="Carbs (g)"
+          type="number"
+          step="0.1"
+          {...register('carbs')}
+          placeholder="0"
+          error={errors.carbs?.message}
+        />
+        <Input
+          label="Fat (g)"
+          type="number"
+          step="0.1"
+          {...register('fat')}
+          placeholder="0"
+          error={errors.fat?.message}
+        />
+      </div>
+
+      {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+
+      <Button type="submit" disabled={isSaving || !calories} className="w-full">
+        {isSaving ? 'Saving...' : 'Save Entry'}
+      </Button>
+    </form>
+  );
+
   const getTitle = () => {
     const dateStr = formatDisplayDate(foodLogModal.date);
     switch (foodLogModal.mode) {
@@ -660,6 +753,8 @@ export function FoodLogModal() {
         return `Log Food - ${dateStr}`;
       case 'scanner':
         return `Scan Meal - ${dateStr}`;
+      case 'manual':
+        return `Manual Entry - ${dateStr}`;
       default:
         return `Log Food - ${dateStr}`;
     }
@@ -679,6 +774,7 @@ export function FoodLogModal() {
       {foodLogModal.mode === 'select' && renderSelectMode()}
       {foodLogModal.mode === 'text' && renderTextMode()}
       {foodLogModal.mode === 'scanner' && renderScannerMode()}
+      {foodLogModal.mode === 'manual' && renderManualMode()}
     </Modal>
   );
 }

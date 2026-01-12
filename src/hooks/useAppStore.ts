@@ -7,7 +7,7 @@ export interface FoodLogModalState {
   isOpen: boolean;
   date: string;
   mealType?: MealType;
-  mode: 'select' | 'text' | 'scanner';
+  mode: 'select' | 'text' | 'scanner' | 'manual';
   onSuccess?: () => void;
 }
 
@@ -35,11 +35,11 @@ interface AppState {
   openFoodLogModal: (options?: {
     date?: string;
     mealType?: MealType;
-    mode?: 'select' | 'text' | 'scanner';
+    mode?: 'select' | 'text' | 'scanner' | 'manual';
     onSuccess?: () => void;
   }) => void;
   closeFoodLogModal: () => void;
-  setFoodLogModalMode: (mode: 'select' | 'text' | 'scanner') => void;
+  setFoodLogModalMode: (mode: 'select' | 'text' | 'scanner' | 'manual') => void;
 
   openWeightLogModal: (options?: {
     date?: string;

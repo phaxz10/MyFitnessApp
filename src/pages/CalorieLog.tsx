@@ -23,7 +23,6 @@ import {
 import { useCalories } from '../hooks/useCalories';
 import { useProfile } from '../hooks/useProfile';
 import { useAppStore } from '../hooks/useAppStore';
-import { analyzeFoodText } from '../services/gemini';
 import { formatDate, formatDisplayDate, getPreviousDay } from '../utils/date';
 import { formatCalories } from '../utils/calculations';
 import { foodEntrySchema, type FoodEntryFormData } from '../schemas/forms';
@@ -41,36 +40,31 @@ export function CalorieLog() {
   const { profile, fetchProfile } = useProfile();
   const {
     fetchEntriesByDate,
-    addEntry,
     updateEntry,
     deleteEntry,
     getDailySummary,
     copyMealsFromPreviousDay,
     loading: caloriesLoading,
   } = useCalories();
-  const isOnline = useAppStore((state) => state.isOnline);
+  const { openFoodLogModal } = useAppStore();
 
   const [currentDate, setCurrentDate] = useState(() => {
     // Initialize from URL param or default to today
     const urlDate = new URLSearchParams(window.location.search).get('date');
     return urlDate || formatDate(new Date());
   });
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isEditMode, setIsEditMode] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<FoodEntry | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [useAI, setUseAI] = useState(true);
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
 
-  // React Hook Form
+  // React Hook Form for edit modal
   const {
     register,
     handleSubmit,
     reset,
-    setValue,
-    watch,
     formState: { errors },
   } = useForm<FoodEntryFormData>({
     resolver: zodResolver(foodEntrySchema),
@@ -85,9 +79,6 @@ export function CalorieLog() {
     },
   });
 
-  const foodDescription = watch('foodDescription') || '';
-  const calories = watch('calories');
-
   useEffect(() => {
     fetchProfile();
   }, [fetchProfile]);
@@ -100,40 +91,31 @@ export function CalorieLog() {
     }
   }, [searchParams, currentDate]);
 
+  const loadEntries = useCallback(async () => {
+    await fetchEntriesByDate(currentDate);
+  }, [currentDate, fetchEntriesByDate]);
+
   useEffect(() => {
     const loadData = async () => {
       setInitialLoading(true);
       try {
-        await fetchEntriesByDate(currentDate);
+        await loadEntries();
       } finally {
         setInitialLoading(false);
       }
     };
     loadData();
-  }, [currentDate, fetchEntriesByDate]);
+  }, [loadEntries]);
 
-  const openAddModal = useCallback(() => {
-    setIsEditMode(false);
-    setEditingEntry(null);
-    setUseAI(true);
-    reset({
-      mealType: 'breakfast',
-      foodDescription: '',
-      portionGrams: '',
-      calories: '',
-      protein: '',
-      carbs: '',
-      fat: '',
-    });
-    setError(null);
-    setIsModalOpen(true);
-  }, [reset]);
-
+  // Handle URL action=add param to open global modal
   useEffect(() => {
     if (searchParams.get('action') === 'add') {
-      openAddModal();
+      openFoodLogModal({
+        date: currentDate,
+        onSuccess: loadEntries,
+      });
     }
-  }, [searchParams, openAddModal]);
+  }, [searchParams, currentDate, openFoodLogModal, loadEntries]);
 
   const summary = getDailySummary(currentDate);
 
@@ -150,9 +132,7 @@ export function CalorieLog() {
   };
 
   const openEditModal = (entry: FoodEntry) => {
-    setIsEditMode(true);
     setEditingEntry(entry);
-    setUseAI(false);
     reset({
       mealType: entry.meal_type,
       foodDescription: entry.food_description,
@@ -163,11 +143,12 @@ export function CalorieLog() {
       fat: entry.fat_g.toString(),
     });
     setError(null);
-    setIsModalOpen(true);
+    setIsEditModalOpen(true);
   };
 
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
+  const handleCloseEditModal = () => {
+    setIsEditModalOpen(false);
+    setEditingEntry(null);
     reset({
       mealType: 'breakfast',
       foodDescription: '',
@@ -180,73 +161,29 @@ export function CalorieLog() {
     setError(null);
   };
 
-  const handleAnalyzeWithAI = async () => {
-    if (!foodDescription.trim()) {
-      setError('Please enter a food description');
-      return;
-    }
+  const onEditSubmit = async (data: FoodEntryFormData) => {
+    if (!editingEntry) return;
 
     setIsLoading(true);
     setError(null);
 
-    try {
-      const result = await analyzeFoodText(foodDescription);
-      if (result.items.length > 0) {
-        const total = result.total;
-        const totalPortion = result.items.reduce(
-          (sum, item) => sum + item.portion_grams,
-          0,
-        );
-        setValue('portionGrams', totalPortion.toString());
-        setValue('calories', total.calories.toString());
-        setValue('protein', total.protein_g.toString());
-        setValue('carbs', total.carbs_g.toString());
-        setValue('fat', total.fat_g.toString());
-      }
-    } catch {
-      setError('Failed to analyze food. Please enter values manually.');
-      setUseAI(false);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const onSubmit = async (data: FoodEntryFormData) => {
-    setIsLoading(true);
-    setError(null);
-
-    // Provide default description if empty
     const foodDesc = data.foodDescription?.trim() || 'Food entry';
 
     try {
-      if (isEditMode && editingEntry) {
-        await updateEntry(editingEntry.id, {
-          meal_type: data.mealType,
-          food_description: foodDesc,
-          portion_grams: parseFloat(data.portionGrams || '0'),
-          calories: parseInt(data.calories, 10),
-          protein_g: parseFloat(data.protein),
-          carbs_g: parseFloat(data.carbs),
-          fat_g: parseFloat(data.fat),
-        });
-        await fetchEntriesByDate(currentDate);
-      } else {
-        await addEntry({
-          date: currentDate,
-          meal_type: data.mealType,
-          food_description: foodDesc,
-          portion_grams: parseFloat(data.portionGrams || '0'),
-          calories: parseInt(data.calories, 10),
-          protein_g: parseFloat(data.protein),
-          carbs_g: parseFloat(data.carbs),
-          fat_g: parseFloat(data.fat),
-          is_ai_generated: useAI,
-        });
-      }
-      handleCloseModal();
+      await updateEntry(editingEntry.id, {
+        meal_type: data.mealType,
+        food_description: foodDesc,
+        portion_grams: parseFloat(data.portionGrams || '0'),
+        calories: parseInt(data.calories, 10),
+        protein_g: parseFloat(data.protein),
+        carbs_g: parseFloat(data.carbs),
+        fat_g: parseFloat(data.fat),
+      });
+      await fetchEntriesByDate(currentDate);
+      handleCloseEditModal();
     } catch (err) {
-      console.error('Failed to save entry:', err);
-      setError('Failed to save entry');
+      console.error('Failed to update entry:', err);
+      setError('Failed to update entry');
     } finally {
       setIsLoading(false);
     }
@@ -259,20 +196,11 @@ export function CalorieLog() {
   };
 
   const handleOpenAddModalForMeal = (mealType: MealType) => {
-    setIsEditMode(false);
-    setEditingEntry(null);
-    setUseAI(true);
-    reset({
+    openFoodLogModal({
+      date: currentDate,
       mealType,
-      foodDescription: '',
-      portionGrams: '',
-      calories: '',
-      protein: '',
-      carbs: '',
-      fat: '',
+      onSuccess: loadEntries,
     });
-    setError(null);
-    setIsModalOpen(true);
   };
 
   const handleCopyPreviousDay = async () => {
@@ -453,14 +381,14 @@ export function CalorieLog() {
         );
       })}
 
-      {/* Add/Edit Modal */}
+      {/* Edit Modal */}
       <Modal
-        isOpen={isModalOpen}
-        onClose={handleCloseModal}
-        title={isEditMode ? 'Edit Entry' : 'Add Food Entry'}
+        isOpen={isEditModalOpen}
+        onClose={handleCloseEditModal}
+        title="Edit Entry"
         size="lg"
       >
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit(onEditSubmit)} className="space-y-4">
           <Select
             label="Meal Type"
             {...register('mealType')}
@@ -476,71 +404,46 @@ export function CalorieLog() {
             error={errors.foodDescription?.message}
           />
 
-          {!isEditMode && isOnline && profile?.gemini_api_key && (
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                onClick={handleAnalyzeWithAI}
-                isLoading={isLoading}
-                disabled={!foodDescription.trim()}
-                className="flex-1"
-              >
-                Analyze with AI
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => setUseAI(false)}
-              >
-                Manual
-              </Button>
-            </div>
-          )}
+          <Input
+            label="Portion (grams)"
+            type="number"
+            {...register('portionGrams')}
+            placeholder="Optional"
+          />
 
-          {(!useAI || !isOnline || !profile?.gemini_api_key || calories) && (
-            <>
-              <Input
-                label="Portion (grams)"
-                type="number"
-                {...register('portionGrams')}
-                placeholder="Optional"
-              />
-
-              <div className="grid grid-cols-2 gap-3">
-                <Input
-                  label="Calories"
-                  type="number"
-                  {...register('calories')}
-                  placeholder="kcal"
-                  error={errors.calories?.message}
-                />
-                <Input
-                  label="Protein (g)"
-                  type="number"
-                  step="0.1"
-                  {...register('protein')}
-                  placeholder="grams"
-                  error={errors.protein?.message}
-                />
-                <Input
-                  label="Carbs (g)"
-                  type="number"
-                  step="0.1"
-                  {...register('carbs')}
-                  placeholder="grams"
-                  error={errors.carbs?.message}
-                />
-                <Input
-                  label="Fat (g)"
-                  type="number"
-                  step="0.1"
-                  {...register('fat')}
-                  placeholder="grams"
-                  error={errors.fat?.message}
-                />
-              </div>
-            </>
-          )}
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Calories"
+              type="number"
+              {...register('calories')}
+              placeholder="kcal"
+              error={errors.calories?.message}
+            />
+            <Input
+              label="Protein (g)"
+              type="number"
+              step="0.1"
+              {...register('protein')}
+              placeholder="grams"
+              error={errors.protein?.message}
+            />
+            <Input
+              label="Carbs (g)"
+              type="number"
+              step="0.1"
+              {...register('carbs')}
+              placeholder="grams"
+              error={errors.carbs?.message}
+            />
+            <Input
+              label="Fat (g)"
+              type="number"
+              step="0.1"
+              {...register('fat')}
+              placeholder="grams"
+              error={errors.fat?.message}
+            />
+          </div>
 
           {error && <p className="text-red-400 text-sm">{error}</p>}
 
@@ -548,13 +451,13 @@ export function CalorieLog() {
             <Button
               type="button"
               variant="secondary"
-              onClick={handleCloseModal}
+              onClick={handleCloseEditModal}
               className="flex-1"
             >
               Cancel
             </Button>
             <Button type="submit" isLoading={isLoading} className="flex-1">
-              {isEditMode ? 'Update' : 'Save'}
+              Update
             </Button>
           </div>
         </form>

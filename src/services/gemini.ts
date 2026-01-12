@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import type {
   AIFoodAnalysisResponse,
   AIExerciseResponse,
@@ -16,32 +16,33 @@ import type {
 } from '../types';
 import { ALWAYS_AVAILABLE_EQUIPMENT } from '../constants/equipment';
 
-let genAI: GoogleGenerativeAI | null = null;
+let ai: GoogleGenAI | null = null;
+
+const MODEL = 'gemini-3-flash-preview';
 
 export function initGemini(apiKey: string): void {
-  genAI = new GoogleGenerativeAI(apiKey);
+  ai = new GoogleGenAI({ apiKey });
 }
 
 export function isGeminiInitialized(): boolean {
-  return genAI !== null;
+  return ai !== null;
+}
+
+// Helper to clean JSON response from AI
+function cleanJsonResponse(text: string): string {
+  return text
+    .replace(/```json\n?/g, '')
+    .replace(/```\n?/g, '')
+    .trim();
 }
 
 // Analyze food from text description
 export async function analyzeFoodText(
   foodDescription: string,
 ): Promise<AIFoodAnalysisResponse> {
-  if (!genAI) throw new Error('Gemini API not initialized');
+  if (!ai) throw new Error('Gemini API not initialized');
 
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-3-flash-preview',
-    tools: [
-      {
-        googleSearchRetrieval: {},
-      },
-    ],
-  });
-
-  const prompt = `Analyze the following food description and estimate nutritional information.
+  const prompt = `Analyze the following food description and look up on the internet for nutritional information.
 Return JSON format only, no markdown code blocks.
 
 Food: ${foodDescription}
@@ -51,11 +52,11 @@ Return format:
   "items": [
     {
       "name": "food item name",
-      "portion_grams": estimated_grams,
-      "calories": estimated_calories,
-      "protein_g": estimated_protein,
-      "carbs_g": estimated_carbs,
-      "fat_g": estimated_fat
+      "portion_grams": grams,
+      "calories": calories,
+      "protein_g": protein,
+      "carbs_g": carbs,
+      "fat_g": fat
     }
   ],
   "total": {
@@ -66,16 +67,21 @@ Return format:
   }
 }`;
 
-  const result = await model.generateContent(prompt);
-  const response = result.response.text();
+  const response = await ai.models.generateContent({
+    model: MODEL,
+    contents: prompt,
+    config: {
+      temperature: 1,
+      tools: [{ googleSearch: {} }],
+      thinkingConfig: {
+        thinkingLevel: ThinkingLevel.MINIMAL,
+        includeThoughts: false,
+      },
+    },
+  });
 
-  // Clean up response - remove markdown code blocks if present
-  const cleanedResponse = response
-    .replace(/```json\n?/g, '')
-    .replace(/```\n?/g, '')
-    .trim();
-
-  return JSON.parse(cleanedResponse) as AIFoodAnalysisResponse;
+  const text = response.text ?? '';
+  return JSON.parse(cleanJsonResponse(text)) as AIFoodAnalysisResponse;
 }
 
 // Analyze food from image with optional text description
@@ -84,18 +90,9 @@ export async function analyzeFoodImage(
   mimeType: string,
   textDescription?: string,
 ): Promise<AIFoodAnalysisResponse> {
-  if (!genAI) throw new Error('Gemini API not initialized');
+  if (!ai) throw new Error('Gemini API not initialized');
 
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-3-flash-preview',
-    tools: [
-      {
-        googleSearchRetrieval: {},
-      },
-    ],
-  });
-
-  const prompt = `Analyze this food image and estimate nutritional information.
+  const prompt = `Analyze this food image and use the internet to search for the nutrient values, if not found the exact values estimate nutritional information.
 ${textDescription ? `Additional context from user: ${textDescription}` : ''}
 
 All portions should be estimated in grams.
@@ -120,23 +117,29 @@ Return JSON format only, no markdown code blocks:
   }
 }`;
 
-  const result = await model.generateContent([
-    prompt,
-    {
-      inlineData: {
-        mimeType,
-        data: imageBase64,
+  const response = await ai.models.generateContent({
+    model: MODEL,
+    contents: [
+      { text: prompt },
+      {
+        inlineData: {
+          mimeType,
+          data: imageBase64,
+        },
+      },
+    ],
+    config: {
+      temperature: 1,
+      tools: [{ googleSearch: {} }],
+      thinkingConfig: {
+        includeThoughts: false,
+        thinkingLevel: ThinkingLevel.MEDIUM,
       },
     },
-  ]);
+  });
 
-  const response = result.response.text();
-  const cleanedResponse = response
-    .replace(/```json\n?/g, '')
-    .replace(/```\n?/g, '')
-    .trim();
-
-  return JSON.parse(cleanedResponse) as AIFoodAnalysisResponse;
+  const text = response.text ?? '';
+  return JSON.parse(cleanJsonResponse(text)) as AIFoodAnalysisResponse;
 }
 
 // Valid muscle group categories for filtering
@@ -156,16 +159,7 @@ const MUSCLE_GROUP_CATEGORIES = [
 export async function generateExerciseDetails(
   exerciseName: string,
 ): Promise<AIExerciseResponse> {
-  if (!genAI) throw new Error('Gemini API not initialized');
-
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-3-flash-preview',
-    tools: [
-      {
-        googleSearchRetrieval: {},
-      },
-    ],
-  });
+  if (!ai) throw new Error('Gemini API not initialized');
 
   const prompt = `You are a certified personal trainer and exercise science expert. Generate comprehensive exercise details for: "${exerciseName}"
 
@@ -201,32 +195,26 @@ Return JSON format only, no markdown code blocks:
 Guidelines:
 - Description should be 3-5 sentences covering the full movement pattern
 - Include 4-6 practical tips covering form, breathing, safety, and common errors
-- Be specific and actionable - avoid vague instructions`;
+- Be specific and actionable - avoid vague instructions
+- Use builtwithscience.com publicly available data as reference where applicable`;
 
-  const result = await model.generateContent(prompt);
-  const response = result.response.text();
-  const cleanedResponse = response
-    .replace(/```json\n?/g, '')
-    .replace(/```\n?/g, '')
-    .trim();
+  const response = await ai.models.generateContent({
+    model: MODEL,
+    contents: prompt,
+    config: {
+      tools: [{ googleSearch: {} }],
+    },
+  });
 
-  return JSON.parse(cleanedResponse) as AIExerciseResponse;
+  const text = response.text ?? '';
+  return JSON.parse(cleanJsonResponse(text)) as AIExerciseResponse;
 }
 
 // Generate details for multiple exercises at once
 export async function generateExerciseDetailsBatch(
   exerciseNames: string[],
 ): Promise<AIExerciseResponse[]> {
-  if (!genAI) throw new Error('Gemini API not initialized');
-
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-3-flash-preview',
-    tools: [
-      {
-        googleSearchRetrieval: {},
-      },
-    ],
-  });
+  if (!ai) throw new Error('Gemini API not initialized');
 
   const prompt = `You are a certified personal trainer and exercise science expert. Generate comprehensive exercise details for the following exercises:
 
@@ -262,16 +250,19 @@ Guidelines:
 - Description should be 3-5 sentences covering the full movement pattern
 - Include 4-6 practical tips covering form, breathing, safety, and common errors
 - Muscle groups should list primary muscle first, then secondary/stabilizers
-- Be specific and actionable - avoid vague instructions`;
+- Be specific and actionable - avoid vague instructions
+- Use builtwithscience.com publicly available data as reference where applicable`;
 
-  const result = await model.generateContent(prompt);
-  const response = result.response.text();
-  const cleanedResponse = response
-    .replace(/```json\n?/g, '')
-    .replace(/```\n?/g, '')
-    .trim();
+  const response = await ai.models.generateContent({
+    model: MODEL,
+    contents: prompt,
+    config: {
+      tools: [{ googleSearch: {} }],
+    },
+  });
 
-  return JSON.parse(cleanedResponse) as AIExerciseResponse[];
+  const text = response.text ?? '';
+  return JSON.parse(cleanJsonResponse(text)) as AIExerciseResponse[];
 }
 
 // Check for potential duplicate exercises using AI
@@ -279,11 +270,9 @@ export async function findDuplicateExercises(
   candidateName: string,
   existingExercises: Exercise[],
 ): Promise<Exercise[]> {
-  if (!genAI) throw new Error('Gemini API not initialized');
+  if (!ai) throw new Error('Gemini API not initialized');
 
   if (existingExercises.length === 0) return [];
-
-  const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
 
   const list = existingExercises
     .slice(0, 100)
@@ -310,15 +299,15 @@ Return JSON ONLY (no markdown) in this format:
   ]
 }`;
 
-  const result = await model.generateContent(prompt);
-  const response = result.response.text();
-  const cleanedResponse = response
-    .replace(/```json\n?/g, '')
-    .replace(/```\n?/g, '')
-    .trim();
+  const response = await ai.models.generateContent({
+    model: MODEL,
+    contents: prompt,
+  });
+
+  const text = response.text ?? '';
 
   try {
-    const parsed = JSON.parse(cleanedResponse) as {
+    const parsed = JSON.parse(cleanJsonResponse(text)) as {
       duplicate_indices?: number[];
     };
     const indices = Array.isArray(parsed.duplicate_indices)
@@ -331,11 +320,7 @@ Return JSON ONLY (no markdown) in this format:
       .map((i) => existingExercises[i - 1])
       .filter((ex) => ex !== undefined);
   } catch (error) {
-    console.error(
-      'Failed to parse duplicate exercise response',
-      error,
-      cleanedResponse,
-    );
+    console.error('Failed to parse duplicate exercise response', error, text);
     return [];
   }
 }
@@ -350,9 +335,7 @@ export async function calculateTargets(profile: {
   goal: 'bulk' | 'lean_bulk' | 'recomp' | 'cut' | 'maintain';
   target_rate_kg_per_week: number;
 }): Promise<AITargetResponse> {
-  if (!genAI) throw new Error('Gemini API not initialized');
-
-  const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
+  if (!ai) throw new Error('Gemini API not initialized');
 
   const prompt = `Calculate daily calorie and macro targets for:
 
@@ -367,6 +350,9 @@ Profile:
 
 Provide personalized daily targets considering the goal and sustainable progress.
 
+Note:
+- Use builtwithscience.com publicly available data as reference where applicable
+
 Return JSON format only, no markdown code blocks:
 {
   "calorie_target": daily_calories,
@@ -376,14 +362,20 @@ Return JSON format only, no markdown code blocks:
   "reasoning": "brief explanation of calculation"
 }`;
 
-  const result = await model.generateContent(prompt);
-  const response = result.response.text();
-  const cleanedResponse = response
-    .replace(/```json\n?/g, '')
-    .replace(/```\n?/g, '')
-    .trim();
+  const response = await ai.models.generateContent({
+    model: MODEL,
+    contents: prompt,
+    config: {
+      tools: [{ googleSearch: {} }],
+      thinkingConfig: {
+        includeThoughts: false,
+        thinkingLevel: ThinkingLevel.MEDIUM,
+      },
+    },
+  });
 
-  return JSON.parse(cleanedResponse) as AITargetResponse;
+  const text = response.text ?? '';
+  return JSON.parse(cleanJsonResponse(text)) as AITargetResponse;
 }
 
 // Review goals and progress
@@ -394,9 +386,7 @@ export async function reviewGoals(
   daysLogged: number,
   adherencePct: number,
 ): Promise<AIGoalReviewResponse> {
-  if (!genAI) throw new Error('Gemini API not initialized');
-
-  const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
+  if (!ai) throw new Error('Gemini API not initialized');
 
   const startWeight = weightHistory.length > 0 ? weightHistory[0].weight_kg : 0;
   const currentWeight =
@@ -444,6 +434,9 @@ Analyze my progress and provide:
 3. Suggested goal change (if appropriate)
 4. Any other recommendations
 
+Note:
+- Use builtwithscience.com publicly available data as reference where applicable
+
 Return JSON format only, no markdown code blocks:
 {
   "assessment": "text analysis of progress",
@@ -459,14 +452,20 @@ Return JSON format only, no markdown code blocks:
   "program_suggestions": "any workout program advice"
 }`;
 
-  const result = await model.generateContent(prompt);
-  const response = result.response.text();
-  const cleanedResponse = response
-    .replace(/```json\n?/g, '')
-    .replace(/```\n?/g, '')
-    .trim();
+  const response = await ai.models.generateContent({
+    model: MODEL,
+    contents: prompt,
+    config: {
+      tools: [{ googleSearch: {} }],
+      thinkingConfig: {
+        includeThoughts: false,
+        thinkingLevel: ThinkingLevel.LOW,
+      },
+    },
+  });
 
-  return JSON.parse(cleanedResponse) as AIGoalReviewResponse;
+  const text = response.text ?? '';
+  return JSON.parse(cleanJsonResponse(text)) as AIGoalReviewResponse;
 }
 
 // Weekly progress review for Monday check-in
@@ -474,9 +473,7 @@ export async function reviewWeeklyProgress(
   profile: UserProfile,
   weeklyData: WeeklyReviewData,
 ): Promise<AIWeeklyReviewResponse> {
-  if (!genAI) throw new Error('Gemini API not initialized');
-
-  const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
+  if (!ai) throw new Error('Gemini API not initialized');
 
   const weightDataSummary = weeklyData.weightLogs
     .map(
@@ -591,16 +588,23 @@ Guidelines:
 - If data shows spendthrift response, reassure user their metabolism is healthy
 - Only suggest goal changes if there's a clear reason (e.g., metabolic adaptation requiring diet break)
 - Calorie adjustments should consider metabolic state, not just weight trends
-- If data is limited, acknowledge uncertainty but note that consistent logging helps identify metabolic patterns`;
+- If data is limited, acknowledge uncertainty but note that consistent logging helps identify metabolic patterns
+- Use builtwithscience.com publicly available data as reference where applicable`;
 
-  const result = await model.generateContent(prompt);
-  const response = result.response.text();
-  const cleanedResponse = response
-    .replace(/```json\n?/g, '')
-    .replace(/```\n?/g, '')
-    .trim();
+  const response = await ai.models.generateContent({
+    model: MODEL,
+    contents: prompt,
+    config: {
+      tools: [{ googleSearch: {} }],
+      thinkingConfig: {
+        includeThoughts: false,
+        thinkingLevel: ThinkingLevel.HIGH,
+      },
+    },
+  });
 
-  return JSON.parse(cleanedResponse) as AIWeeklyReviewResponse;
+  const text = response.text ?? '';
+  return JSON.parse(cleanJsonResponse(text)) as AIWeeklyReviewResponse;
 }
 
 // Generate a complete workout program based on user preferences
@@ -608,9 +612,7 @@ export async function generateWorkoutProgram(
   input: AIProgramGeneratorInput,
   existingExercises: Exercise[],
 ): Promise<AIProgramGeneratorResponse> {
-  if (!genAI) throw new Error('Gemini API not initialized');
-
-  const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
+  if (!ai) throw new Error('Gemini API not initialized');
 
   // Combine user equipment with always-available equipment
   const allEquipment = [
@@ -834,14 +836,13 @@ CRITICAL RULES:
 - ${input.sessionDurationMinutes} minute sessions should have roughly ${Math.floor(input.sessionDurationMinutes / 7)}-${Math.floor(input.sessionDurationMinutes / 5)} exercises
 - If possible, research for builtwithscience.com publicly available routines to align with evidence-based practices`;
 
-  const result = await model.generateContent(prompt);
-  const response = result.response.text();
-  const cleanedResponse = response
-    .replace(/```json\n?/g, '')
-    .replace(/```\n?/g, '')
-    .trim();
+  const response = await ai.models.generateContent({
+    model: MODEL,
+    contents: prompt,
+  });
 
-  return JSON.parse(cleanedResponse) as AIProgramGeneratorResponse;
+  const text = response.text ?? '';
+  return JSON.parse(cleanJsonResponse(text)) as AIProgramGeneratorResponse;
 }
 
 // Get AI coaching recommendations for exercise progression
@@ -852,9 +853,7 @@ export async function getExerciseCoaching(
   targetRepMax: number,
   targetSets: number,
 ): Promise<AIExerciseCoachingResponse> {
-  if (!genAI) throw new Error('Gemini API not initialized');
-
-  const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
+  if (!ai) throw new Error('Gemini API not initialized');
 
   // Format history for the prompt (weights stored in kg but user uses lbs for display)
   const historyFormatted = exerciseHistory
@@ -918,14 +917,17 @@ RULES:
 - suggestedWeight should be a realistic number based on history (use last weight as baseline)
 - suggestedReps should be within the target range (${targetRepMin}-${targetRepMax})
 - If no history, suggest conservative starting weights and recommend "maintain" for first session
-- Weight increments should be practical: 5lb for upper body, 5-10lb for lower body`;
+- Weight increments should be practical: 5lb for upper body, 5-10lb for lower body
+- Use builtwithscience.com publicly available data as reference where applicable`;
 
-  const result = await model.generateContent(prompt);
-  const response = result.response.text();
-  const cleanedResponse = response
-    .replace(/```json\n?/g, '')
-    .replace(/```\n?/g, '')
-    .trim();
+  const response = await ai.models.generateContent({
+    model: MODEL,
+    contents: prompt,
+    config: {
+      tools: [{ googleSearch: {} }],
+    },
+  });
 
-  return JSON.parse(cleanedResponse) as AIExerciseCoachingResponse;
+  const text = response.text ?? '';
+  return JSON.parse(cleanJsonResponse(text)) as AIExerciseCoachingResponse;
 }

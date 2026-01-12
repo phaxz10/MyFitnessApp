@@ -17,7 +17,6 @@ import {
   RotateCcw,
   Dumbbell,
   Clock,
-  MessageSquare,
 } from 'lucide-react';
 import {
   Card,
@@ -753,11 +752,27 @@ export function WorkoutSession() {
     const hasWeight =
       exerciseData.exerciseType === 'reps_weight' ||
       exerciseData.exerciseType === 'duration_weight';
-    const targetInfo =
+
+    // Get target info for displaying recommended reps
+    const targetRepMin =
       'target_rep_min' in exerciseData.exercise
-        ? isDuration
-          ? `${exerciseData.exercise.target_duration_seconds || 30}s`
-          : `${exerciseData.exercise.target_rep_min}-${exerciseData.exercise.target_rep_max} reps`
+        ? exerciseData.exercise.target_rep_min
+        : null;
+    const targetRepMax =
+      'target_rep_max' in exerciseData.exercise
+        ? exerciseData.exercise.target_rep_max
+        : null;
+    const targetDuration =
+      'target_duration_seconds' in exerciseData.exercise
+        ? exerciseData.exercise.target_duration_seconds
+        : null;
+
+    const targetInfo = isDuration
+      ? targetDuration
+        ? `${targetDuration}s`
+        : null
+      : targetRepMin && targetRepMax
+        ? `${targetRepMin}-${targetRepMax} reps`
         : null;
 
     return (
@@ -774,7 +789,7 @@ export function WorkoutSession() {
               {getExerciseTypeIcon(exerciseData.exerciseType)}
             </div>
             {targetInfo && (
-              <p className="text-slate-400 text-sm">Target: {targetInfo}</p>
+              <p className="text-blue-400 text-sm">Target: {targetInfo}</p>
             )}
           </div>
           <div className="flex items-center gap-2">
@@ -792,192 +807,177 @@ export function WorkoutSession() {
 
         {/* Sets */}
         {exerciseData.isExpanded && (
-          <div className="mt-4">
+          <div className="mt-3">
             {/* Last Performance */}
             {exerciseData.lastPerformance &&
               exerciseData.lastPerformance.length > 0 && (
-                <div className="mb-3 p-2 bg-slate-700/50 rounded text-xs text-slate-400">
-                  <div>
-                    Last:{' '}
-                    {exerciseData.lastPerformance
-                      .map((s) =>
-                        s.duration_seconds
-                          ? `${s.duration_seconds}s${s.weight_kg ? ` @ ${s.weight_kg}kg` : ''}`
-                          : `${s.weight_kg || 0}kg × ${s.reps || 0}`,
-                      )
-                      .join(' | ')}
-                  </div>
-                  {/* Show previous note if exists */}
-                  {exerciseData.lastPerformance[0]?.notes && (
-                    <div className="mt-1 text-slate-500 italic">
-                      Note: {exerciseData.lastPerformance[0].notes}
-                    </div>
-                  )}
+                <div className="mb-2 px-2 py-1.5 bg-slate-700/50 rounded text-xs text-slate-400">
+                  <span className="text-slate-500">Last: </span>
+                  {exerciseData.lastPerformance
+                    .map((s) =>
+                      s.duration_seconds
+                        ? `${s.duration_seconds}s${s.weight_kg ? `@${s.weight_kg}kg` : ''}`
+                        : `${s.weight_kg || 0}×${s.reps || 0}`,
+                    )
+                    .join(' | ')}
                 </div>
               )}
 
-            {/* Exercise Notes */}
-            <div className="mb-3">
-              <div className="flex items-center gap-2 mb-1">
-                <MessageSquare size={14} className="text-slate-500" />
-                <span className="text-xs text-slate-500">Exercise Note</span>
-              </div>
+            {/* Exercise Notes - Compact */}
+            <div className="mb-2">
               <input
                 type="text"
                 value={exerciseData.notes}
                 onChange={(e) =>
                   handleUpdateExerciseNotes(exerciseIndex, e.target.value)
                 }
-                placeholder="Why can't progress? Form issues? Equipment notes..."
-                className="w-full px-2 py-1.5 text-sm bg-slate-700/50 border border-slate-600 rounded text-slate-300 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                placeholder="Add note (form cues, limitations...)"
+                className="w-full px-2 py-1 text-xs bg-slate-700/30 border border-slate-700 rounded text-slate-300 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
 
-            {/* Set Headers */}
-            <div
-              className={`grid gap-2 mb-2 text-xs text-slate-400 ${
-                isDuration
-                  ? hasWeight
-                    ? 'grid-cols-10'
-                    : 'grid-cols-8'
-                  : hasWeight
-                    ? 'grid-cols-12'
-                    : 'grid-cols-10'
-              }`}
-            >
-              <div className="col-span-2 text-center">SET</div>
-              <div className="col-span-2 text-center">PREV</div>
-              {hasWeight && <div className="col-span-2 text-center">KG</div>}
-              {isDuration ? (
-                <div className="col-span-2 text-center">SEC</div>
-              ) : (
-                <div className="col-span-2 text-center">REPS</div>
-              )}
-              <div
-                className={
-                  isDuration && !hasWeight ? 'col-span-2' : 'col-span-2'
-                }
-              ></div>
-            </div>
+            {/* Compact Sets List */}
+            <div className="space-y-1.5">
+              {exerciseData.sets.map((set, setIndex) => {
+                const prevSet = exerciseData.lastPerformance?.[setIndex];
 
-            {/* Sets List */}
-            {exerciseData.sets.map((set, setIndex) => {
-              const prevSet = exerciseData.lastPerformance?.[setIndex];
-
-              return (
-                <div
-                  key={set.tempId}
-                  className={`grid gap-2 items-center py-2 ${
-                    isDuration
-                      ? hasWeight
-                        ? 'grid-cols-10'
-                        : 'grid-cols-8'
-                      : hasWeight
-                        ? 'grid-cols-12'
-                        : 'grid-cols-10'
-                  } ${set.completed ? 'bg-green-900/20 rounded' : ''}`}
-                >
-                  <div className="col-span-2 text-center text-slate-300">
-                    {setIndex + 1}
-                  </div>
-                  <div className="col-span-2 text-center text-slate-500 text-sm">
-                    {prevSet
-                      ? prevSet.duration_seconds
-                        ? `${prevSet.duration_seconds}s`
-                        : `${prevSet.weight_kg || 0}×${prevSet.reps || 0}`
-                      : '-'}
-                  </div>
-                  {hasWeight && (
-                    <div className="col-span-2">
-                      <Input
-                        type="number"
-                        value={set.weight}
-                        onChange={(e) =>
-                          handleSetChange(
-                            exerciseIndex,
-                            setIndex,
-                            'weight',
-                            e.target.value,
-                          )
-                        }
-                        className="text-center p-1 h-8"
-                        disabled={set.completed}
-                      />
-                    </div>
-                  )}
-                  {isDuration ? (
-                    <div className="col-span-2">
-                      <Input
-                        type="number"
-                        value={set.durationSeconds}
-                        onChange={(e) =>
-                          handleSetChange(
-                            exerciseIndex,
-                            setIndex,
-                            'durationSeconds',
-                            e.target.value,
-                          )
-                        }
-                        className="text-center p-1 h-8"
-                        disabled={set.completed}
-                        placeholder="sec"
-                      />
-                    </div>
-                  ) : (
-                    <div className="col-span-2">
-                      <Input
-                        type="number"
-                        value={set.reps}
-                        onChange={(e) =>
-                          handleSetChange(
-                            exerciseIndex,
-                            setIndex,
-                            'reps',
-                            e.target.value,
-                          )
-                        }
-                        className="text-center p-1 h-8"
-                        disabled={set.completed}
-                      />
-                    </div>
-                  )}
+                return (
                   <div
-                    className={`${isDuration && !hasWeight ? 'col-span-2' : 'col-span-2'} flex justify-end gap-3`}
+                    key={set.tempId}
+                    className={`flex items-center gap-2 py-1.5 px-2 rounded ${
+                      set.completed ? 'bg-green-900/30' : 'bg-slate-800/50'
+                    }`}
                   >
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteSet(exerciseIndex, setIndex)}
-                      className="p-2 text-red-400 hover:bg-red-900/30 rounded transition-colors"
-                    >
-                      <Trash2 size={20} />
-                    </button>
-                    {!set.completed && (
+                    {/* Set Number */}
+                    <span className="w-6 text-center text-sm font-medium text-slate-400">
+                      {setIndex + 1}
+                    </span>
+
+                    {/* Weight Input (if applicable) */}
+                    {hasWeight && (
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          value={set.weight}
+                          onChange={(e) =>
+                            handleSetChange(
+                              exerciseIndex,
+                              setIndex,
+                              'weight',
+                              e.target.value,
+                            )
+                          }
+                          className="w-16 h-8 text-center text-sm p-1"
+                          disabled={set.completed}
+                          placeholder="kg"
+                        />
+                        <span className="text-slate-500 text-xs">kg</span>
+                      </div>
+                    )}
+
+                    {/* Separator */}
+                    {hasWeight && (
+                      <span className="text-slate-600 text-sm">×</span>
+                    )}
+
+                    {/* Reps or Duration Input */}
+                    {isDuration ? (
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          value={set.durationSeconds}
+                          onChange={(e) =>
+                            handleSetChange(
+                              exerciseIndex,
+                              setIndex,
+                              'durationSeconds',
+                              e.target.value,
+                            )
+                          }
+                          className="w-16 h-8 text-center text-sm p-1"
+                          disabled={set.completed}
+                          placeholder="sec"
+                        />
+                        <span className="text-slate-500 text-xs">sec</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          value={set.reps}
+                          onChange={(e) =>
+                            handleSetChange(
+                              exerciseIndex,
+                              setIndex,
+                              'reps',
+                              e.target.value,
+                            )
+                          }
+                          className="w-14 h-8 text-center text-sm p-1"
+                          disabled={set.completed}
+                          placeholder="reps"
+                        />
+                        {/* Show target range hint */}
+                        {targetRepMin && targetRepMax && !set.completed && (
+                          <span className="text-blue-400/60 text-xs">
+                            ({targetRepMin}-{targetRepMax})
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Previous indicator */}
+                    {prevSet && !set.completed && (
+                      <span className="text-slate-500 text-xs ml-auto mr-1">
+                        prev:{' '}
+                        {prevSet.duration_seconds
+                          ? `${prevSet.duration_seconds}s`
+                          : `${prevSet.weight_kg || 0}×${prevSet.reps || 0}`}
+                      </span>
+                    )}
+
+                    {/* Action buttons */}
+                    <div className="flex items-center gap-1 ml-auto">
                       <button
                         type="button"
-                        onClick={() =>
-                          handleCompleteSet(exerciseIndex, setIndex)
-                        }
-                        className="p-2 text-green-400 hover:bg-green-900/30 rounded transition-colors"
+                        onClick={() => handleDeleteSet(exerciseIndex, setIndex)}
+                        className="p-1.5 text-red-400/70 hover:text-red-400 hover:bg-red-900/30 rounded transition-colors"
                       >
-                        {isDuration ? <Play size={20} /> : <Check size={20} />}
+                        <Trash2 size={16} />
                       </button>
-                    )}
+                      {!set.completed && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleCompleteSet(exerciseIndex, setIndex)
+                          }
+                          className="p-1.5 text-green-400 hover:bg-green-900/30 rounded transition-colors"
+                        >
+                          {isDuration ? (
+                            <Play size={16} />
+                          ) : (
+                            <Check size={16} />
+                          )}
+                        </button>
+                      )}
+                      {set.completed && (
+                        <Check size={16} className="text-green-400 mx-1.5" />
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-
-            {/* Add Set */}
-            <div className="flex justify-start mt-3 pt-3 border-t border-slate-700">
-              <button
-                type="button"
-                onClick={() => handleAddSet(exerciseIndex)}
-                className="text-blue-400 text-sm flex items-center gap-1"
-              >
-                <Plus size={16} />
-                Add Set
-              </button>
+                );
+              })}
             </div>
+
+            {/* Add Set - Compact */}
+            <button
+              type="button"
+              onClick={() => handleAddSet(exerciseIndex)}
+              className="mt-2 text-blue-400 text-sm flex items-center gap-1 hover:text-blue-300"
+            >
+              <Plus size={14} />
+              Add Set
+            </button>
           </div>
         )}
       </>
@@ -1099,26 +1099,53 @@ export function WorkoutSession() {
               return (
                 <div
                   key={`superset-round-${roundKey}`}
-                  className={`border-2 rounded-lg p-4 ${
+                  className={`border rounded-lg p-3 ${
                     roundComplete
                       ? 'border-green-600/50 bg-green-900/10'
-                      : 'border-slate-700 bg-slate-800/50'
+                      : 'border-slate-700 bg-slate-800/30'
                   }`}
                 >
-                  {/* Round Header */}
-                  <div className="text-center mb-4 pb-2 border-b border-slate-700">
+                  {/* Round Header - Compact */}
+                  <div className="flex items-center justify-between mb-2 pb-2 border-b border-slate-700/50">
                     <span
-                      className={`font-semibold ${
+                      className={`text-sm font-medium ${
                         roundComplete ? 'text-green-400' : 'text-purple-400'
                       }`}
                     >
                       Round {roundNumber + 1}
-                      {roundComplete && ' - Complete'}
+                      {roundComplete && ' ✓'}
                     </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleCompleteRound(exerciseIndices, roundNumber)
+                        }
+                        disabled={roundComplete}
+                        className={`px-2 py-1 text-xs rounded font-medium flex items-center gap-1 transition-colors ${
+                          roundComplete
+                            ? 'bg-green-900/30 text-green-400/50 cursor-not-allowed'
+                            : 'bg-green-600 hover:bg-green-700 text-white'
+                        }`}
+                      >
+                        <Check size={12} />
+                        All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleDeleteRound(exerciseIndices, roundNumber)
+                        }
+                        className="p-1 rounded text-red-400/70 hover:text-red-400 hover:bg-red-900/30 transition-colors"
+                        title="Delete this round"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Exercises in this round */}
-                  <div className="space-y-4">
+                  {/* Exercises in this round - Compact layout */}
+                  <div className="space-y-1.5">
                     {supersetExercises.map((ex) => {
                       const exerciseIndex = exercisesWithSets.indexOf(ex);
                       const set = ex.sets[roundNumber];
@@ -1138,173 +1165,168 @@ export function WorkoutSession() {
                         ex.exerciseType === 'duration_weight';
                       const prevSet = ex.lastPerformance?.[roundNumber];
 
-                      // Format previous set display
-                      const prevDisplay = prevSet
-                        ? prevSet.duration_seconds
-                          ? `${prevSet.duration_seconds}s${prevSet.weight_kg ? ` @ ${prevSet.weight_kg}kg` : ''}`
-                          : `${prevSet.weight_kg || 0}kg × ${prevSet.reps || 0}`
-                        : null;
+                      // Get target info
+                      const targetRepMin =
+                        'target_rep_min' in ex.exercise
+                          ? ex.exercise.target_rep_min
+                          : null;
+                      const targetRepMax =
+                        'target_rep_max' in ex.exercise
+                          ? ex.exercise.target_rep_max
+                          : null;
+                      const targetDuration =
+                        'target_duration_seconds' in ex.exercise
+                          ? ex.exercise.target_duration_seconds
+                          : null;
 
                       return (
                         <div
                           key={`${ex.exercise.id}-round-${roundNumber}`}
-                          className={`p-3 rounded-lg ${
+                          className={`flex items-center gap-2 py-1.5 px-2 rounded ${
                             set.completed
-                              ? 'bg-green-900/20'
+                              ? 'bg-green-900/30'
                               : 'bg-slate-800/50'
                           }`}
                         >
-                          {/* Exercise name and previous */}
-                          <div className="flex justify-between items-center mb-3">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-slate-200">
-                                {exerciseName}
+                          {/* Exercise name */}
+                          <span className="text-sm font-medium text-slate-200 min-w-[80px] truncate">
+                            {exerciseName}
+                          </span>
+                          {getExerciseTypeIcon(ex.exerciseType)}
+
+                          {/* Weight Input (if applicable) */}
+                          {hasWeight && (
+                            <div className="flex items-center gap-1">
+                              <Input
+                                type="number"
+                                value={set.weight}
+                                onChange={(e) =>
+                                  handleSetChange(
+                                    exerciseIndex,
+                                    roundNumber,
+                                    'weight',
+                                    e.target.value,
+                                  )
+                                }
+                                className="w-16 h-8 text-center text-sm p-1"
+                                disabled={set.completed}
+                                placeholder="kg"
+                              />
+                              <span className="text-slate-500 text-xs">kg</span>
+                            </div>
+                          )}
+
+                          {/* Separator */}
+                          {hasWeight && (
+                            <span className="text-slate-600 text-sm">×</span>
+                          )}
+
+                          {/* Reps or Duration Input */}
+                          {isDuration ? (
+                            <div className="flex items-center gap-1">
+                              <Input
+                                type="number"
+                                value={set.durationSeconds}
+                                onChange={(e) =>
+                                  handleSetChange(
+                                    exerciseIndex,
+                                    roundNumber,
+                                    'durationSeconds',
+                                    e.target.value,
+                                  )
+                                }
+                                className="w-16 h-8 text-center text-sm p-1"
+                                disabled={set.completed}
+                                placeholder="sec"
+                              />
+                              <span className="text-slate-500 text-xs">
+                                sec
                               </span>
-                              {getExerciseTypeIcon(ex.exerciseType)}
-                              {set.completed && (
-                                <Check
-                                  size={16}
-                                  className="text-green-400 ml-1"
-                                />
+                              {/* Show target duration hint */}
+                              {targetDuration && !set.completed && (
+                                <span className="text-blue-400/60 text-xs">
+                                  ({targetDuration}s)
+                                </span>
                               )}
                             </div>
-                            {prevDisplay && (
-                              <span className="text-slate-500 text-sm">
-                                Prev: {prevDisplay}
-                              </span>
-                            )}
-                          </div>
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <Input
+                                type="number"
+                                value={set.reps}
+                                onChange={(e) =>
+                                  handleSetChange(
+                                    exerciseIndex,
+                                    roundNumber,
+                                    'reps',
+                                    e.target.value,
+                                  )
+                                }
+                                className="w-14 h-8 text-center text-sm p-1"
+                                disabled={set.completed}
+                                placeholder="reps"
+                              />
+                              {/* Show target range hint */}
+                              {targetRepMin &&
+                                targetRepMax &&
+                                !set.completed && (
+                                  <span className="text-blue-400/60 text-xs">
+                                    ({targetRepMin}-{targetRepMax})
+                                  </span>
+                                )}
+                            </div>
+                          )}
 
-                          {/* Inputs and complete button */}
-                          <div className="flex items-center gap-3 flex-wrap">
-                            {/* Weight input (if applicable) */}
-                            {hasWeight && (
-                              <div className="flex items-center gap-2">
-                                <span className="text-slate-400 text-sm w-8">
-                                  KG
-                                </span>
-                                <Input
-                                  type="number"
-                                  value={set.weight}
-                                  onChange={(e) =>
-                                    handleSetChange(
-                                      exerciseIndex,
-                                      roundNumber,
-                                      'weight',
-                                      e.target.value,
-                                    )
-                                  }
-                                  className="w-20 h-10 text-center"
-                                  disabled={set.completed}
-                                />
-                              </div>
-                            )}
+                          {/* Previous indicator */}
+                          {prevSet && !set.completed && (
+                            <span className="text-slate-500 text-xs ml-auto mr-1">
+                              prev:{' '}
+                              {prevSet.duration_seconds
+                                ? `${prevSet.duration_seconds}s`
+                                : `${prevSet.weight_kg || 0}×${prevSet.reps || 0}`}
+                            </span>
+                          )}
 
-                            {/* Reps or Duration input */}
-                            {isDuration ? (
-                              <div className="flex items-center gap-2">
-                                <span className="text-slate-400 text-sm w-8">
-                                  SEC
-                                </span>
-                                <Input
-                                  type="number"
-                                  value={set.durationSeconds}
-                                  onChange={(e) =>
-                                    handleSetChange(
-                                      exerciseIndex,
-                                      roundNumber,
-                                      'durationSeconds',
-                                      e.target.value,
-                                    )
-                                  }
-                                  className="w-20 h-10 text-center"
-                                  disabled={set.completed}
-                                />
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-2">
-                                <span className="text-slate-400 text-sm w-10">
-                                  REPS
-                                </span>
-                                <Input
-                                  type="number"
-                                  value={set.reps}
-                                  onChange={(e) =>
-                                    handleSetChange(
-                                      exerciseIndex,
-                                      roundNumber,
-                                      'reps',
-                                      e.target.value,
-                                    )
-                                  }
-                                  className="w-20 h-10 text-center"
-                                  disabled={set.completed}
-                                />
-                              </div>
-                            )}
-
-                            {/* Individual complete button */}
+                          {/* Action buttons */}
+                          <div className="flex items-center gap-1 ml-auto">
                             {!set.completed && (
                               <button
                                 type="button"
                                 onClick={() =>
                                   handleCompleteSet(exerciseIndex, roundNumber)
                                 }
-                                className="ml-auto p-2.5 text-green-400 hover:bg-green-900/30 rounded-lg transition-colors"
+                                className="p-1.5 text-green-400 hover:bg-green-900/30 rounded transition-colors"
                                 title="Complete this exercise"
                               >
                                 {isDuration ? (
-                                  <Play size={22} />
+                                  <Play size={16} />
                                 ) : (
-                                  <Check size={22} />
+                                  <Check size={16} />
                                 )}
                               </button>
+                            )}
+                            {set.completed && (
+                              <Check
+                                size={16}
+                                className="text-green-400 mx-1.5"
+                              />
                             )}
                           </div>
                         </div>
                       );
                     })}
                   </div>
-
-                  {/* Round Actions */}
-                  <div className="flex gap-3 mt-4 pt-4 border-t border-slate-700">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleCompleteRound(exerciseIndices, roundNumber)
-                      }
-                      disabled={roundComplete}
-                      className={`flex-1 h-11 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors ${
-                        roundComplete
-                          ? 'bg-green-900/30 text-green-400 cursor-not-allowed'
-                          : 'bg-green-600 hover:bg-green-700 text-white'
-                      }`}
-                    >
-                      <Check size={18} />
-                      {roundComplete ? 'Round Complete' : 'Complete All'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleDeleteRound(exerciseIndices, roundNumber)
-                      }
-                      className="h-11 px-4 rounded-lg bg-red-600/20 text-red-400 hover:bg-red-600/30 transition-colors flex items-center justify-center"
-                      title="Delete this round"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
                 </div>
               );
             })}
 
-            {/* Add Round Button */}
+            {/* Add Round Button - Compact */}
             <button
               type="button"
               onClick={() => handleAddSetToSuperset(exerciseIndices)}
-              className="w-full h-12 rounded-lg border-2 border-dashed border-purple-500/50 text-purple-400 hover:bg-purple-900/20 transition-colors flex items-center justify-center gap-2 font-medium"
+              className="w-full py-2 rounded-lg border border-dashed border-purple-500/50 text-purple-400 hover:bg-purple-900/20 transition-colors flex items-center justify-center gap-1 text-sm"
             >
-              <Plus size={20} />
+              <Plus size={16} />
               Add Round
             </button>
           </div>

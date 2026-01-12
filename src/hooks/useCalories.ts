@@ -274,6 +274,105 @@ export function useCalories() {
     return getDailySummary(formatDate(new Date()));
   }, [getDailySummary]);
 
+  const getLoggingStreak = useCallback(async (): Promise<number> => {
+    try {
+      const db = await getDB();
+      // Get distinct dates with food entries, ordered by most recent
+      const result = await db.query(
+        `SELECT DISTINCT date FROM food_entries ORDER BY date DESC LIMIT 365`,
+      );
+
+      if (result.rows.length === 0) return 0;
+
+      const loggedDates = new Set(
+        (result.rows as { date: string }[]).map((r) => formatDate(r.date)),
+      );
+
+      let streak = 0;
+      const today = new Date();
+
+      // Check from today backwards
+      for (let i = 0; i < 365; i++) {
+        const checkDate = new Date(today);
+        checkDate.setDate(today.getDate() - i);
+        const dateStr = formatDate(checkDate);
+
+        if (loggedDates.has(dateStr)) {
+          streak++;
+        } else if (i === 0) {
+          // If today has no entries, check if yesterday does (streak still valid)
+          continue;
+        } else {
+          break;
+        }
+      }
+
+      return streak;
+    } catch {
+      return 0;
+    }
+  }, []);
+
+  const getRecentFoods = useCallback(
+    async (
+      limit = 5,
+    ): Promise<
+      Pick<
+        FoodEntry,
+        | 'food_description'
+        | 'calories'
+        | 'protein_g'
+        | 'carbs_g'
+        | 'fat_g'
+        | 'portion_grams'
+      >[]
+    > => {
+      try {
+        const db = await getDB();
+        // Get recent unique foods, prioritizing most frequently logged
+        const result = await db.query(
+          `SELECT 
+          food_description,
+          AVG(calories)::int as calories,
+          AVG(protein_g)::numeric(10,1) as protein_g,
+          AVG(carbs_g)::numeric(10,1) as carbs_g,
+          AVG(fat_g)::numeric(10,1) as fat_g,
+          AVG(portion_grams)::numeric(10,1) as portion_grams,
+          COUNT(*) as frequency,
+          MAX(created_at) as last_used
+        FROM food_entries
+        WHERE created_at > NOW() - INTERVAL '30 days'
+        GROUP BY food_description
+        ORDER BY frequency DESC, last_used DESC
+        LIMIT $1`,
+          [limit],
+        );
+
+        return result.rows.map((row) => {
+          const r = row as {
+            food_description: string;
+            calories: number;
+            protein_g: number;
+            carbs_g: number;
+            fat_g: number;
+            portion_grams: number;
+          };
+          return {
+            food_description: r.food_description,
+            calories: Number(r.calories),
+            protein_g: Number(r.protein_g),
+            carbs_g: Number(r.carbs_g),
+            fat_g: Number(r.fat_g),
+            portion_grams: Number(r.portion_grams),
+          };
+        });
+      } catch {
+        return [];
+      }
+    },
+    [],
+  );
+
   return {
     entries,
     loading,
@@ -286,6 +385,8 @@ export function useCalories() {
     deleteEntry,
     getDailySummary,
     getTodaySummary,
+    getLoggingStreak,
+    getRecentFoods,
     copyMealsFromDate,
     copyMealsFromPreviousDay,
   };

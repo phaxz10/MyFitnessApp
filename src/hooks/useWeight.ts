@@ -158,6 +158,35 @@ export function useWeight() {
     }
   }, []);
 
+  const getRecentWeights = useCallback(async (limit = 7): Promise<number[]> => {
+    try {
+      const db = await getDB();
+      const result = await db.query(
+        'SELECT weight_kg FROM weight_logs ORDER BY date DESC LIMIT $1',
+        [limit],
+      );
+      // Return in chronological order (oldest first) for sparkline
+      return (result.rows as { weight_kg: number }[])
+        .map((r) => r.weight_kg)
+        .reverse();
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const getFirstWeight = useCallback(async (): Promise<number | null> => {
+    try {
+      const db = await getDB();
+      const result = await db.query(
+        'SELECT weight_kg FROM weight_logs ORDER BY date ASC LIMIT 1',
+      );
+      const rows = result.rows as { weight_kg: number }[];
+      return rows.length > 0 ? rows[0].weight_kg : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
   return {
     logs,
     loading,
@@ -168,5 +197,7 @@ export function useWeight() {
     updateLog,
     deleteLog,
     getLatestLog,
+    getRecentWeights,
+    getFirstWeight,
   };
 }

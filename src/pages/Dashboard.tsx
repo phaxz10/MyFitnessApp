@@ -6,9 +6,12 @@ import {
   Scale,
   Dumbbell,
   TrendingUp,
+  TrendingDown,
   Trophy,
   FileText,
   ChevronRight,
+  Flame,
+  Target,
 } from 'lucide-react';
 import {
   Card,
@@ -33,8 +36,9 @@ import { formatCalories, calculateProgress } from '../utils/calculations';
 export function Dashboard() {
   const navigate = useNavigate();
   const { profile, fetchProfile } = useProfile();
-  const { fetchEntriesByDate, getDailySummary } = useCalories();
-  const { getLatestLog } = useWeight();
+  const { fetchEntriesByDate, getDailySummary, getLoggingStreak } =
+    useCalories();
+  const { getLatestLog, getFirstWeight } = useWeight();
   const { logs, fetchLogs, activeWorkout, resumeWorkout } = useWorkoutLogs();
   const { getOverallProgress } = useExerciseProgress();
   const isOnline = useAppStore((state) => state.isOnline);
@@ -44,6 +48,8 @@ export function Dashboard() {
   const [showFoodLogOptions, setShowFoodLogOptions] = useState(false);
   const [weeklyWorkouts, setWeeklyWorkouts] = useState(0);
   const [recentPRsCount, setRecentPRsCount] = useState(0);
+  const [loggingStreak, setLoggingStreak] = useState(0);
+  const [startWeight, setStartWeight] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const today = formatDate(new Date());
 
@@ -58,14 +64,19 @@ export function Dashboard() {
           resumeWorkout(),
         ]);
 
-        const [weightLog, progressData] = await Promise.all([
-          getLatestLog(),
-          getOverallProgress('7d'),
-        ]);
+        const [weightLog, progressData, streak, firstWeight] =
+          await Promise.all([
+            getLatestLog(),
+            getOverallProgress('7d'),
+            getLoggingStreak(),
+            getFirstWeight(),
+          ]);
 
         if (weightLog) setLatestWeight(weightLog.weight_kg);
         setWeeklyWorkouts(progressData.totalWorkouts);
         setRecentPRsCount(progressData.recentPRs.length);
+        setLoggingStreak(streak);
+        setStartWeight(firstWeight);
       } finally {
         setIsLoading(false);
       }
@@ -79,6 +90,8 @@ export function Dashboard() {
     resumeWorkout,
     getLatestLog,
     getOverallProgress,
+    getLoggingStreak,
+    getFirstWeight,
     today,
   ]);
 
@@ -100,6 +113,21 @@ export function Dashboard() {
         <h2 className="text-xl font-semibold text-white">
           {formatDisplayDate(today)}
         </h2>
+        {loggingStreak > 0 && (
+          <div className="flex items-center justify-center gap-1.5 mt-2">
+            <Flame
+              size={16}
+              className={
+                loggingStreak >= 7 ? 'text-orange-400' : 'text-slate-400'
+              }
+            />
+            <span
+              className={`text-sm font-medium ${loggingStreak >= 7 ? 'text-orange-400' : 'text-slate-400'}`}
+            >
+              {loggingStreak} day{loggingStreak !== 1 ? 's' : ''} streak
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Weekly Review Button - Shows on Mondays with at least 5 logged days */}
@@ -192,28 +220,88 @@ export function Dashboard() {
             </div>
           </div>
 
-          {/* Macros Bar */}
-          <div className="mt-6 space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-400">Protein</span>
-              <span className="text-white">
-                {summary.total_protein_g.toFixed(0)}g /{' '}
-                {profile?.protein_target_g || 0}g
-              </span>
+          {/* Macros Progress Bars */}
+          <div className="mt-6 space-y-3">
+            {/* Protein */}
+            <div>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-blue-400 font-medium">Protein</span>
+                <span className="text-white">
+                  {summary.total_protein_g.toFixed(0)}g /{' '}
+                  {profile?.protein_target_g || 0}g
+                </span>
+              </div>
+              <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    summary.total_protein_g > (profile?.protein_target_g || 0)
+                      ? 'bg-red-500'
+                      : 'bg-blue-500'
+                  }`}
+                  style={{
+                    width: `${Math.min(
+                      (summary.total_protein_g /
+                        (profile?.protein_target_g || 1)) *
+                        100,
+                      100,
+                    )}%`,
+                  }}
+                />
+              </div>
             </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-400">Carbs</span>
-              <span className="text-white">
-                {summary.total_carbs_g.toFixed(0)}g /{' '}
-                {profile?.carbs_target_g || 0}g
-              </span>
+
+            {/* Carbs */}
+            <div>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-green-400 font-medium">Carbs</span>
+                <span className="text-white">
+                  {summary.total_carbs_g.toFixed(0)}g /{' '}
+                  {profile?.carbs_target_g || 0}g
+                </span>
+              </div>
+              <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    summary.total_carbs_g > (profile?.carbs_target_g || 0)
+                      ? 'bg-red-500'
+                      : 'bg-green-500'
+                  }`}
+                  style={{
+                    width: `${Math.min(
+                      (summary.total_carbs_g / (profile?.carbs_target_g || 1)) *
+                        100,
+                      100,
+                    )}%`,
+                  }}
+                />
+              </div>
             </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-400">Fat</span>
-              <span className="text-white">
-                {summary.total_fat_g.toFixed(0)}g / {profile?.fat_target_g || 0}
-                g
-              </span>
+
+            {/* Fat */}
+            <div>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-yellow-400 font-medium">Fat</span>
+                <span className="text-white">
+                  {summary.total_fat_g.toFixed(0)}g /{' '}
+                  {profile?.fat_target_g || 0}g
+                </span>
+              </div>
+              <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    summary.total_fat_g > (profile?.fat_target_g || 0)
+                      ? 'bg-red-500'
+                      : 'bg-yellow-500'
+                  }`}
+                  style={{
+                    width: `${Math.min(
+                      (summary.total_fat_g / (profile?.fat_target_g || 1)) *
+                        100,
+                      100,
+                    )}%`,
+                  }}
+                />
+              </div>
             </div>
           </div>
         </CardContent>
@@ -388,35 +476,132 @@ export function Dashboard() {
         </CardContent>
       </Card>
 
+      {/* Goal Progress Card */}
+      {profile && startWeight && latestWeight && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Target size={18} className="text-purple-400" />
+                Goal Progress
+              </h3>
+              <span className="text-xs px-2 py-1 bg-slate-700 rounded-full text-slate-300 capitalize">
+                {profile.goal.replace('_', ' ')}
+              </span>
+            </div>
+
+            {(() => {
+              const totalChange = latestWeight - startWeight;
+              const isLosingGoal = profile.goal === 'cut';
+              const isGainingGoal =
+                profile.goal === 'bulk' || profile.goal === 'lean_bulk';
+              const isOnTrack = isLosingGoal
+                ? totalChange <= 0
+                : isGainingGoal
+                  ? totalChange >= 0
+                  : true;
+
+              return (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-center flex-1">
+                      <p className="text-slate-400 text-xs">Start</p>
+                      <p className="text-lg font-semibold text-white">
+                        {startWeight.toFixed(1)} kg
+                      </p>
+                    </div>
+                    <div className="flex-1 flex justify-center">
+                      {totalChange !== 0 && (
+                        <div
+                          className={`flex items-center gap-1 px-2 py-1 rounded-full text-sm ${
+                            isOnTrack
+                              ? 'bg-green-500/20 text-green-400'
+                              : 'bg-red-500/20 text-red-400'
+                          }`}
+                        >
+                          {totalChange < 0 ? (
+                            <TrendingDown size={14} />
+                          ) : (
+                            <TrendingUp size={14} />
+                          )}
+                          <span>
+                            {totalChange > 0 ? '+' : ''}
+                            {totalChange.toFixed(1)} kg
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-center flex-1">
+                      <p className="text-slate-400 text-xs">Current</p>
+                      <p className="text-lg font-semibold text-white">
+                        {latestWeight.toFixed(1)} kg
+                      </p>
+                    </div>
+                  </div>
+
+                  {profile.target_rate_kg_per_week > 0 && (
+                    <div className="text-center pt-2 border-t border-slate-700">
+                      <p className="text-slate-400 text-xs">
+                        Target: {isLosingGoal ? '-' : '+'}
+                        {profile.target_rate_kg_per_week} kg/week
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Today's Meals Summary */}
       <Card>
         <CardContent className="p-4">
-          <h3 className="text-lg font-semibold text-white mb-4">
-            Today's Meals
-          </h3>
-          {Object.entries(summary.meals).map(([mealType, mealEntries]) => {
-            const mealCalories = mealEntries.reduce(
-              (sum, e) => sum + e.calories,
-              0,
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-semibold text-white">Today's Meals</h3>
+            <Link
+              to="/calories"
+              className="text-blue-400 text-sm hover:underline"
+            >
+              View all
+            </Link>
+          </div>
+          {(() => {
+            const mealsWithEntries = Object.entries(summary.meals).filter(
+              ([, entries]) => entries.length > 0,
             );
-            return (
-              <div
-                key={mealType}
-                className="flex justify-between items-center py-2 border-b border-slate-700 last:border-0"
-              >
-                <div className="flex items-center gap-3">
-                  <Utensils size={16} className="text-slate-400" />
-                  <span className="text-white capitalize">{mealType}</span>
-                  {mealEntries.length > 0 && (
+
+            if (mealsWithEntries.length === 0) {
+              return (
+                <p className="text-slate-500 text-sm text-center py-4">
+                  No meals logged yet today
+                </p>
+              );
+            }
+
+            return mealsWithEntries.map(([mealType, mealEntries]) => {
+              const mealCalories = mealEntries.reduce(
+                (sum, e) => sum + e.calories,
+                0,
+              );
+              return (
+                <div
+                  key={mealType}
+                  className="flex justify-between items-center py-2 border-b border-slate-700 last:border-0"
+                >
+                  <div className="flex items-center gap-3">
+                    <Utensils size={16} className="text-slate-400" />
+                    <span className="text-white capitalize">{mealType}</span>
                     <span className="text-slate-500 text-sm">
-                      ({mealEntries.length} items)
+                      ({mealEntries.length}{' '}
+                      {mealEntries.length === 1 ? 'item' : 'items'})
                     </span>
-                  )}
+                  </div>
+                  <span className="text-slate-300">{mealCalories} kcal</span>
                 </div>
-                <span className="text-slate-300">{mealCalories} kcal</span>
-              </div>
-            );
-          })}
+              );
+            });
+          })()}
         </CardContent>
       </Card>
     </div>

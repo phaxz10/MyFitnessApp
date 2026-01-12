@@ -32,7 +32,14 @@ export async function analyzeFoodText(
 ): Promise<AIFoodAnalysisResponse> {
   if (!genAI) throw new Error('Gemini API not initialized');
 
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-3-flash-preview',
+    tools: [
+      {
+        googleSearchRetrieval: {},
+      },
+    ],
+  });
 
   const prompt = `Analyze the following food description and estimate nutritional information.
 Return JSON format only, no markdown code blocks.
@@ -79,7 +86,14 @@ export async function analyzeFoodImage(
 ): Promise<AIFoodAnalysisResponse> {
   if (!genAI) throw new Error('Gemini API not initialized');
 
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-3-flash-preview',
+    tools: [
+      {
+        googleSearchRetrieval: {},
+      },
+    ],
+  });
 
   const prompt = `Analyze this food image and estimate nutritional information.
 ${textDescription ? `Additional context from user: ${textDescription}` : ''}
@@ -144,7 +158,14 @@ export async function generateExerciseDetails(
 ): Promise<AIExerciseResponse> {
   if (!genAI) throw new Error('Gemini API not initialized');
 
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-3-flash-preview',
+    tools: [
+      {
+        googleSearchRetrieval: {},
+      },
+    ],
+  });
 
   const prompt = `You are a certified personal trainer and exercise science expert. Generate comprehensive exercise details for: "${exerciseName}"
 
@@ -198,7 +219,14 @@ export async function generateExerciseDetailsBatch(
 ): Promise<AIExerciseResponse[]> {
   if (!genAI) throw new Error('Gemini API not initialized');
 
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-3-flash-preview',
+    tools: [
+      {
+        googleSearchRetrieval: {},
+      },
+    ],
+  });
 
   const prompt = `You are a certified personal trainer and exercise science expert. Generate comprehensive exercise details for the following exercises:
 
@@ -255,7 +283,7 @@ export async function findDuplicateExercises(
 
   if (existingExercises.length === 0) return [];
 
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
 
   const list = existingExercises
     .slice(0, 100)
@@ -324,7 +352,7 @@ export async function calculateTargets(profile: {
 }): Promise<AITargetResponse> {
   if (!genAI) throw new Error('Gemini API not initialized');
 
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
 
   const prompt = `Calculate daily calorie and macro targets for:
 
@@ -368,7 +396,7 @@ export async function reviewGoals(
 ): Promise<AIGoalReviewResponse> {
   if (!genAI) throw new Error('Gemini API not initialized');
 
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
 
   const startWeight = weightHistory.length > 0 ? weightHistory[0].weight_kg : 0;
   const currentWeight =
@@ -448,7 +476,7 @@ export async function reviewWeeklyProgress(
 ): Promise<AIWeeklyReviewResponse> {
   if (!genAI) throw new Error('Gemini API not initialized');
 
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
 
   const weightDataSummary = weeklyData.weightLogs
     .map(
@@ -582,7 +610,7 @@ export async function generateWorkoutProgram(
 ): Promise<AIProgramGeneratorResponse> {
   if (!genAI) throw new Error('Gemini API not initialized');
 
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
 
   // Combine user equipment with always-available equipment
   const allEquipment = [
@@ -803,7 +831,8 @@ CRITICAL RULES:
 - Exercise names should be standard, recognizable names
 - For duration-based exercises (planks, holds), set targetDurationSeconds instead of reps
 - Ensure balanced muscle development unless specific focus areas requested
-- ${input.sessionDurationMinutes} minute sessions should have roughly ${Math.floor(input.sessionDurationMinutes / 7)}-${Math.floor(input.sessionDurationMinutes / 5)} exercises`;
+- ${input.sessionDurationMinutes} minute sessions should have roughly ${Math.floor(input.sessionDurationMinutes / 7)}-${Math.floor(input.sessionDurationMinutes / 5)} exercises
+- If possible, research for builtwithscience.com publicly available routines to align with evidence-based practices`;
 
   const result = await model.generateContent(prompt);
   const response = result.response.text();
@@ -825,7 +854,7 @@ export async function getExerciseCoaching(
 ): Promise<AIExerciseCoachingResponse> {
   if (!genAI) throw new Error('Gemini API not initialized');
 
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
 
   // Format history for the prompt (weights stored in kg but user uses lbs for display)
   const historyFormatted = exerciseHistory

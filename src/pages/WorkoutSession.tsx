@@ -917,12 +917,6 @@ export function WorkoutSession() {
                           disabled={set.completed}
                           placeholder="reps"
                         />
-                        {/* Show target range hint */}
-                        {targetRepMin && targetRepMax && !set.completed && (
-                          <span className="text-blue-400/60 text-xs">
-                            ({targetRepMin}-{targetRepMax})
-                          </span>
-                        )}
                       </div>
                     )}
 
@@ -1165,15 +1159,7 @@ export function WorkoutSession() {
                         ex.exerciseType === 'duration_weight';
                       const prevSet = ex.lastPerformance?.[roundNumber];
 
-                      // Get target info
-                      const targetRepMin =
-                        'target_rep_min' in ex.exercise
-                          ? ex.exercise.target_rep_min
-                          : null;
-                      const targetRepMax =
-                        'target_rep_max' in ex.exercise
-                          ? ex.exercise.target_rep_max
-                          : null;
+                      // Get target info for duration exercises
                       const targetDuration =
                         'target_duration_seconds' in ex.exercise
                           ? ex.exercise.target_duration_seconds
@@ -1268,14 +1254,6 @@ export function WorkoutSession() {
                                 disabled={set.completed}
                                 placeholder="reps"
                               />
-                              {/* Show target range hint */}
-                              {targetRepMin &&
-                                targetRepMax &&
-                                !set.completed && (
-                                  <span className="text-blue-400/60 text-xs">
-                                    ({targetRepMin}-{targetRepMax})
-                                  </span>
-                                )}
                             </div>
                           )}
 

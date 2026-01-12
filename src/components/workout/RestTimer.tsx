@@ -1,12 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Play, Pause, RotateCcw, X, Volume2, VolumeX } from 'lucide-react';
+import {
+  Play,
+  Pause,
+  RotateCcw,
+  X,
+  Volume2,
+  VolumeX,
+  Timer,
+} from 'lucide-react';
 import { Button } from '../ui';
 
 interface RestTimerProps {
-  isVisible: boolean;
-  isMinimized: boolean;
-  onClose: () => void;
-  onToggleMinimize: () => void;
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
   // External state control
   seconds: number;
   setSeconds: (seconds: number | ((prev: number) => number)) => void;
@@ -19,10 +25,8 @@ interface RestTimerProps {
 const PRESET_TIMES = [30, 60, 90, 120, 180];
 
 export function RestTimer({
-  isVisible,
-  isMinimized,
-  onClose,
-  onToggleMinimize,
+  isOpen,
+  onOpenChange,
   seconds,
   setSeconds,
   isRunning,
@@ -160,6 +164,13 @@ export function RestTimer({
     setIsRunning(true);
   };
 
+  const dismissTimer = () => {
+    setIsRunning(false);
+    setSeconds(initialSeconds);
+    startTimeRef.current = null;
+    onOpenChange(false);
+  };
+
   const formatTime = (totalSeconds: number) => {
     const mins = Math.floor(totalSeconds / 60);
     const secs = totalSeconds % 60;
@@ -167,137 +178,193 @@ export function RestTimer({
   };
 
   const progress = initialSeconds > 0 ? (seconds / initialSeconds) * 100 : 0;
-  const isFinished = seconds === 0;
+  const isFinished = seconds === 0 && !isRunning;
+  const isActive = isRunning || (seconds !== initialSeconds && seconds > 0);
 
-  // Don't render if not visible at all
-  if (!isVisible && !isMinimized) return null;
-
-  // Minimized view - always show if timer is active (running or has time remaining)
-  if (isMinimized) {
-    return (
-      <button
-        type="button"
-        className={`fixed bottom-20 right-4 z-50 px-4 py-2 rounded-full shadow-lg cursor-pointer
-          ${isFinished ? 'bg-green-600 animate-pulse' : isRunning ? 'bg-blue-600' : 'bg-slate-700'}`}
-        onClick={onToggleMinimize}
-      >
-        <span className="text-white font-mono font-bold">
-          {formatTime(seconds)}
-        </span>
-      </button>
-    );
-  }
-
-  // Full view
-  if (!isVisible) return null;
+  // Calculate stroke dasharray for circular progress
+  const radius = 24;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference * (1 - progress / 100);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div className="w-full max-w-sm">
-        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold text-white">Rest Timer</h3>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setSoundEnabled(!soundEnabled)}
-                className="p-2 text-slate-400 hover:text-white transition-colors"
-              >
-                {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
-              </button>
-              <button
-                onClick={onToggleMinimize}
-                className="p-2 text-slate-400 hover:text-white transition-colors"
-              >
-                <span className="text-xs">MIN</span>
-              </button>
-              <button
-                onClick={onClose}
-                className="p-2 text-slate-400 hover:text-white transition-colors"
-              >
-                <X size={18} />
-              </button>
-            </div>
-          </div>
-
-          {/* Timer Display */}
-          <div
-            className={`relative flex items-center justify-center mb-4 ${isFinished ? 'animate-pulse' : ''}`}
-          >
-            <div className="w-32 h-32 relative">
+    <>
+      {/* Floating Action Button - Always visible */}
+      <button
+        type="button"
+        onClick={() => onOpenChange(true)}
+        className={`fixed bottom-20 right-4 z-40 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-300 ${
+          isFinished
+            ? 'bg-green-600 animate-pulse'
+            : isRunning
+              ? 'bg-blue-600'
+              : isActive
+                ? 'bg-slate-700'
+                : 'bg-slate-700 hover:bg-slate-600'
+        }`}
+      >
+        {isRunning || isActive ? (
+          // Show timer countdown with circular progress
+          <div className="relative w-12 h-12 flex items-center justify-center">
+            <svg
+              className="absolute inset-0 w-12 h-12 -rotate-90"
+              role="img"
+              aria-label={`Rest timer: ${formatTime(seconds)} remaining`}
+            >
               {/* Background circle */}
-              <svg
-                className="w-full h-full transform -rotate-90"
-                role="img"
-                aria-label={`Rest timer: ${formatTime(seconds)} remaining`}
+              <circle
+                cx="24"
+                cy="24"
+                r={radius}
+                fill="none"
+                stroke="rgba(255,255,255,0.2)"
+                strokeWidth="3"
+              />
+              {/* Progress circle */}
+              <circle
+                cx="24"
+                cy="24"
+                r={radius}
+                fill="none"
+                stroke={isFinished ? '#22c55e' : '#ffffff'}
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeDasharray={circumference}
+                strokeDashoffset={strokeDashoffset}
+                className="transition-all duration-1000"
+              />
+            </svg>
+            <span className="text-white font-mono text-xs font-bold">
+              {formatTime(seconds)}
+            </span>
+          </div>
+        ) : (
+          // Show timer icon when idle
+          <Timer size={24} className="text-white" />
+        )}
+      </button>
+
+      {/* Full Timer Modal */}
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="w-full max-w-sm">
+            <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold text-white">Rest Timer</h3>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSoundEnabled(!soundEnabled)}
+                    className="p-2 text-slate-400 hover:text-white transition-colors"
+                  >
+                    {soundEnabled ? (
+                      <Volume2 size={18} />
+                    ) : (
+                      <VolumeX size={18} />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => onOpenChange(false)}
+                    className="p-2 text-slate-400 hover:text-white transition-colors"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Timer Display */}
+              <div
+                className={`relative flex items-center justify-center mb-4 ${isFinished ? 'animate-pulse' : ''}`}
               >
-                <circle
-                  cx="64"
-                  cy="64"
-                  r="58"
-                  fill="none"
-                  stroke="#334155"
-                  strokeWidth="8"
-                />
-                {/* Progress circle */}
-                <circle
-                  cx="64"
-                  cy="64"
-                  r="58"
-                  fill="none"
-                  stroke={isFinished ? '#22c55e' : '#3b82f6'}
-                  strokeWidth="8"
-                  strokeLinecap="round"
-                  strokeDasharray={`${2 * Math.PI * 58}`}
-                  strokeDashoffset={`${2 * Math.PI * 58 * (1 - progress / 100)}`}
-                  className="transition-all duration-1000"
-                />
-              </svg>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span
-                  className={`text-3xl font-mono font-bold ${isFinished ? 'text-green-400' : 'text-white'}`}
-                >
-                  {formatTime(seconds)}
-                </span>
+                <div className="w-32 h-32 relative">
+                  {/* Background circle */}
+                  <svg
+                    className="w-full h-full transform -rotate-90"
+                    role="img"
+                    aria-label={`Rest timer: ${formatTime(seconds)} remaining`}
+                  >
+                    <circle
+                      cx="64"
+                      cy="64"
+                      r="58"
+                      fill="none"
+                      stroke="#334155"
+                      strokeWidth="8"
+                    />
+                    {/* Progress circle */}
+                    <circle
+                      cx="64"
+                      cy="64"
+                      r="58"
+                      fill="none"
+                      stroke={isFinished ? '#22c55e' : '#3b82f6'}
+                      strokeWidth="8"
+                      strokeLinecap="round"
+                      strokeDasharray={`${2 * Math.PI * 58}`}
+                      strokeDashoffset={`${2 * Math.PI * 58 * (1 - progress / 100)}`}
+                      className="transition-all duration-1000"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span
+                      className={`text-3xl font-mono font-bold ${isFinished ? 'text-green-400' : 'text-white'}`}
+                    >
+                      {formatTime(seconds)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Controls */}
+              <div className="flex justify-center gap-3 mb-4">
+                {isFinished ? (
+                  <Button
+                    onClick={dismissTimer}
+                    variant="primary"
+                    className="w-32"
+                  >
+                    Done
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      onClick={toggleTimer}
+                      variant={isRunning ? 'secondary' : 'primary'}
+                      className="w-24"
+                    >
+                      {isRunning ? <Pause size={18} /> : <Play size={18} />}
+                      <span className="ml-2">
+                        {isRunning ? 'Pause' : 'Start'}
+                      </span>
+                    </Button>
+                    <Button onClick={resetTimer} variant="secondary">
+                      <RotateCcw size={18} />
+                    </Button>
+                  </>
+                )}
+              </div>
+
+              {/* Presets */}
+              <div className="flex flex-wrap justify-center gap-2">
+                {PRESET_TIMES.map((time) => (
+                  <button
+                    key={time}
+                    onClick={() => setPresetTime(time)}
+                    className={`px-3 py-1 rounded-full text-sm transition-colors
+                      ${
+                        initialSeconds === time && !isFinished
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      }`}
+                  >
+                    {time < 60
+                      ? `${time}s`
+                      : `${time / 60}m${time % 60 > 0 ? ` ${time % 60}s` : ''}`}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
-
-          {/* Controls */}
-          <div className="flex justify-center gap-3 mb-4">
-            <Button
-              onClick={toggleTimer}
-              variant={isRunning ? 'secondary' : 'primary'}
-              className="w-24"
-            >
-              {isRunning ? <Pause size={18} /> : <Play size={18} />}
-              <span className="ml-2">{isRunning ? 'Pause' : 'Start'}</span>
-            </Button>
-            <Button onClick={resetTimer} variant="secondary">
-              <RotateCcw size={18} />
-            </Button>
-          </div>
-
-          {/* Presets */}
-          <div className="flex flex-wrap justify-center gap-2">
-            {PRESET_TIMES.map((time) => (
-              <button
-                key={time}
-                onClick={() => setPresetTime(time)}
-                className={`px-3 py-1 rounded-full text-sm transition-colors
-                  ${
-                    initialSeconds === time && !isFinished
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                  }`}
-              >
-                {time < 60
-                  ? `${time}s`
-                  : `${time / 60}m${time % 60 > 0 ? ` ${time % 60}s` : ''}`}
-              </button>
-            ))}
-          </div>
         </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }

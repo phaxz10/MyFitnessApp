@@ -7,7 +7,6 @@ import {
   Plus,
   Check,
   Trash2,
-  Timer,
   ChevronDown,
   ChevronUp,
   X,
@@ -189,7 +188,6 @@ export function WorkoutSession() {
     ExerciseWithSets[]
   >([]);
   const [showTimer, setShowTimer] = useState(false);
-  const [timerMinimized, setTimerMinimized] = useState(false);
   const [timerSeconds, setTimerSeconds] = useState(90);
   const [timerInitialSeconds, setTimerInitialSeconds] = useState(90);
   const [timerRunning, setTimerRunning] = useState(false);
@@ -1394,16 +1392,8 @@ export function WorkoutSession() {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowTimer(true)}
-          className={`p-2 relative ${timerRunning ? 'text-blue-400' : 'text-slate-400 hover:text-white'}`}
-        >
-          <Timer size={24} />
-          {timerRunning && (
-            <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-          )}
-        </button>
+        {/* Placeholder for symmetry */}
+        <div className="w-10" />
       </div>
 
       {/* Stats Bar */}
@@ -1522,16 +1512,10 @@ export function WorkoutSession() {
         />
       )}
 
-      {/* Rest Timer */}
+      {/* Rest Timer - Floating button + modal */}
       <RestTimer
-        isVisible={showTimer && !timerMinimized}
-        isMinimized={timerMinimized}
-        onClose={() => {
-          setShowTimer(false);
-          setTimerMinimized(false);
-          setTimerRunning(false);
-        }}
-        onToggleMinimize={() => setTimerMinimized(!timerMinimized)}
+        isOpen={showTimer}
+        onOpenChange={setShowTimer}
         seconds={timerSeconds}
         setSeconds={setTimerSeconds}
         isRunning={timerRunning}

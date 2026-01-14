@@ -165,6 +165,29 @@ export function SupersetCard({
         </div>
       )}
 
+      {/* AI Coaching Tips for each exercise in superset */}
+      {allExpanded && (
+        <div className="mb-4 space-y-1.5">
+          {supersetExercises.map((ex) => {
+            const exerciseId = getExerciseId(ex);
+            const coaching = coachingMap.get(exerciseId);
+            if (!coaching?.coachingTip) return null;
+
+            return (
+              <div
+                key={`coaching-${ex.exercise.id}`}
+                className="px-2 py-1.5 bg-blue-900/30 border border-blue-700/50 rounded text-xs text-blue-300"
+              >
+                <span className="font-medium text-blue-400">
+                  {ex.exercise.name}:
+                </span>{' '}
+                {coaching.coachingTip}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Rounds */}
       {allExpanded && (
         <div className="space-y-4">

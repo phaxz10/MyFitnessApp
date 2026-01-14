@@ -275,7 +275,7 @@ export function RestTimer({
           <div className="relative w-12 h-12 flex items-center justify-center">
             <svg
               className="absolute inset-0 w-12 h-12 -rotate-90"
-              viewBox="0 0 48 48"
+              viewBox="-1 -1 50.5 50.5"
               role="img"
               aria-label={`Rest timer: ${formatTimerDisplay(seconds)} remaining`}
             >

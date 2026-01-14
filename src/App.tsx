@@ -1,32 +1,33 @@
 import { useEffect, useState } from 'react';
 import {
   BrowserRouter,
-  Routes,
-  Route,
   Navigate,
   Outlet,
+  Route,
+  Routes,
 } from 'react-router-dom';
-import { Header, BottomNav } from './components/ui';
+import { GlobalModalContainer } from './components/modals';
+import { BottomNav, Header } from './components/ui';
 import { useAppStore } from './hooks/useAppStore';
 import { useProfile } from './hooks/useProfile';
 import { useWorkoutLogs } from './hooks/useWorkoutLogs';
-import { getDB, isOnboardingComplete } from './services/db';
-import { initGemini } from './services/gemini';
+import { CalorieLog } from './pages/CalorieLog';
 
 // Pages
 import { Dashboard } from './pages/Dashboard';
-import { CalorieLog } from './pages/CalorieLog';
-import { Workout } from './pages/Workout';
-import { WorkoutSession } from './pages/WorkoutSession';
-import { ProgramEditor } from './pages/ProgramEditor';
+import { DatabaseDebug } from './pages/DatabaseDebug';
 import { ExerciseLibrary } from './pages/ExerciseLibrary';
-import { WeightTracker } from './pages/WeightTracker';
-import { Settings } from './pages/Settings';
-import { Onboarding } from './pages/Onboarding';
 import { MealScanner } from './pages/MealScanner';
+import { Onboarding } from './pages/Onboarding';
+import { ProgramEditor } from './pages/ProgramEditor';
 import { Progress } from './pages/Progress';
+import { Settings } from './pages/Settings';
+import { WeightTracker } from './pages/WeightTracker';
+import { Workout } from './pages/Workout';
 import { WorkoutDetail } from './pages/WorkoutDetail';
-import { GlobalModalContainer } from './components/modals';
+import { WorkoutSession } from './pages/WorkoutSession';
+import { getDB, isOnboardingComplete } from './services/db';
+import { initGemini } from './services/gemini';
 
 function MainLayout() {
   return (
@@ -146,6 +147,7 @@ function AppRoutes() {
         <Route path="/workout/program/:id" element={<ProgramEditor />} />
         <Route path="/workout/progress" element={<Progress />} />
         <Route path="/workout/history/:id" element={<WorkoutDetail />} />
+        <Route path="/debug/database" element={<DatabaseDebug />} />
       </Route>
 
       {/* Redirects */}

@@ -35,6 +35,7 @@ import {
 import { getExerciseCoaching, isGeminiInitialized } from '../services/gemini';
 import type { AIExerciseCoachingResponse, Exercise } from '../types';
 import { parseLocalTimestamp } from '../utils/date';
+import { formatElapsedTime } from '../utils/formatters';
 
 // Generate unique superset ID
 function generateSupersetId(): string {
@@ -388,18 +389,6 @@ export function WorkoutSession() {
   const onCancelWorkout = async () => {
     await handleCancelWorkout();
     navigate('/workout');
-  };
-
-  // Helper functions
-  const formatElapsedTime = (seconds: number) => {
-    const hours = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-
-    if (hours > 0) {
-      return `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const filteredExercises = allExercises.filter(

@@ -1,14 +1,18 @@
+import { Clock, Dumbbell, Target, Trophy } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Dumbbell, Clock, Trophy, Target } from 'lucide-react';
-import { MetricCard } from './MetricCard';
-import { VolumeChart } from './VolumeChart';
-import { Card, CardContent } from '../ui';
 import { useExerciseProgress } from '../../hooks/useExerciseProgress';
 import type {
   OverallProgressMetrics,
-  VolumeChartData,
   PersonalRecord,
+  VolumeChartData,
 } from '../../types';
+import {
+  formatDurationMinutes,
+  formatLargeNumber,
+} from '../../utils/formatters';
+import { Card, CardContent } from '../ui';
+import { MetricCard } from './MetricCard';
+import { VolumeChart } from './VolumeChart';
 
 interface OverviewTabProps {
   timeRange: '7d' | '30d' | '90d' | 'all';
@@ -33,21 +37,6 @@ export function OverviewTab({ timeRange }: OverviewTabProps) {
     fetchData();
   }, [timeRange, getOverallProgress, getVolumeChartData]);
 
-  const formatVolume = (value: number) => {
-    if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
-    if (value >= 1000) return `${Math.round(value / 1000)}K`;
-    return value.toString();
-  };
-
-  const formatTime = (minutes: number) => {
-    if (minutes >= 60) {
-      const hours = Math.floor(minutes / 60);
-      const mins = minutes % 60;
-      return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
-    }
-    return `${minutes}m`;
-  };
-
   if (loading && !metrics) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -62,7 +51,9 @@ export function OverviewTab({ timeRange }: OverviewTabProps) {
       <div className="grid grid-cols-2 gap-3">
         <MetricCard
           label="Total Volume"
-          value={metrics ? `${formatVolume(metrics.totalVolume)} lbs` : '--'}
+          value={
+            metrics ? `${formatLargeNumber(metrics.totalVolume)} lbs` : '--'
+          }
           change={metrics?.volumeChange}
           changeLabel="vs prev"
           icon={<Dumbbell size={20} />}
@@ -77,7 +68,9 @@ export function OverviewTab({ timeRange }: OverviewTabProps) {
         />
         <MetricCard
           label="Time Trained"
-          value={metrics ? formatTime(metrics.totalTimeMinutes) : '--'}
+          value={
+            metrics ? formatDurationMinutes(metrics.totalTimeMinutes) : '--'
+          }
           icon={<Clock size={20} />}
         />
         <MetricCard

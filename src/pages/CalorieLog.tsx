@@ -1,39 +1,33 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
-  Plus,
   ChevronLeft,
   ChevronRight,
-  Trash2,
-  Edit2,
   Copy,
+  Edit2,
+  Plus,
+  Trash2,
 } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { useSearchParams } from 'react-router-dom';
 import {
+  Button,
+  CalorieLogSkeleton,
   Card,
   CardContent,
-  Button,
-  Modal,
   Input,
+  Modal,
   Select,
   TextArea,
-  CalorieLogSkeleton,
 } from '../components/ui';
+import { mealTypes } from '../constants/options';
+import { useAppStore } from '../hooks/useAppStore';
 import { useCalories } from '../hooks/useCalories';
 import { useProfile } from '../hooks/useProfile';
-import { useAppStore } from '../hooks/useAppStore';
-import { formatDate, formatDisplayDate, getPreviousDay } from '../utils/date';
+import { type FoodEntryFormData, foodEntrySchema } from '../schemas/forms';
+import type { FoodEntry, MealType } from '../types';
 import { formatCalories } from '../utils/calculations';
-import { foodEntrySchema, type FoodEntryFormData } from '../schemas/forms';
-import type { MealType, FoodEntry } from '../types';
-
-const mealTypes: { value: MealType; label: string }[] = [
-  { value: 'breakfast', label: 'Breakfast' },
-  { value: 'lunch', label: 'Lunch' },
-  { value: 'dinner', label: 'Dinner' },
-  { value: 'snack', label: 'Snack' },
-];
+import { formatDate, formatDisplayDate, getPreviousDay } from '../utils/date';
 
 export function CalorieLog() {
   const [searchParams] = useSearchParams();

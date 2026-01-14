@@ -2,9 +2,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
-  Clock,
   Combine,
-  Dumbbell,
   PencilLine,
   Play,
   Plus,
@@ -13,9 +11,12 @@ import {
 import type { ExerciseWithSets, SetData } from '../../hooks/useWorkoutSession';
 import type {
   AIExerciseCoachingResponse,
-  ExerciseType,
   ProgressionDirection,
 } from '../../types';
+import {
+  getExerciseTypeIcon,
+  getProgressionArrow,
+} from '../../utils/workoutHelpers';
 import { Input } from '../ui';
 
 interface ExerciseCardProps {
@@ -36,23 +37,6 @@ interface ExerciseCardProps {
   onRemoveExercise: () => void;
   onLinkExercise?: () => void;
 }
-
-// Get exercise type icon
-const getExerciseTypeIcon = (type: ExerciseType) => {
-  if (type === 'duration' || type === 'duration_weight') {
-    return <Clock size={14} className="text-slate-400" />;
-  }
-  return <Dumbbell size={14} className="text-slate-400" />;
-};
-
-// Get progression arrow indicator
-const getProgressionArrow = (direction: ProgressionDirection | undefined) => {
-  if (!direction || direction === 'maintain') return null;
-  if (direction === 'increase') {
-    return <ChevronUp size={14} className="text-green-400" />;
-  }
-  return <ChevronDown size={14} className="text-red-400" />;
-};
 
 export function ExerciseCard({
   exerciseData,

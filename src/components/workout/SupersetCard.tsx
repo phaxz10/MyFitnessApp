@@ -2,8 +2,6 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
-  Clock,
-  Dumbbell,
   PencilLine,
   Play,
   Plus,
@@ -11,11 +9,11 @@ import {
   X,
 } from 'lucide-react';
 import type { ExerciseWithSets } from '../../hooks/useWorkoutSession';
-import type {
-  AIExerciseCoachingResponse,
-  ExerciseType,
-  ProgressionDirection,
-} from '../../types';
+import type { AIExerciseCoachingResponse } from '../../types';
+import {
+  getExerciseTypeIcon,
+  getProgressionArrow,
+} from '../../utils/workoutHelpers';
 import { Input } from '../ui';
 
 interface SupersetCardProps {
@@ -41,23 +39,6 @@ interface SupersetCardProps {
   onBreakSuperset?: () => void;
   getExerciseId: (ex: ExerciseWithSets) => number;
 }
-
-// Get exercise type icon
-const getExerciseTypeIcon = (type: ExerciseType) => {
-  if (type === 'duration' || type === 'duration_weight') {
-    return <Clock size={14} className="text-slate-400" />;
-  }
-  return <Dumbbell size={14} className="text-slate-400" />;
-};
-
-// Get progression arrow indicator
-const getProgressionArrow = (direction: ProgressionDirection | undefined) => {
-  if (!direction || direction === 'maintain') return null;
-  if (direction === 'increase') {
-    return <ChevronUp size={14} className="text-green-400" />;
-  }
-  return <ChevronDown size={14} className="text-red-400" />;
-};
 
 export function SupersetCard({
   supersetExercises,

@@ -1,30 +1,24 @@
-import { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Camera, Upload, X, Plus, Minus } from 'lucide-react';
+import { Camera, Minus, Plus, Upload, X } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { useNavigate } from 'react-router-dom';
 import {
+  Button,
   Card,
   CardContent,
-  Button,
   Input,
   Select,
   TextArea,
 } from '../components/ui';
-import { useCalories } from '../hooks/useCalories';
+import { mealTypes } from '../constants/options';
 import { useAppStore } from '../hooks/useAppStore';
+import { useCalories } from '../hooks/useCalories';
+import { type MealScannerFormData, mealScannerSchema } from '../schemas/forms';
 import { analyzeFoodImage, isGeminiInitialized } from '../services/gemini';
-import { formatDate } from '../utils/date';
+import type { AIFoodItem } from '../types';
 import { recalculateMacros } from '../utils/calculations';
-import { mealScannerSchema, type MealScannerFormData } from '../schemas/forms';
-import type { MealType, AIFoodItem } from '../types';
-
-const mealTypes: { value: MealType; label: string }[] = [
-  { value: 'breakfast', label: 'Breakfast' },
-  { value: 'lunch', label: 'Lunch' },
-  { value: 'dinner', label: 'Dinner' },
-  { value: 'snack', label: 'Snack' },
-];
+import { formatDate } from '../utils/date';
 
 interface EditableFoodItem extends AIFoodItem {
   originalPortion: number;

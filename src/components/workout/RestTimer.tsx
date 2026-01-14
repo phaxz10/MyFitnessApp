@@ -1,13 +1,14 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Play,
   Pause,
+  Play,
   RotateCcw,
-  X,
+  Timer,
   Volume2,
   VolumeX,
-  Timer,
+  X,
 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { formatTimerDisplay } from '../../utils/formatters';
 import { Button } from '../ui';
 
 interface RestTimerProps {
@@ -230,12 +231,6 @@ export function RestTimer({
     onOpenChange(false);
   };
 
-  const formatTime = (totalSeconds: number) => {
-    const mins = Math.floor(totalSeconds / 60);
-    const secs = totalSeconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
   const progress = initialSeconds > 0 ? (seconds / initialSeconds) * 100 : 0;
   const isFinished = seconds === 0 && !isRunning;
   const isActive = isRunning || (seconds !== initialSeconds && seconds > 0);
@@ -282,7 +277,7 @@ export function RestTimer({
               className="absolute inset-0 w-12 h-12 -rotate-90"
               viewBox="0 0 48 48"
               role="img"
-              aria-label={`Rest timer: ${formatTime(seconds)} remaining`}
+              aria-label={`Rest timer: ${formatTimerDisplay(seconds)} remaining`}
             >
               {/* Background circle */}
               <circle
@@ -308,7 +303,7 @@ export function RestTimer({
               />
             </svg>
             <span className="text-white font-mono text-xs font-bold">
-              {formatTime(seconds)}
+              {formatTimerDisplay(seconds)}
             </span>
           </div>
         ) : (
@@ -354,7 +349,7 @@ export function RestTimer({
                     className="w-full h-full transform -rotate-90"
                     viewBox="0 0 128 128"
                     role="img"
-                    aria-label={`Rest timer: ${formatTime(seconds)} remaining`}
+                    aria-label={`Rest timer: ${formatTimerDisplay(seconds)} remaining`}
                   >
                     <circle
                       cx="64"
@@ -382,7 +377,7 @@ export function RestTimer({
                     <span
                       className={`text-3xl font-mono font-bold ${isFinished ? 'text-green-400' : 'text-white'}`}
                     >
-                      {formatTime(seconds)}
+                      {formatTimerDisplay(seconds)}
                     </span>
                   </div>
                 </div>

@@ -33,6 +33,7 @@ import type {
   WorkoutStatus,
 } from '../types';
 import { isToday, isYesterday, parseLocalTimestamp } from '../utils/date';
+import { formatDurationFromMs } from '../utils/formatters';
 
 export function Workout() {
   const navigate = useNavigate();
@@ -161,11 +162,7 @@ export function Workout() {
     const start = parseLocalTimestamp(startedAt);
     const end = endedAt ? parseLocalTimestamp(endedAt) : new Date();
     const diffMs = end.getTime() - start.getTime();
-    const mins = Math.floor(diffMs / 60000);
-    if (mins < 60) return `${mins} min`;
-    const hours = Math.floor(mins / 60);
-    const remainingMins = mins % 60;
-    return `${hours}h ${remainingMins}m`;
+    return formatDurationFromMs(diffMs);
   };
 
   const formatDate = (dateStr: string) => {

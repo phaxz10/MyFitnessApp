@@ -1,5 +1,6 @@
 import { Check, Pause, Play, RotateCcw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { formatTimerDisplay } from '../../utils/formatters';
 import { Button } from '../ui';
 
 interface DurationTimerProps {
@@ -30,12 +31,6 @@ export function DurationTimer({
     };
   }, [isRunning]);
 
-  const formatTime = (secs: number) => {
-    const mins = Math.floor(secs / 60);
-    const remainingSecs = secs % 60;
-    return `${mins}:${remainingSecs.toString().padStart(2, '0')}`;
-  };
-
   const progress = Math.min((seconds / targetSeconds) * 100, 100);
   const isOverTarget = seconds >= targetSeconds;
 
@@ -44,12 +39,12 @@ export function DurationTimer({
       <div className="w-full max-w-sm bg-slate-800 rounded-2xl p-6">
         <div className="text-center mb-6">
           <p className="text-slate-400 text-sm mb-2">
-            Target: {formatTime(targetSeconds)}
+            Target: {formatTimerDisplay(targetSeconds)}
           </p>
           <p
             className={`text-5xl font-mono font-bold ${isOverTarget ? 'text-green-400' : 'text-white'}`}
           >
-            {formatTime(seconds)}
+            {formatTimerDisplay(seconds)}
           </p>
         </div>
 

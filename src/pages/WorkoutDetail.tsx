@@ -16,6 +16,7 @@ import { useWorkoutLogs } from '../hooks/useWorkoutLogs';
 import { getDB } from '../services/db';
 import type { WorkoutLog, WorkoutSetWithExercise } from '../types';
 import { parseLocalTimestamp } from '../utils/date';
+import { formatDurationFromMs } from '../utils/formatters';
 
 interface WorkoutLogWithDetails extends WorkoutLog {
   session_name?: string;
@@ -108,12 +109,7 @@ export function WorkoutDetail() {
     const start = parseLocalTimestamp(startedAt);
     const end = parseLocalTimestamp(endedAt);
     const diffMs = end.getTime() - start.getTime();
-    const mins = Math.floor(diffMs / 60000);
-
-    if (mins < 60) return `${mins} min`;
-    const hours = Math.floor(mins / 60);
-    const remainingMins = mins % 60;
-    return `${hours}h ${remainingMins}m`;
+    return formatDurationFromMs(diffMs);
   };
 
   const formatDate = (dateStr: string) => {

@@ -266,6 +266,71 @@ async function initSchema(): Promise<void> {
   } catch {
     // Column may already exist, ignore
   }
+
+  // Migration: Add workout_log_exercises table
+  // This stores a copy of exercises for each workout, independent from program template
+  // Allows users to modify exercises during workout without affecting the program
+  try {
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS workout_log_exercises (
+        id SERIAL PRIMARY KEY,
+        workout_log_id INTEGER NOT NULL REFERENCES workout_logs(id) ON DELETE CASCADE,
+        exercise_id INTEGER NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
+        order_index INTEGER NOT NULL,
+        superset_group_id TEXT,
+        target_sets INTEGER,
+        target_rep_min INTEGER,
+        target_rep_max INTEGER,
+        target_duration_seconds INTEGER,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      
+      CREATE INDEX IF NOT EXISTS idx_workout_log_exercises_log ON workout_log_exercises(workout_log_id);
+    `);
+  } catch {
+    // Table may already exist, ignore
+  }
+
+  // Migration: Add workout_log_exercise_id to workout_sets
+  // New sets should reference workout_log_exercises instead of exercises directly
+  try {
+    await db.exec(`
+      ALTER TABLE workout_sets ADD COLUMN IF NOT EXISTS workout_log_exercise_id INTEGER REFERENCES workout_log_exercises(id) ON DELETE CASCADE;
+    `);
+  } catch {
+    // Column may already exist, ignore
+  }
+
+  // Migration: Add completed_at column to workout_sets
+  // This tracks when a set was explicitly marked as completed by the user
+  // Sets are now pre-created with NULL values, and completed_at IS NOT NULL means completed
+  try {
+    await db.exec(`
+      ALTER TABLE workout_sets ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
+    `);
+  } catch {
+    // Column may already exist, ignore
+  }
+
+  // Migration: Allow NULL values in workout_sets for reps and weight_kg
+  // Previously these had NOT NULL constraints, but now we pre-create sets with NULL values
+  // and fill them in as the user enters data
+  try {
+    await db.exec(`
+      ALTER TABLE workout_sets ALTER COLUMN reps DROP NOT NULL;
+    `);
+  } catch {
+    // Column may already be nullable, ignore
+  }
+
+  try {
+    await db.exec(`
+      ALTER TABLE workout_sets ALTER COLUMN weight_kg DROP NOT NULL;
+    `);
+  } catch {
+    // Column may already be nullable, ignore
+  }
 }
 
 // Helper function to check if onboarding is complete
@@ -286,6 +351,7 @@ export async function resetDatabase(): Promise<void> {
     DROP TABLE IF EXISTS progress_photos CASCADE;
     DROP TABLE IF EXISTS ai_goal_reviews CASCADE;
     DROP TABLE IF EXISTS workout_sets CASCADE;
+    DROP TABLE IF EXISTS workout_log_exercises CASCADE;
     DROP TABLE IF EXISTS workout_logs CASCADE;
     DROP TABLE IF EXISTS program_exercises CASCADE;
     DROP TABLE IF EXISTS program_sessions CASCADE;

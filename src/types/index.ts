@@ -122,12 +122,38 @@ export interface WorkoutSet {
   id: number;
   workout_log_id: number;
   exercise_id: number;
+  workout_log_exercise_id: number | null; // References workout_log_exercises
   set_number: number;
   reps: number | null;
   weight_kg: number | null;
   duration_seconds: number | null;
   notes: string | null;
+  completed_at: string | null; // When user marked set as completed (NULL = not completed)
   created_at: string;
+}
+
+// Workout Log Exercise - independent copy of exercises for a specific workout
+export interface WorkoutLogExercise {
+  id: number;
+  workout_log_id: number;
+  exercise_id: number;
+  order_index: number;
+  superset_group_id: string | null;
+  target_sets: number | null;
+  target_rep_min: number | null;
+  target_rep_max: number | null;
+  target_duration_seconds: number | null;
+  notes: string | null;
+  created_at: string;
+}
+
+// Workout Log Exercise with exercise details (joined)
+export interface WorkoutLogExerciseWithDetails extends WorkoutLogExercise {
+  exercise_name: string;
+  exercise_description: string;
+  muscle_groups: string;
+  equipment: string;
+  exercise_type: ExerciseType;
 }
 
 export interface ExerciseNote {

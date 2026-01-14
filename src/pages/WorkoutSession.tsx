@@ -1,16 +1,16 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   ArrowLeft,
+  Check,
   Clock,
   Dumbbell,
   Plus,
-  Save,
   Send,
   Trash2,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Button,
   Card,
@@ -37,6 +37,10 @@ import { parseLocalTimestamp } from '../utils/date';
 
 export function WorkoutSession() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // Get optional date override from query params (e.g., ?date=2025-01-10)
+  const dateOverride = searchParams.get('date') || undefined;
 
   // Main workout session hook
   const {
@@ -47,6 +51,8 @@ export function WorkoutSession() {
     totalCompletedSets,
     isInitialized,
     handleSetChange,
+    handleCompleteSet,
+    handleCompleteRound,
     handleAddSet,
     handleAddSetToSuperset,
     handleDeleteSet,
@@ -58,7 +64,7 @@ export function WorkoutSession() {
     handleEndWorkout,
     handleCancelWorkout,
     getExerciseId,
-  } = useWorkoutSession();
+  } = useWorkoutSession(dateOverride);
 
   // Exercise notes from useWorkoutLogs
   const {
@@ -225,11 +231,8 @@ export function WorkoutSession() {
     if (!isGeminiInitialized() || exercisesWithSets.length === 0) return;
 
     exercisesWithSets.forEach((ex) => {
-      const exerciseId = getExerciseId(ex.exercise);
-      const exerciseName =
-        'exercise_name' in ex.exercise
-          ? ex.exercise.exercise_name
-          : ex.exercise.name;
+      const exerciseId = getExerciseId(ex);
+      const exerciseName = ex.exercise.name;
 
       if (
         ex.exerciseType === 'duration' ||
@@ -237,14 +240,9 @@ export function WorkoutSession() {
       )
         return;
 
-      const targetRepMin =
-        'target_rep_min' in ex.exercise ? (ex.exercise.target_rep_min ?? 8) : 8;
-      const targetRepMax =
-        'target_rep_max' in ex.exercise
-          ? (ex.exercise.target_rep_max ?? 12)
-          : 12;
-      const targetSets =
-        'target_sets' in ex.exercise ? (ex.exercise.target_sets ?? 3) : 3;
+      const targetRepMin = ex.workoutLogExercise.target_rep_min ?? 8;
+      const targetRepMax = ex.workoutLogExercise.target_rep_max ?? 12;
+      const targetSets = ex.workoutLogExercise.target_sets ?? 3;
 
       fetchExerciseCoaching(
         exerciseId,
@@ -335,10 +333,32 @@ export function WorkoutSession() {
     setDurationTimerData(null);
 
     // Start rest timer
-    if (!timerRunning) {
-      setTimerSeconds(timerInitialSeconds);
-      setTimerRunning(true);
-      setShowTimer(true);
+    startRestTimer();
+  };
+
+  // Helper to start rest timer after completing a set
+  const startRestTimer = () => {
+    setTimerSeconds(timerInitialSeconds);
+    setTimerRunning(true);
+    setShowTimer(true);
+  };
+
+  // Wrapper for completing a single set (starts rest timer)
+  const onCompleteSet = async (exerciseIndex: number, setIndex: number) => {
+    const success = await handleCompleteSet(exerciseIndex, setIndex);
+    if (success) {
+      startRestTimer();
+    }
+  };
+
+  // Wrapper for completing a superset round (starts rest timer)
+  const onCompleteRound = async (
+    exerciseIndices: number[],
+    roundNumber: number,
+  ) => {
+    const success = await handleCompleteRound(exerciseIndices, roundNumber);
+    if (success) {
+      startRestTimer();
     }
   };
 
@@ -412,7 +432,7 @@ export function WorkoutSession() {
           onClick={() => setShowEndWorkout(true)}
           className="p-2 hover:bg-slate-800 rounded-lg"
         >
-          <Save size={24} className="text-green-400" />
+          <Check size={24} className="text-green-400" />
         </button>
       </div>
 
@@ -469,6 +489,9 @@ export function WorkoutSession() {
                       });
                     }}
                     onSetChange={handleSetChange}
+                    onCompleteRound={(roundNumber) =>
+                      onCompleteRound(exerciseIndices, roundNumber)
+                    }
                     onDeleteRound={(roundNumber) =>
                       handleDeleteRound(exerciseIndices, roundNumber)
                     }
@@ -480,7 +503,7 @@ export function WorkoutSession() {
                       currentWeight,
                     ) => {
                       const exerciseId = getExerciseId(
-                        exercisesWithSets[exerciseIndex].exercise,
+                        exercisesWithSets[exerciseIndex],
                       );
                       handleOpenExerciseNotes(
                         exerciseId,
@@ -497,7 +520,7 @@ export function WorkoutSession() {
 
           // Single exercise
           const exerciseIndex = exercisesWithSets.indexOf(item);
-          const exerciseId = getExerciseId(item.exercise);
+          const exerciseId = getExerciseId(item);
 
           return (
             <Card key={`exercise-${item.exercise.id}`}>
@@ -509,6 +532,9 @@ export function WorkoutSession() {
                   onSetChange={(setIndex, field, value) =>
                     handleSetChange(exerciseIndex, setIndex, field, value)
                   }
+                  onCompleteSet={(setIndex) =>
+                    onCompleteSet(exerciseIndex, setIndex)
+                  }
                   onDeleteSet={(setIndex) =>
                     handleDeleteSet(exerciseIndex, setIndex)
                   }
@@ -517,10 +543,7 @@ export function WorkoutSession() {
                     handleStartDurationTimer(exerciseIndex, setIndex)
                   }
                   onOpenNotes={() => {
-                    const name =
-                      'exercise_name' in item.exercise
-                        ? item.exercise.exercise_name
-                        : item.exercise.name;
+                    const name = item.exercise.name;
                     handleOpenExerciseNotes(
                       exerciseId,
                       name,

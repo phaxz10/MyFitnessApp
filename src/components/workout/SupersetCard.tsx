@@ -28,6 +28,7 @@ interface SupersetCardProps {
     field: 'reps' | 'weight' | 'durationSeconds',
     value: string,
   ) => void;
+  onCompleteRound: (roundNumber: number) => void;
   onDeleteRound: (roundNumber: number) => void;
   onAddRound: () => void;
   onStartDurationTimer: (exerciseIndex: number, setIndex: number) => void;
@@ -36,7 +37,7 @@ interface SupersetCardProps {
     exerciseName: string,
     currentWeight: string,
   ) => void;
-  getExerciseId: (exercise: ExerciseWithSets['exercise']) => number;
+  getExerciseId: (ex: ExerciseWithSets) => number;
 }
 
 // Get exercise type icon
@@ -62,6 +63,7 @@ export function SupersetCard({
   coachingMap,
   onToggleExpand,
   onSetChange,
+  onCompleteRound,
   onDeleteRound,
   onAddRound,
   onStartDurationTimer,
@@ -71,9 +73,9 @@ export function SupersetCard({
   const maxSets = Math.max(...supersetExercises.map((ex) => ex.sets.length));
   const allExpanded = supersetExercises.every((ex) => ex.isExpanded);
 
-  // Calculate totals
-  const totalSavedSets = supersetExercises.reduce(
-    (sum, ex) => sum + ex.sets.filter((s) => s.id).length,
+  // Calculate totals based on completed field
+  const totalCompletedSets = supersetExercises.reduce(
+    (sum, ex) => sum + ex.sets.filter((s) => s.completed).length,
     0,
   );
   const totalSetsInSuperset = supersetExercises.reduce(
@@ -81,11 +83,11 @@ export function SupersetCard({
     0,
   );
 
-  // Check if a round is complete (all sets saved)
+  // Check if a round is complete (all sets completed)
   const isRoundComplete = (roundNumber: number): boolean => {
     return supersetExercises.every((ex) => {
       const set = ex.sets[roundNumber];
-      return set?.id;
+      return set?.completed;
     });
   };
 
@@ -100,10 +102,7 @@ export function SupersetCard({
         <div className="flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             {supersetExercises.map((ex, idx) => {
-              const exerciseName =
-                'exercise_name' in ex.exercise
-                  ? ex.exercise.exercise_name
-                  : ex.exercise.name;
+              const exerciseName = ex.exercise.name;
               return (
                 <div key={ex.exercise.id} className="flex items-center gap-1">
                   <span className="font-medium text-white">{exerciseName}</span>
@@ -116,7 +115,7 @@ export function SupersetCard({
             })}
           </div>
           <p className="text-slate-400 text-sm mt-1">
-            {totalSavedSets} / {totalSetsInSuperset} sets complete
+            {totalCompletedSets} / {totalSetsInSuperset} sets complete
           </p>
         </div>
         <div className="flex items-center">
@@ -132,10 +131,7 @@ export function SupersetCard({
       {allExpanded && (
         <div className="mb-4 flex flex-wrap gap-2">
           {supersetExercises.map((ex, localIdx) => {
-            const exerciseName =
-              'exercise_name' in ex.exercise
-                ? ex.exercise.exercise_name
-                : ex.exercise.name;
+            const exerciseName = ex.exercise.name;
             const currentWeight = ex.sets[0]?.weight || '0';
             const exerciseIndex = exerciseIndices[localIdx];
 
@@ -184,13 +180,25 @@ export function SupersetCard({
                     Round {roundNumber + 1}
                     {roundComplete && ' ✓'}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => onDeleteRound(roundNumber)}
-                    className="p-1 text-red-400/70 hover:text-red-400 hover:bg-red-900/30 rounded transition-colors"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {!roundComplete && (
+                      <button
+                        type="button"
+                        onClick={() => onCompleteRound(roundNumber)}
+                        className="px-2 py-1 text-xs bg-green-900/30 hover:bg-green-900/50 border border-green-700/50 rounded text-green-400 flex items-center gap-1.5 transition-colors"
+                      >
+                        <Check size={12} />
+                        Complete
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => onDeleteRound(roundNumber)}
+                      className="p-1 text-red-400/70 hover:text-red-400 hover:bg-red-900/30 rounded transition-colors"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Exercise Rows in Round */}
@@ -200,40 +208,29 @@ export function SupersetCard({
                     if (!set) return null;
 
                     const exerciseIndex = exerciseIndices[localIdx];
-                    const exerciseId = getExerciseId(ex.exercise);
-                    const exerciseName =
-                      'exercise_name' in ex.exercise
-                        ? ex.exercise.exercise_name
-                        : ex.exercise.name;
+                    const exerciseId = getExerciseId(ex);
+                    const exerciseName = ex.exercise.name;
                     const isDuration =
                       ex.exerciseType === 'duration' ||
                       ex.exerciseType === 'duration_weight';
                     const hasWeight =
                       ex.exerciseType === 'reps_weight' ||
                       ex.exerciseType === 'duration_weight';
-                    const isSaved = !!set.id;
+                    const isCompleted = set.completed;
                     const coaching = coachingMap.get(exerciseId);
                     const setCoaching = coaching?.sets?.[roundNumber];
 
-                    // Target info
-                    const targetRepMin =
-                      'target_rep_min' in ex.exercise
-                        ? ex.exercise.target_rep_min
-                        : null;
-                    const targetRepMax =
-                      'target_rep_max' in ex.exercise
-                        ? ex.exercise.target_rep_max
-                        : null;
+                    // Target info from workoutLogExercise
+                    const targetRepMin = ex.workoutLogExercise.target_rep_min;
+                    const targetRepMax = ex.workoutLogExercise.target_rep_max;
                     const targetDuration =
-                      'target_duration_seconds' in ex.exercise
-                        ? ex.exercise.target_duration_seconds
-                        : null;
+                      ex.workoutLogExercise.target_duration_seconds;
 
                     return (
                       <div
                         key={`${ex.exercise.id}-${roundNumber}`}
                         className={`flex items-center gap-2 py-1.5 px-2 rounded ${
-                          isSaved ? 'bg-green-900/20' : 'bg-slate-800/30'
+                          isCompleted ? 'bg-green-900/20' : 'bg-slate-800/30'
                         }`}
                       >
                         {/* Exercise Name (truncated) */}
@@ -244,7 +241,7 @@ export function SupersetCard({
                         {/* Weight Input */}
                         {hasWeight && (
                           <div className="flex items-center gap-1">
-                            {!isSaved &&
+                            {!isCompleted &&
                               getProgressionArrow(setCoaching?.weight)}
                             <Input
                               type="number"
@@ -259,6 +256,7 @@ export function SupersetCard({
                               }
                               className="w-14 h-7 text-center text-xs p-1"
                               placeholder="lbs"
+                              disabled={isCompleted}
                             />
                             <span className="text-slate-500 text-xs">lbs</span>
                           </div>
@@ -285,9 +283,10 @@ export function SupersetCard({
                               }
                               className="w-14 h-7 text-center text-xs p-1"
                               placeholder="sec"
+                              disabled={isCompleted}
                             />
                             <span className="text-slate-500 text-xs">sec</span>
-                            {!isSaved && targetDuration && (
+                            {!isCompleted && targetDuration && (
                               <span className="text-blue-400 text-xs">
                                 ({targetDuration}s)
                               </span>
@@ -295,7 +294,8 @@ export function SupersetCard({
                           </div>
                         ) : (
                           <div className="flex items-center gap-1">
-                            {!isSaved && getProgressionArrow(setCoaching?.reps)}
+                            {!isCompleted &&
+                              getProgressionArrow(setCoaching?.reps)}
                             <Input
                               type="number"
                               value={set.reps}
@@ -309,8 +309,9 @@ export function SupersetCard({
                               }
                               className="w-12 h-7 text-center text-xs p-1"
                               placeholder="reps"
+                              disabled={isCompleted}
                             />
-                            {!isSaved && targetRepMin && targetRepMax && (
+                            {!isCompleted && targetRepMin && targetRepMax && (
                               <span className="text-blue-400 text-xs whitespace-nowrap">
                                 ({targetRepMin}-{targetRepMax})
                               </span>
@@ -320,7 +321,7 @@ export function SupersetCard({
 
                         {/* Status indicator */}
                         <div className="ml-auto flex items-center gap-1">
-                          {isDuration && !isSaved && (
+                          {isDuration && !isCompleted && (
                             <button
                               type="button"
                               onClick={() =>
@@ -331,7 +332,7 @@ export function SupersetCard({
                               <Play size={14} />
                             </button>
                           )}
-                          {isSaved && (
+                          {isCompleted && (
                             <Check size={14} className="text-green-400" />
                           )}
                         </div>

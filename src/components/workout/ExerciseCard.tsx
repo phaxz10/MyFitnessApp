@@ -26,6 +26,7 @@ interface ExerciseCardProps {
     field: 'reps' | 'weight' | 'durationSeconds',
     value: string,
   ) => void;
+  onCompleteSet: (setIndex: number) => void;
   onDeleteSet: (setIndex: number) => void;
   onAddSet: () => void;
   onStartDurationTimer: (setIndex: number) => void;
@@ -55,16 +56,14 @@ export function ExerciseCard({
   coaching,
   onToggleExpand,
   onSetChange,
+  onCompleteSet,
   onDeleteSet,
   onAddSet,
   onStartDurationTimer,
   onOpenNotes,
   onRemoveExercise,
 }: ExerciseCardProps) {
-  const exerciseName =
-    'exercise_name' in exerciseData.exercise
-      ? exerciseData.exercise.exercise_name
-      : exerciseData.exercise.name;
+  const exerciseName = exerciseData.exercise.name;
 
   const isDuration =
     exerciseData.exerciseType === 'duration' ||
@@ -73,19 +72,11 @@ export function ExerciseCard({
     exerciseData.exerciseType === 'reps_weight' ||
     exerciseData.exerciseType === 'duration_weight';
 
-  // Get target info
-  const targetRepMin =
-    'target_rep_min' in exerciseData.exercise
-      ? exerciseData.exercise.target_rep_min
-      : null;
-  const targetRepMax =
-    'target_rep_max' in exerciseData.exercise
-      ? exerciseData.exercise.target_rep_max
-      : null;
+  // Get target info from workoutLogExercise
+  const targetRepMin = exerciseData.workoutLogExercise.target_rep_min;
+  const targetRepMax = exerciseData.workoutLogExercise.target_rep_max;
   const targetDuration =
-    'target_duration_seconds' in exerciseData.exercise
-      ? exerciseData.exercise.target_duration_seconds
-      : null;
+    exerciseData.workoutLogExercise.target_duration_seconds;
 
   const targetInfo = isDuration
     ? targetDuration
@@ -95,8 +86,10 @@ export function ExerciseCard({
       ? `${targetRepMin}-${targetRepMax} reps`
       : null;
 
-  // Count saved sets (those with DB id)
-  const savedSetsCount = exerciseData.sets.filter((s) => s.id).length;
+  // Count completed sets
+  const completedSetsCount = exerciseData.sets.filter(
+    (s) => s.completed,
+  ).length;
 
   return (
     <>
@@ -117,7 +110,7 @@ export function ExerciseCard({
         </div>
         <div className="flex items-center gap-2">
           <span className="text-slate-400 text-sm">
-            {savedSetsCount}/{exerciseData.sets.length}
+            {completedSetsCount}/{exerciseData.sets.length}
           </span>
           {exerciseData.isExpanded ? (
             <ChevronUp size={20} className="text-slate-400" />
@@ -161,21 +154,20 @@ export function ExerciseCard({
           <div className="space-y-1.5">
             {exerciseData.sets.map((set, setIndex) => {
               const setCoaching = coaching?.sets?.[setIndex];
-              const isSaved = !!set.id;
 
               return (
                 <SetRow
-                  key={set.tempId}
+                  key={set.id}
                   set={set}
                   setIndex={setIndex}
                   isDuration={isDuration}
                   hasWeight={hasWeight}
-                  isSaved={isSaved}
                   targetRepMin={targetRepMin}
                   targetRepMax={targetRepMax}
                   targetDuration={targetDuration}
                   setCoaching={setCoaching}
                   onSetChange={onSetChange}
+                  onComplete={() => onCompleteSet(setIndex)}
                   onDelete={() => onDeleteSet(setIndex)}
                   onStartTimer={() => onStartDurationTimer(setIndex)}
                 />
@@ -204,7 +196,6 @@ interface SetRowProps {
   setIndex: number;
   isDuration: boolean;
   hasWeight: boolean;
-  isSaved: boolean;
   targetRepMin: number | null;
   targetRepMax: number | null;
   targetDuration: number | null;
@@ -214,6 +205,7 @@ interface SetRowProps {
     field: 'reps' | 'weight' | 'durationSeconds',
     value: string,
   ) => void;
+  onComplete: () => void;
   onDelete: () => void;
   onStartTimer: () => void;
 }
@@ -223,19 +215,21 @@ function SetRow({
   setIndex,
   isDuration,
   hasWeight,
-  isSaved,
   targetRepMin,
   targetRepMax,
   targetDuration,
   setCoaching,
   onSetChange,
+  onComplete,
   onDelete,
   onStartTimer,
 }: SetRowProps) {
+  const isCompleted = set.completed;
+
   return (
     <div
       className={`flex items-center gap-2 py-1.5 px-2 rounded ${
-        isSaved ? 'bg-green-900/30' : 'bg-slate-800/50'
+        isCompleted ? 'bg-green-900/30' : 'bg-slate-800/50'
       }`}
     >
       {/* Set Number */}
@@ -246,13 +240,14 @@ function SetRow({
       {/* Weight Input */}
       {hasWeight && (
         <div className="flex items-center gap-1">
-          {!isSaved && getProgressionArrow(setCoaching?.weight)}
+          {!isCompleted && getProgressionArrow(setCoaching?.weight)}
           <Input
             type="number"
             value={set.weight}
             onChange={(e) => onSetChange(setIndex, 'weight', e.target.value)}
             className="w-16 h-8 text-center text-sm p-1"
             placeholder="lbs"
+            disabled={isCompleted}
           />
           <span className="text-slate-500 text-xs">lbs</span>
         </div>
@@ -272,23 +267,25 @@ function SetRow({
             }
             className="w-16 h-8 text-center text-sm p-1"
             placeholder="sec"
+            disabled={isCompleted}
           />
           <span className="text-slate-500 text-xs">sec</span>
-          {!isSaved && targetDuration && (
+          {!isCompleted && targetDuration && (
             <span className="text-blue-400 text-xs">({targetDuration}s)</span>
           )}
         </div>
       ) : (
         <div className="flex items-center gap-1">
-          {!isSaved && getProgressionArrow(setCoaching?.reps)}
+          {!isCompleted && getProgressionArrow(setCoaching?.reps)}
           <Input
             type="number"
             value={set.reps}
             onChange={(e) => onSetChange(setIndex, 'reps', e.target.value)}
             className="w-14 h-8 text-center text-sm p-1"
             placeholder="reps"
+            disabled={isCompleted}
           />
-          {!isSaved && targetRepMin && targetRepMax && (
+          {!isCompleted && targetRepMin && targetRepMax && (
             <span className="text-blue-400 text-xs whitespace-nowrap">
               ({targetRepMin}-{targetRepMax})
             </span>
@@ -298,23 +295,35 @@ function SetRow({
 
       {/* Action buttons */}
       <div className="flex items-center gap-1 ml-auto">
-        <button
-          type="button"
-          onClick={onDelete}
-          className="p-1.5 text-red-400/70 hover:text-red-400 hover:bg-red-900/30 rounded transition-colors"
-        >
-          <Trash2 size={16} />
-        </button>
-        {isDuration && !isSaved && (
-          <button
-            type="button"
-            onClick={onStartTimer}
-            className="p-1.5 text-green-400 hover:bg-green-900/30 rounded transition-colors"
-          >
-            <Play size={16} />
-          </button>
+        {!isCompleted && (
+          <>
+            <button
+              type="button"
+              onClick={onDelete}
+              className="p-1.5 text-red-400/70 hover:text-red-400 hover:bg-red-900/30 rounded transition-colors"
+            >
+              <Trash2 size={16} />
+            </button>
+            {isDuration ? (
+              <button
+                type="button"
+                onClick={onStartTimer}
+                className="p-1.5 text-green-400 hover:bg-green-900/30 rounded transition-colors"
+              >
+                <Play size={16} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onComplete}
+                className="p-1.5 text-green-400/70 hover:text-green-400 hover:bg-green-900/30 rounded transition-colors"
+              >
+                <Check size={16} />
+              </button>
+            )}
+          </>
         )}
-        {isSaved && <Check size={16} className="text-green-400 mx-1.5" />}
+        {isCompleted && <Check size={16} className="text-green-400 mx-1.5" />}
       </div>
     </div>
   );

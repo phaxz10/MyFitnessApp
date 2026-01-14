@@ -73,10 +73,10 @@ export function useWorkoutSession(dateOverride?: string) {
     updateSet,
     completeSet,
     uncompleteSet,
+    deleteSet,
     addSetToExercise,
     removeSetFromExercise,
     addRoundToSuperset,
-    removeRoundFromSuperset,
     getWorkoutSets,
     getLastPerformance,
     getWorkoutLogExercises,
@@ -771,10 +771,10 @@ export function useWorkoutSession(dateOverride?: string) {
     [removeSetFromExercise, setLoading],
   );
 
-  // Delete a round from all exercises in a superset
+  // Delete a specific round from all exercises in a superset
   // If only 1 round left, delete the entire superset (all exercises)
   const handleDeleteRound = useCallback(
-    async (supersetExerciseIndices: number[], _roundNumber: number) => {
+    async (supersetExerciseIndices: number[], roundNumber: number) => {
       const loadingKey = `deleteRound:${supersetExerciseIndices[0]}`;
       const currentExercises = exercisesRef.current;
       if (!activeWorkout) return;
@@ -808,18 +808,38 @@ export function useWorkoutSession(dateOverride?: string) {
           return;
         }
 
-        await removeRoundFromSuperset(activeWorkout.id, supersetGroupId);
+        // Collect set IDs to delete from local state
+        const setIdsToDelete: number[] = [];
+        for (const exerciseIndex of supersetExerciseIndices) {
+          const exerciseData = currentExercises[exerciseIndex];
+          if (exerciseData && exerciseData.sets[roundNumber]) {
+            setIdsToDelete.push(exerciseData.sets[roundNumber].id);
+          }
+        }
 
-        // Update local state - remove the last set from each exercise
+        // Delete each set by ID
+        for (const setId of setIdsToDelete) {
+          await deleteSet(setId);
+        }
+
+        // Update local state - remove the specific round and renumber remaining sets
         setExercisesWithSets((prev) => {
           const updated = [...prev];
 
           supersetExerciseIndices.forEach((exerciseIndex) => {
             const exerciseData = updated[exerciseIndex];
             if (exerciseData && exerciseData.sets.length > 1) {
+              // Remove the specific round and renumber remaining sets
+              const newSets = exerciseData.sets
+                .filter((_, idx) => idx !== roundNumber)
+                .map((set, idx) => ({
+                  ...set,
+                  set_number: idx + 1,
+                }));
+
               updated[exerciseIndex] = {
                 ...exerciseData,
-                sets: exerciseData.sets.slice(0, -1),
+                sets: newSets,
               };
             }
           });
@@ -832,12 +852,7 @@ export function useWorkoutSession(dateOverride?: string) {
         setLoading(loadingKey, false);
       }
     },
-    [
-      activeWorkout,
-      removeRoundFromSuperset,
-      deleteWorkoutLogExercise,
-      setLoading,
-    ],
+    [activeWorkout, deleteSet, deleteWorkoutLogExercise, setLoading],
   );
 
   // Remove an exercise entirely (from workout_log_exercises and all its sets)

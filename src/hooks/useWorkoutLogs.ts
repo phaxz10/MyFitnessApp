@@ -581,7 +581,8 @@ export function useWorkoutLogs() {
   );
 
   // Remove the last round from a superset (deletes from DB for ALL exercises)
-  // Must remove the same round number from all exercises in the superset
+  // Note: This function is kept for backwards compatibility but handleDeleteRound
+  // in useWorkoutSession now deletes by specific set IDs instead
   const removeRoundFromSuperset = useCallback(
     async (workoutLogId: number, supersetGroupId: string): Promise<void> => {
       const db = await getDB();

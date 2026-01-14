@@ -1,5 +1,5 @@
-import { getDB } from './db';
 import { getLocalDateString } from '../utils/date';
+import { getDB } from './db';
 
 interface BackupData {
   version: string;
@@ -13,6 +13,7 @@ interface BackupData {
     program_sessions: unknown[];
     program_exercises: unknown[];
     workout_logs: unknown[];
+    workout_log_exercises: unknown[];
     workout_sets: unknown[];
     exercise_notes: unknown[];
     ai_goal_reviews: unknown[];
@@ -72,6 +73,7 @@ export async function exportData(
     programSessions,
     programExercises,
     workoutLogs,
+    workoutLogExercises,
     workoutSets,
     exerciseNotes,
     aiGoalReviews,
@@ -108,6 +110,11 @@ export async function exportData(
       : Promise.resolve({ rows: [] }),
     options.workoutHistory
       ? db.query(
+          'SELECT * FROM workout_log_exercises ORDER BY workout_log_id, order_index',
+        )
+      : Promise.resolve({ rows: [] }),
+    options.workoutHistory
+      ? db.query(
           'SELECT * FROM workout_sets ORDER BY workout_log_id, set_number',
         )
       : Promise.resolve({ rows: [] }),
@@ -128,7 +135,7 @@ export async function exportData(
   ]);
 
   const backup: BackupData = {
-    version: '1.5', // Bumped version for workout_logs status field
+    version: '1.6', // Bumped version for workout_log_exercises table and workout_sets updates
     exported_at: new Date().toISOString(),
     data: {
       user_profile: userProfile.rows,
@@ -139,6 +146,7 @@ export async function exportData(
       program_sessions: programSessions.rows,
       program_exercises: programExercises.rows,
       workout_logs: workoutLogs.rows,
+      workout_log_exercises: workoutLogExercises.rows,
       workout_sets: workoutSets.rows,
       exercise_notes: exerciseNotes.rows,
       ai_goal_reviews: aiGoalReviews.rows,
@@ -180,6 +188,8 @@ export async function importData(jsonString: string): Promise<void> {
   if (hasData(data.ai_goal_reviews)) tablesToClear.push('ai_goal_reviews');
   if (hasData(data.exercise_notes)) tablesToClear.push('exercise_notes');
   if (hasData(data.workout_sets)) tablesToClear.push('workout_sets');
+  if (hasData(data.workout_log_exercises))
+    tablesToClear.push('workout_log_exercises');
   if (hasData(data.workout_logs)) tablesToClear.push('workout_logs');
   if (hasData(data.program_exercises)) tablesToClear.push('program_exercises');
   if (hasData(data.program_sessions)) tablesToClear.push('program_sessions');
@@ -371,21 +381,46 @@ export async function importData(jsonString: string): Promise<void> {
     }
   }
 
-  // Workout sets (updated with duration_seconds)
-  if (hasData(data.workout_sets)) {
-    for (const row of data.workout_sets as Record<string, unknown>[]) {
+  // Workout log exercises (independent copy of exercises for a specific workout)
+  if (hasData(data.workout_log_exercises)) {
+    for (const row of data.workout_log_exercises as Record<string, unknown>[]) {
       await db.query(
-        `INSERT INTO workout_sets (id, workout_log_id, exercise_id, set_number, reps, weight_kg, duration_seconds, notes, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        `INSERT INTO workout_log_exercises (id, workout_log_id, exercise_id, order_index, superset_group_id, target_sets, target_rep_min, target_rep_max, target_duration_seconds, notes, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           row.id,
           row.workout_log_id,
           row.exercise_id,
+          row.order_index,
+          row.superset_group_id ?? null,
+          row.target_sets ?? null,
+          row.target_rep_min ?? null,
+          row.target_rep_max ?? null,
+          row.target_duration_seconds ?? null,
+          row.notes ?? null,
+          row.created_at,
+        ],
+      );
+    }
+  }
+
+  // Workout sets (updated with duration_seconds, workout_log_exercise_id, and completed_at)
+  if (hasData(data.workout_sets)) {
+    for (const row of data.workout_sets as Record<string, unknown>[]) {
+      await db.query(
+        `INSERT INTO workout_sets (id, workout_log_id, exercise_id, workout_log_exercise_id, set_number, reps, weight_kg, duration_seconds, notes, completed_at, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [
+          row.id,
+          row.workout_log_id,
+          row.exercise_id,
+          row.workout_log_exercise_id ?? null,
           row.set_number,
-          row.reps,
-          row.weight_kg,
+          row.reps ?? null,
+          row.weight_kg ?? null,
           row.duration_seconds ?? null,
-          row.notes,
+          row.notes ?? null,
+          row.completed_at ?? null,
           row.created_at,
         ],
       );
@@ -506,6 +541,11 @@ export async function importData(jsonString: string): Promise<void> {
   if (hasData(data.workout_logs)) {
     sequenceResets.push(
       "SELECT setval('workout_logs_id_seq', COALESCE((SELECT MAX(id) FROM workout_logs), 0) + 1, false)",
+    );
+  }
+  if (hasData(data.workout_log_exercises)) {
+    sequenceResets.push(
+      "SELECT setval('workout_log_exercises_id_seq', COALESCE((SELECT MAX(id) FROM workout_log_exercises), 0) + 1, false)",
     );
   }
   if (hasData(data.workout_sets)) {

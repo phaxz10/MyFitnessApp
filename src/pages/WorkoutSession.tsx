@@ -1192,8 +1192,8 @@ export function WorkoutSession() {
                         />
                         <span className="text-slate-500 text-xs">sec</span>
                         {/* Show target duration hint inline */}
-                        {targetDuration && !set.completed && (
-                          <span className="text-blue-400/60 text-xs">
+                        {!set.completed && targetDuration && (
+                          <span className="text-blue-400 text-xs">
                             ({targetDuration}s)
                           </span>
                         )}
@@ -1218,8 +1218,8 @@ export function WorkoutSession() {
                           placeholder="reps"
                         />
                         {/* Show target reps hint inline */}
-                        {targetRepMin && targetRepMax && !set.completed && (
-                          <span className="text-blue-400/60 text-xs whitespace-nowrap">
+                        {!set.completed && targetRepMin && targetRepMax && (
+                          <span className="text-blue-400 text-xs whitespace-nowrap">
                             ({targetRepMin}-{targetRepMax})
                           </span>
                         )}
@@ -1538,8 +1538,8 @@ export function WorkoutSession() {
                                 sec
                               </span>
                               {/* Show target duration hint */}
-                              {targetDuration && !set.completed && (
-                                <span className="text-blue-400/60 text-xs">
+                              {!set.completed && targetDuration && (
+                                <span className="text-blue-400 text-xs">
                                   ({targetDuration}s)
                                 </span>
                               )}
@@ -1574,12 +1574,12 @@ export function WorkoutSession() {
                                     ? ex.exercise.target_rep_max
                                     : null;
                                 if (
+                                  !set.completed &&
                                   targetRepMin &&
-                                  targetRepMax &&
-                                  !set.completed
+                                  targetRepMax
                                 ) {
                                   return (
-                                    <span className="text-blue-400/60 text-xs whitespace-nowrap">
+                                    <span className="text-blue-400 text-xs whitespace-nowrap">
                                       ({targetRepMin}-{targetRepMax})
                                     </span>
                                   );

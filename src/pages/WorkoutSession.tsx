@@ -873,7 +873,15 @@ export function WorkoutSession() {
   ) => {
     if (!activeWorkout) return;
 
-    // Process each exercise in the superset sequentially
+    // Build array of exercises to complete (non-duration with valid reps)
+    const exercisesToComplete: Array<{
+      exerciseIndex: number;
+      exerciseId: number;
+      reps: number;
+      weight: number | null;
+      notes: string | undefined;
+    }> = [];
+
     for (const exerciseIndex of supersetExerciseIndices) {
       const exerciseData = exercisesWithSets[exerciseIndex];
       const set = exerciseData.sets[roundNumber];
@@ -893,8 +901,7 @@ export function WorkoutSession() {
         exerciseData.exerciseType === 'reps_weight' ||
         exerciseData.exerciseType === 'duration_weight';
 
-      // For duration exercises, we can't auto-complete (need timer)
-      // So skip them - user needs to complete individually
+      // Skip duration exercises - user needs to complete individually with timer
       if (isDuration) continue;
 
       const reps = parseInt(set.reps, 10) || 0;
@@ -903,37 +910,59 @@ export function WorkoutSession() {
       // Skip if no reps entered
       if (reps === 0) continue;
 
-      try {
-        const newSet = await addSet(
-          activeWorkout.id,
-          exerciseId,
-          reps,
-          hasWeight ? weight : null,
-          null,
-          exerciseData.notes || undefined,
-        );
-
-        // Update state for this specific exercise/set
-        setExercisesWithSets((prev) => {
-          const updated = [...prev];
-          updated[exerciseIndex] = {
-            ...updated[exerciseIndex],
-            sets: updated[exerciseIndex].sets.map((s, i) =>
-              i === roundNumber ? { ...s, id: newSet.id, completed: true } : s,
-            ),
-          };
-          return updated;
-        });
-      } catch (err) {
-        console.error(`Failed to log set for exercise ${exerciseId}:`, err);
-      }
+      exercisesToComplete.push({
+        exerciseIndex,
+        exerciseId,
+        reps,
+        weight: hasWeight ? weight : null,
+        notes: exerciseData.notes || undefined,
+      });
     }
 
-    // Auto-start rest timer after completing the round
-    if (!timerRunning) {
-      setTimerSeconds(timerInitialSeconds);
-      setTimerRunning(true);
-      setShowTimer(true);
+    if (exercisesToComplete.length === 0) return;
+
+    try {
+      // Save all sets in parallel
+      const results = await Promise.all(
+        exercisesToComplete.map((ex) =>
+          addSet(
+            activeWorkout.id,
+            ex.exerciseId,
+            ex.reps,
+            ex.weight,
+            null,
+            ex.notes,
+          ).then((newSet) => ({
+            exerciseIndex: ex.exerciseIndex,
+            setId: newSet.id,
+          })),
+        ),
+      );
+
+      // Update UI state in one batch
+      setExercisesWithSets((prev) => {
+        const updated = [...prev];
+        for (const result of results) {
+          updated[result.exerciseIndex] = {
+            ...updated[result.exerciseIndex],
+            sets: updated[result.exerciseIndex].sets.map((s, i) =>
+              i === roundNumber
+                ? { ...s, id: result.setId, completed: true }
+                : s,
+            ),
+          };
+        }
+        return updated;
+      });
+
+      // Auto-start rest timer after completing the round
+      if (!timerRunning) {
+        setTimerSeconds(timerInitialSeconds);
+        setTimerRunning(true);
+        setShowTimer(true);
+      }
+    } catch (err) {
+      console.error('Failed to complete round:', err);
     }
   };
 

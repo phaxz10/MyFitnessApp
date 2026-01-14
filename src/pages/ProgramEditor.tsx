@@ -1,32 +1,32 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { useForm, useFieldArray, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
 import {
   ArrowLeft,
-  Plus,
-  Trash2,
-  GripVertical,
   ChevronDown,
   ChevronUp,
-  Save,
-  X,
-  Link,
   Clock,
   Dumbbell,
+  GripVertical,
+  Link,
+  Plus,
+  Save,
   Timer,
+  Trash2,
+  X,
 } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { useFieldArray, useForm, useWatch } from 'react-hook-form';
+import { useNavigate, useParams } from 'react-router-dom';
+import { z } from 'zod';
 import {
+  Button,
   Card,
   CardContent,
-  Button,
   Input,
   Modal,
   TextArea,
 } from '../components/ui';
-import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
 import { useExercises } from '../hooks/useExercises';
+import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
 import type { Exercise, ExerciseType } from '../types';
 
 const DAY_OPTIONS = [
@@ -265,25 +265,6 @@ export function ProgramEditor() {
     }
   };
 
-  const handleUpdateExercise = (
-    sessionIndex: number,
-    exerciseIndex: number,
-    updates: Partial<ExerciseFormData>,
-  ) => {
-    const currentSession = watchedSessions[sessionIndex];
-    if (currentSession) {
-      const updatedExercises = [...currentSession.exercises];
-      updatedExercises[exerciseIndex] = {
-        ...updatedExercises[exerciseIndex],
-        ...updates,
-      };
-      updateSessionField(sessionIndex, {
-        ...currentSession,
-        exercises: updatedExercises,
-      });
-    }
-  };
-
   const handleCreateSuperset = (
     sessionIndex: number,
     exerciseIndex: number,
@@ -291,12 +272,20 @@ export function ProgramEditor() {
     if (selectedForSuperset === null) {
       // First exercise selected
       setSelectedForSuperset({ sessionIndex, exerciseIndex });
-    } else if (selectedForSuperset.sessionIndex === sessionIndex) {
-      // Second exercise selected in same session - create superset
+    } else if (
+      selectedForSuperset.sessionIndex === sessionIndex &&
+      selectedForSuperset.exerciseIndex !== exerciseIndex
+    ) {
+      // Second exercise selected in same session (and NOT the same exercise) - create superset
       const currentSession = watchedSessions[sessionIndex];
       if (currentSession) {
         const supersetId = generateSupersetId();
         const updatedExercises = [...currentSession.exercises];
+
+        // Use the first exercise's targetSets for both exercises in the superset
+        const sharedTargetSets =
+          updatedExercises[selectedForSuperset.exerciseIndex].targetSets;
+
         updatedExercises[selectedForSuperset.exerciseIndex] = {
           ...updatedExercises[selectedForSuperset.exerciseIndex],
           supersetGroupId: supersetId,
@@ -304,6 +293,7 @@ export function ProgramEditor() {
         updatedExercises[exerciseIndex] = {
           ...updatedExercises[exerciseIndex],
           supersetGroupId: supersetId,
+          targetSets: sharedTargetSets, // Sync target sets
         };
         updateSessionField(sessionIndex, {
           ...currentSession,
@@ -311,19 +301,57 @@ export function ProgramEditor() {
         });
       }
       setSelectedForSuperset(null);
+    } else if (
+      selectedForSuperset.sessionIndex === sessionIndex &&
+      selectedForSuperset.exerciseIndex === exerciseIndex
+    ) {
+      // Same exercise clicked again - cancel selection
+      setSelectedForSuperset(null);
     } else {
       // Different session - reset and select new
       setSelectedForSuperset({ sessionIndex, exerciseIndex });
     }
   };
 
-  const handleRemoveFromSuperset = (
+  // Break entire superset - removes superset_group_id from ALL exercises in the group
+  const handleBreakSuperset = (
     sessionIndex: number,
-    exerciseIndex: number,
+    supersetGroupId: string,
   ) => {
-    handleUpdateExercise(sessionIndex, exerciseIndex, {
-      supersetGroupId: null,
-    });
+    const currentSession = watchedSessions[sessionIndex];
+    if (currentSession) {
+      const updatedExercises = currentSession.exercises.map((exercise) => {
+        if (exercise.supersetGroupId === supersetGroupId) {
+          return { ...exercise, supersetGroupId: null };
+        }
+        return exercise;
+      });
+      updateSessionField(sessionIndex, {
+        ...currentSession,
+        exercises: updatedExercises,
+      });
+    }
+  };
+
+  // Update target sets for all exercises in a superset
+  const handleUpdateSupersetSets = (
+    sessionIndex: number,
+    supersetGroupId: string,
+    newTargetSets: number,
+  ) => {
+    const currentSession = watchedSessions[sessionIndex];
+    if (currentSession) {
+      const updatedExercises = currentSession.exercises.map((exercise) => {
+        if (exercise.supersetGroupId === supersetGroupId) {
+          return { ...exercise, targetSets: newTargetSets };
+        }
+        return exercise;
+      });
+      updateSessionField(sessionIndex, {
+        ...currentSession,
+        exercises: updatedExercises,
+      });
+    }
   };
 
   // Group exercises by superset for visual display
@@ -583,7 +611,7 @@ export function ProgramEditor() {
             </p>
           </div>
 
-          {/* Superset Button */}
+          {/* Superset Button - only show when NOT in superset */}
           {!isInSuperset && (
             <button
               type="button"
@@ -603,19 +631,7 @@ export function ProgramEditor() {
             </button>
           )}
 
-          {isInSuperset && (
-            <button
-              type="button"
-              onClick={() =>
-                handleRemoveFromSuperset(sessionIndex, exerciseIndex)
-              }
-              className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-600 rounded transition-colors"
-              title="Remove from superset"
-            >
-              <X size={14} />
-            </button>
-          )}
-
+          {/* Delete button - always visible */}
           <button
             type="button"
             onClick={() => handleDeleteExercise(sessionIndex, exerciseIndex)}
@@ -627,19 +643,21 @@ export function ProgramEditor() {
 
         {/* Exercise Configuration */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Sets */}
-          <div className="flex items-center gap-1">
-            <span className="text-slate-400 text-xs">Sets:</span>
-            <Input
-              type="number"
-              {...register(
-                `sessions.${sessionIndex}.exercises.${exerciseIndex}.targetSets`,
-                { valueAsNumber: true },
-              )}
-              className="w-14 text-center p-1 h-7 text-sm"
-              min={1}
-            />
-          </div>
+          {/* Sets - only show when NOT in superset (superset has shared sets) */}
+          {!isInSuperset && (
+            <div className="flex items-center gap-1">
+              <span className="text-slate-400 text-xs">Sets:</span>
+              <Input
+                type="number"
+                {...register(
+                  `sessions.${sessionIndex}.exercises.${exerciseIndex}.targetSets`,
+                  { valueAsNumber: true },
+                )}
+                className="w-14 text-center p-1 h-7 text-sm"
+                min={1}
+              />
+            </div>
+          )}
 
           {/* Reps (for non-duration exercises) */}
           {!isDuration && (
@@ -841,14 +859,57 @@ export function ProgramEditor() {
                                   key={group.supersetId}
                                   className="border-l-4 border-purple-500 pl-3 space-y-2"
                                 >
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <Link
-                                      size={14}
-                                      className="text-purple-400"
-                                    />
-                                    <span className="text-purple-400 text-xs font-medium uppercase">
-                                      Superset
-                                    </span>
+                                  {/* Superset Header with break button and shared sets */}
+                                  <div className="flex items-center justify-between mb-1">
+                                    <div className="flex items-center gap-2">
+                                      <Link
+                                        size={14}
+                                        className="text-purple-400"
+                                      />
+                                      <span className="text-purple-400 text-xs font-medium uppercase">
+                                        Superset
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {/* Shared Sets field for superset */}
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-slate-400 text-xs">
+                                          Sets:
+                                        </span>
+                                        <Input
+                                          type="number"
+                                          value={
+                                            group.exercises[0]?.exercise
+                                              .targetSets || 3
+                                          }
+                                          onChange={(e) => {
+                                            const newSets =
+                                              parseInt(e.target.value) || 1;
+                                            handleUpdateSupersetSets(
+                                              sessionIndex,
+                                              group.supersetId!,
+                                              newSets,
+                                            );
+                                          }}
+                                          className="w-14 text-center p-1 h-7 text-sm"
+                                          min={1}
+                                        />
+                                      </div>
+                                      {/* Break superset button */}
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleBreakSuperset(
+                                            sessionIndex,
+                                            group.supersetId!,
+                                          )
+                                        }
+                                        className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-600 rounded transition-colors"
+                                        title="Break superset"
+                                      >
+                                        <X size={14} />
+                                      </button>
+                                    </div>
                                   </div>
                                   {group.exercises.map(({ exercise, index }) =>
                                     renderExerciseCard(

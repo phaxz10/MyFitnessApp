@@ -112,45 +112,20 @@ export function useWorkoutSession(dateOverride?: string) {
   // Initialize exercises from workout_log_exercises and load pre-created sets
   useEffect(() => {
     const initExercises = async () => {
-      console.log(
-        '[initExercises] Starting. activeWorkout:',
-        activeWorkout?.id,
-        'isInitialized:',
-        isInitialized,
-        'allExercises.length:',
-        allExercises.length,
-      );
       if (!activeWorkout || !isInitialized) return;
       if (!allExercises.length) return; // Wait for exercises to load
 
       // Only initialize once! After that, local state is the source of truth
-      if (hasInitializedExercises.current) {
-        console.log('[initExercises] Already initialized, skipping');
-        return;
-      }
+      if (hasInitializedExercises.current) return;
       hasInitializedExercises.current = true;
-      console.log(
-        '[initExercises] First initialization for workout',
-        activeWorkout.id,
-      );
 
       // Get workout log exercises (structure)
       const workoutLogExercises = await getWorkoutLogExercises(
         activeWorkout.id,
       );
-      console.log(
-        '[initExercises] workoutLogExercises:',
-        workoutLogExercises.length,
-        workoutLogExercises,
-      );
 
       // Get all workout sets (pre-created, may have values or be empty)
       const allSets = await getWorkoutSets(activeWorkout.id);
-      console.log(
-        '[initExercises] allSets from getWorkoutSets:',
-        allSets.length,
-        allSets,
-      );
 
       // Group sets by workout_log_exercise_id
       const setsByWorkoutLogExercise = allSets.reduce(

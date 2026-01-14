@@ -1,41 +1,43 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
-  Dumbbell,
-  Plus,
-  Play,
   Calendar,
-  ChevronRight,
-  MoreVertical,
-  Trash2,
-  Edit,
   CheckCircle2,
+  ChevronRight,
   Clock,
+  Dumbbell,
+  Edit,
+  MoreVertical,
+  Play,
+  Plus,
   Sparkles,
+  Trash2,
   TrendingUp,
 } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ProgramGeneratorWizard } from '../components/program-generator';
 import {
+  Button,
   Card,
   CardContent,
-  Button,
   Modal,
   WorkoutSkeleton,
 } from '../components/ui';
-import { ProgramGeneratorWizard } from '../components/program-generator';
-import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
 import {
   useWorkoutLogs,
   type WorkoutLogWithSets,
 } from '../hooks/useWorkoutLogs';
-import { isToday, isYesterday, parseLocalTimestamp } from '../utils/date';
+import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
 import type {
-  WorkoutProgram,
   ProgramSessionWithExercises,
+  WorkoutProgram,
   WorkoutStatus,
 } from '../types';
+import { isToday, isYesterday, parseLocalTimestamp } from '../utils/date';
 
 export function Workout() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const dateParam = searchParams.get('date'); // YYYY-MM-DD format for logging missed sessions
   const {
     programs,
     activeProgram,
@@ -50,7 +52,7 @@ export function Workout() {
     fetchLogs,
     resumeWorkout,
     startWorkout,
-    getTodaySessionStatus,
+    getSessionStatusForDate,
   } = useWorkoutLogs();
 
   const [showProgramMenu, setShowProgramMenu] = useState<number | null>(null);
@@ -68,10 +70,14 @@ export function Workout() {
   }>({ hasWorkout: false, status: null, workoutId: null });
   const [isLoading, setIsLoading] = useState(true);
 
-  // Check today's session status
-  const checkTodaySessionStatus = useCallback(async () => {
+  // Check session status for the target date (today or dateParam for missed sessions)
+  const checkSessionStatus = useCallback(async () => {
     if (todaySession) {
-      const status = await getTodaySessionStatus(todaySession.id);
+      // Use dateParam if provided (for missed workouts), otherwise check today
+      const status = await getSessionStatusForDate(
+        todaySession.id,
+        dateParam || undefined,
+      );
       setTodaySessionStatus(status);
     } else {
       setTodaySessionStatus({
@@ -80,7 +86,7 @@ export function Workout() {
         workoutId: null,
       });
     }
-  }, [todaySession, getTodaySessionStatus]);
+  }, [todaySession, getSessionStatusForDate, dateParam]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -99,36 +105,43 @@ export function Workout() {
     loadData();
   }, [fetchPrograms, fetchActiveProgram, fetchLogs, resumeWorkout]);
 
-  // Find today's session from active program
+  // Find today's session from active program (or session for dateParam if provided)
   useEffect(() => {
     if (activeProgram) {
-      const today = new Date().getDay();
+      // If dateParam is provided, find the session for that date's day of week
+      const targetDate = dateParam
+        ? new Date(dateParam + 'T12:00:00')
+        : new Date();
+      const dayOfWeek = targetDate.getDay();
       const session = activeProgram.sessions.find(
-        (s) => s.day_of_week === today,
+        (s) => s.day_of_week === dayOfWeek,
       );
       setTodaySession(session || null);
     } else {
       setTodaySession(null);
     }
-  }, [activeProgram]);
+  }, [activeProgram, dateParam]);
 
-  // Check status when todaySession changes
+  // Check status when todaySession or dateParam changes
   useEffect(() => {
-    checkTodaySessionStatus();
-  }, [checkTodaySessionStatus]);
+    checkSessionStatus();
+  }, [checkSessionStatus]);
 
   const handleStartWorkout = async (session?: ProgramSessionWithExercises) => {
     if (activeWorkout) {
       // Resume existing workout
       navigate('/workout/session');
     } else if (session && activeProgram) {
-      // Start scheduled workout
-      await startWorkout(activeProgram.id, session.id);
-      navigate('/workout/session');
+      // Start scheduled workout (with optional date override for missed sessions)
+      await startWorkout(activeProgram.id, session.id, dateParam || undefined);
+      // Clear the date param and navigate to session
+      setSearchParams({});
+      navigate('/workout/session' + (dateParam ? `?date=${dateParam}` : ''));
     } else {
       // Start empty workout
-      await startWorkout();
-      navigate('/workout/session');
+      await startWorkout(null, null, dateParam || undefined);
+      setSearchParams({});
+      navigate('/workout/session' + (dateParam ? `?date=${dateParam}` : ''));
     }
   };
 
@@ -255,7 +268,11 @@ export function Workout() {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Calendar size={18} className="text-blue-400" />
-                <span className="text-slate-400 text-sm">Today's Workout</span>
+                <span className="text-slate-400 text-sm">
+                  {dateParam
+                    ? `Workout for ${formatDate(dateParam)}`
+                    : "Today's Workout"}
+                </span>
               </div>
               <span className="text-xs text-slate-500">
                 {activeProgram.name}
@@ -293,7 +310,9 @@ export function Workout() {
                 {todaySessionStatus.status === 'completed' ? (
                   <div className="space-y-2">
                     <p className="text-green-400 text-sm text-center mb-2">
-                      Great job! You've completed today's scheduled workout.
+                      {dateParam
+                        ? `This workout has already been logged for ${formatDate(dateParam)}.`
+                        : "Great job! You've completed today's scheduled workout."}
                     </p>
                     <Button
                       variant="secondary"
@@ -309,15 +328,19 @@ export function Workout() {
                     onClick={() => handleStartWorkout(todaySession)}
                   >
                     <Play size={18} className="mr-2" />
-                    Start Workout
+                    {dateParam ? 'Log Missed Workout' : 'Start Workout'}
                   </Button>
                 )}
               </>
             ) : (
               <div className="text-center py-4">
-                <p className="text-slate-400 mb-2">Rest Day</p>
+                <p className="text-slate-400 mb-2">
+                  {dateParam ? 'No Session Scheduled' : 'Rest Day'}
+                </p>
                 <p className="text-slate-500 text-sm">
-                  No workout scheduled for today
+                  {dateParam
+                    ? `No workout was scheduled for ${formatDate(dateParam)}`
+                    : 'No workout scheduled for today'}
                 </p>
                 <Button
                   variant="secondary"

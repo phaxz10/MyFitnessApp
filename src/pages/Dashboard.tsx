@@ -700,7 +700,7 @@ export function Dashboard() {
                 {selectedDay.isScheduledWorkoutDay &&
                   !selectedDay.hasWorkout && (
                     <Link
-                      to="/workout"
+                      to={`/workout?date=${selectedDay.date}`}
                       onClick={() => setSelectedDay(null)}
                       className="w-full flex items-center gap-3 p-3 bg-slate-700/50 hover:bg-slate-700 rounded-lg transition-colors"
                     >

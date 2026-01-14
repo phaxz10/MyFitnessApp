@@ -12,13 +12,10 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button, Card, CardContent, Modal } from '../components/ui';
+import { useWorkoutLogs } from '../hooks/useWorkoutLogs';
 import { getDB } from '../services/db';
 import type { WorkoutLog, WorkoutSetWithExercise } from '../types';
-import {
-  getLocalDateString,
-  getLocalTimestamp,
-  parseLocalTimestamp,
-} from '../utils/date';
+import { parseLocalTimestamp } from '../utils/date';
 
 interface WorkoutLogWithDetails extends WorkoutLog {
   session_name?: string;
@@ -29,6 +26,7 @@ interface WorkoutLogWithDetails extends WorkoutLog {
 export function WorkoutDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { startWorkout, deleteLog } = useWorkoutLogs();
   const [workout, setWorkout] = useState<WorkoutLogWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [isEditingDuration, setIsEditingDuration] = useState(false);
@@ -184,23 +182,30 @@ export function WorkoutDetail() {
     if (!workout) return;
 
     try {
-      const db = await getDB();
+      // Delete the old workout using the hook (handles cleanup properly)
+      await deleteLog(workout.id);
 
-      // Delete the old workout
-      await db.query('DELETE FROM workout_logs WHERE id = $1', [workout.id]);
+      // Extract just the YYYY-MM-DD part from the date
+      // PGlite may return Date object or string, so handle both
+      const dateValue = workout.date as unknown;
+      const workoutDate =
+        dateValue instanceof Date
+          ? dateValue.toISOString().split('T')[0]
+          : String(dateValue).substring(0, 10);
 
-      // Start a new workout with the same program/session
-      const localISOString = getLocalTimestamp();
-      const today = getLocalDateString();
-
-      await db.query(
-        `INSERT INTO workout_logs (program_id, session_id, date, started_at, status)
-         VALUES ($1, $2, $3, $4, 'in_progress')`,
-        [workout.program_id, workout.session_id, today, localISOString],
+      // Start a new workout with the same program/session and the SAME DATE
+      // This uses the proper startWorkout which:
+      // - Creates workout_log_exercises
+      // - Pre-creates workout_sets
+      // - Sets appropriate started_at time
+      await startWorkout(
+        workout.program_id,
+        workout.session_id,
+        workoutDate, // Preserve the original workout date (YYYY-MM-DD)
       );
 
-      // Navigate to workout session
-      navigate('/workout/session');
+      // Navigate to workout session with the date parameter
+      navigate(`/workout/session?date=${workoutDate}`);
     } catch (err) {
       console.error('Failed to re-log workout:', err);
     }

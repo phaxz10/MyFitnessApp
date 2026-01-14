@@ -135,12 +135,6 @@ export function useWorkoutLogs() {
   // AND pre-create all workout_sets records (empty, with NULL values)
   const copySessionExercisesToWorkout = useCallback(
     async (workoutLogId: number, sessionId: number): Promise<void> => {
-      console.log(
-        '[copySessionExercisesToWorkout] Starting with workoutLogId:',
-        workoutLogId,
-        'sessionId:',
-        sessionId,
-      );
       const db = await getDB();
 
       // Get all exercises from the program session
@@ -164,20 +158,8 @@ export function useWorkoutLogs() {
         notes: string | null;
       }[];
 
-      console.log(
-        '[copySessionExercisesToWorkout] Found programExercises:',
-        programExercises.length,
-        programExercises,
-      );
-
       // Insert each exercise into workout_log_exercises AND pre-create its sets
       for (const ex of programExercises) {
-        console.log(
-          '[copySessionExercisesToWorkout] Inserting exercise:',
-          ex.exercise_id,
-          'target_sets:',
-          ex.target_sets,
-        );
         const insertResult = await db.query(
           `INSERT INTO workout_log_exercises 
            (workout_log_id, exercise_id, order_index, superset_group_id, 
@@ -199,18 +181,9 @@ export function useWorkoutLogs() {
 
         const workoutLogExerciseId = (insertResult.rows as { id: number }[])[0]
           .id;
-        console.log(
-          '[copySessionExercisesToWorkout] Created workout_log_exercise id:',
-          workoutLogExerciseId,
-        );
 
         // Pre-create all workout_sets for this exercise (empty, NULL values)
         const targetSets = ex.target_sets || 3;
-        console.log(
-          '[copySessionExercisesToWorkout] Creating',
-          targetSets,
-          'sets for exercise',
-        );
         for (let setNum = 1; setNum <= targetSets; setNum++) {
           await db.query(
             `INSERT INTO workout_sets 
@@ -219,12 +192,7 @@ export function useWorkoutLogs() {
             [workoutLogId, ex.exercise_id, workoutLogExerciseId, setNum],
           );
         }
-        console.log(
-          '[copySessionExercisesToWorkout] Finished creating sets for exercise',
-          ex.exercise_id,
-        );
       }
-      console.log('[copySessionExercisesToWorkout] COMPLETED');
     },
     [],
   );
@@ -233,20 +201,30 @@ export function useWorkoutLogs() {
     async (
       programId: number | null = null,
       sessionId: number | null = null,
-      dateOverride?: string, // Optional date override for logging past sessions
+      dateOverride?: string, // Optional date override for logging past sessions (YYYY-MM-DD)
     ): Promise<WorkoutLog> => {
       setLoading(true);
       setError(null);
       try {
         const db = await getDB();
-        const localISOString = getLocalTimestamp();
         const targetDate = dateOverride || getLocalDateString();
+
+        // For past dates, set started_at to a reasonable time (9:00 AM on that date)
+        // For today, use current time
+        let startedAt: string;
+        if (dateOverride && dateOverride !== getLocalDateString()) {
+          // Past date: use 9:00 AM as default start time
+          startedAt = `${dateOverride}T09:00:00`;
+        } else {
+          // Today: use current time
+          startedAt = getLocalTimestamp();
+        }
 
         const result = await db.query(
           `INSERT INTO workout_logs (program_id, session_id, date, started_at, status)
          VALUES ($1, $2, $3, $4, 'in_progress')
          RETURNING *`,
-          [programId, sessionId, targetDate, localISOString],
+          [programId, sessionId, targetDate, startedAt],
         );
         const workout = (result.rows as WorkoutLog[])[0];
 
@@ -1084,9 +1062,11 @@ export function useWorkoutLogs() {
   );
 
   // Get today's workout status for a specific session (for UI display)
-  const getTodaySessionStatus = useCallback(
+  // Optionally accepts a date to check status for past dates (for missed workout logging)
+  const getSessionStatusForDate = useCallback(
     async (
       sessionId: number,
+      date?: string, // Optional: YYYY-MM-DD format, defaults to today
     ): Promise<{
       hasWorkout: boolean;
       status: WorkoutStatus | null;
@@ -1094,14 +1074,14 @@ export function useWorkoutLogs() {
     }> => {
       try {
         const db = await getDB();
-        const today = getLocalDateString();
+        const targetDate = date || getLocalDateString();
 
         const result = await db.query(
           `SELECT id, status, ended_at FROM workout_logs 
            WHERE session_id = $1 AND date = $2
            ORDER BY started_at DESC
            LIMIT 1`,
-          [sessionId, today],
+          [sessionId, targetDate],
         );
 
         if ((result.rows as WorkoutLog[]).length === 0) {
@@ -1212,7 +1192,9 @@ export function useWorkoutLogs() {
     deleteExerciseNote,
     processStaleWorkouts,
     isSessionCompletedToday,
-    getTodaySessionStatus,
+    getSessionStatusForDate,
+    // Backwards compatibility alias
+    getTodaySessionStatus: getSessionStatusForDate,
     getRecentExerciseHistoryBySession,
     // Workout Log Exercises CRUD
     getWorkoutLogExercises,

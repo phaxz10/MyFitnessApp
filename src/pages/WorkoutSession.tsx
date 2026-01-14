@@ -838,10 +838,27 @@ export function WorkoutSession() {
   };
 
   // Delete a round (set at specific index) from ALL exercises in a superset
-  const handleDeleteRound = (
+  const handleDeleteRound = async (
     supersetExerciseIndices: number[],
     roundNumber: number,
   ) => {
+    // Collect all set IDs that need to be deleted from the database
+    const setIdsToDelete: number[] = [];
+
+    for (const exerciseIndex of supersetExerciseIndices) {
+      const exerciseData = exercisesWithSets[exerciseIndex];
+      const set = exerciseData.sets[roundNumber];
+      if (set?.id) {
+        setIdsToDelete.push(set.id);
+      }
+    }
+
+    // Delete from database in parallel
+    if (setIdsToDelete.length > 0) {
+      await Promise.all(setIdsToDelete.map((id) => deleteSet(id)));
+    }
+
+    // Update UI state
     setExercisesWithSets((prev) => {
       const updated = [...prev];
 
@@ -862,8 +879,34 @@ export function WorkoutSession() {
         }
       });
 
+      // Remove exercises that have no sets left (filter in reverse order to preserve indices)
+      const indicesToRemove = supersetExerciseIndices
+        .filter((idx) => updated[idx].sets.length === 0)
+        .sort((a, b) => b - a); // Sort descending to remove from end first
+
+      indicesToRemove.forEach((idx) => {
+        updated.splice(idx, 1);
+      });
+
       return updated;
     });
+  };
+
+  // Remove an exercise entirely from the workout
+  const handleRemoveExercise = async (exerciseIndex: number) => {
+    const exerciseData = exercisesWithSets[exerciseIndex];
+
+    // Delete all completed sets for this exercise from the database
+    const setIdsToDelete = exerciseData.sets
+      .filter((set) => set.id)
+      .map((set) => set.id as number);
+
+    if (setIdsToDelete.length > 0) {
+      await Promise.all(setIdsToDelete.map((id) => deleteSet(id)));
+    }
+
+    // Remove from UI state
+    setExercisesWithSets((prev) => prev.filter((_, i) => i !== exerciseIndex));
   };
 
   // Complete ALL exercises in a round at once
@@ -1170,25 +1213,35 @@ export function WorkoutSession() {
             })()}
 
             {/* Add Note Button */}
-            <button
-              type="button"
-              onClick={() => {
-                const exerciseId =
-                  'exercise_id' in exerciseData.exercise
-                    ? exerciseData.exercise.exercise_id
-                    : exerciseData.exercise.id;
-                const currentWeight = exerciseData.sets[0]?.weight || '0';
-                handleOpenExerciseNotes(
-                  exerciseId,
-                  exerciseName,
-                  currentWeight,
-                );
-              }}
-              className="mb-2 px-2 py-1.5 text-xs bg-slate-700/50 hover:bg-slate-700 border border-slate-600 rounded text-slate-300 flex items-center gap-1.5 transition-colors"
-            >
-              <MessageSquare size={12} />
-              Notes
-            </button>
+            <div className="flex items-center gap-2 mb-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const exerciseId =
+                    'exercise_id' in exerciseData.exercise
+                      ? exerciseData.exercise.exercise_id
+                      : exerciseData.exercise.id;
+                  const currentWeight = exerciseData.sets[0]?.weight || '0';
+                  handleOpenExerciseNotes(
+                    exerciseId,
+                    exerciseName,
+                    currentWeight,
+                  );
+                }}
+                className="px-2 py-1.5 text-xs bg-slate-700/50 hover:bg-slate-700 border border-slate-600 rounded text-slate-300 flex items-center gap-1.5 transition-colors"
+              >
+                <MessageSquare size={12} />
+                Notes
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRemoveExercise(exerciseIndex)}
+                className="px-2 py-1.5 text-xs bg-red-900/30 hover:bg-red-900/50 border border-red-700/50 rounded text-red-400 flex items-center gap-1.5 transition-colors ml-auto"
+              >
+                <Trash2 size={12} />
+                Remove
+              </button>
+            </div>
 
             {/* Compact Sets List */}
             <div className="space-y-1.5">

@@ -1,50 +1,50 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   ArrowLeft,
-  Plus,
   Check,
-  Trash2,
   ChevronDown,
   ChevronUp,
-  X,
-  Save,
-  Play,
-  Pause,
-  RotateCcw,
-  Dumbbell,
   Clock,
+  Dumbbell,
   MessageSquare,
+  Pause,
+  Play,
+  Plus,
+  RotateCcw,
+  Save,
   Send,
+  Trash2,
+  X,
 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { useNavigate } from 'react-router-dom';
 import {
+  Button,
   Card,
   CardContent,
-  Button,
   Input,
   Modal,
   TextArea,
 } from '../components/ui';
 import { RestTimer } from '../components/workout';
+import { useExercises } from '../hooks/useExercises';
 import { useWorkoutLogs } from '../hooks/useWorkoutLogs';
 import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
-import { useExercises } from '../hooks/useExercises';
-import { parseLocalTimestamp } from '../utils/date';
-import { getExerciseCoaching, isGeminiInitialized } from '../services/gemini';
 import {
-  workoutNotesSchema,
   type WorkoutNotesFormData,
+  workoutNotesSchema,
 } from '../schemas/forms';
+import { getExerciseCoaching, isGeminiInitialized } from '../services/gemini';
 import type {
-  Exercise,
-  ProgramExerciseWithDetails,
-  WorkoutSet,
-  ExerciseType,
   AIExerciseCoachingResponse,
+  Exercise,
+  ExerciseType,
+  ProgramExerciseWithDetails,
   ProgressionDirection,
+  WorkoutSet,
 } from '../types';
+import { parseLocalTimestamp } from '../utils/date';
 
 interface SetData {
   id?: number;
@@ -1191,6 +1191,12 @@ export function WorkoutSession() {
                           placeholder="sec"
                         />
                         <span className="text-slate-500 text-xs">sec</span>
+                        {/* Show target duration hint inline */}
+                        {targetDuration && !set.completed && (
+                          <span className="text-blue-400/60 text-xs">
+                            ({targetDuration}s)
+                          </span>
+                        )}
                       </div>
                     ) : (
                       <div className="flex items-center gap-1">
@@ -1211,6 +1217,12 @@ export function WorkoutSession() {
                           disabled={set.completed}
                           placeholder="reps"
                         />
+                        {/* Show target reps hint inline */}
+                        {targetRepMin && targetRepMax && !set.completed && (
+                          <span className="text-blue-400/60 text-xs whitespace-nowrap">
+                            ({targetRepMin}-{targetRepMax})
+                          </span>
+                        )}
                       </div>
                     )}
 
@@ -1551,6 +1563,29 @@ export function WorkoutSession() {
                                 disabled={set.completed}
                                 placeholder="reps"
                               />
+                              {/* Show target reps hint */}
+                              {(() => {
+                                const targetRepMin =
+                                  'target_rep_min' in ex.exercise
+                                    ? ex.exercise.target_rep_min
+                                    : null;
+                                const targetRepMax =
+                                  'target_rep_max' in ex.exercise
+                                    ? ex.exercise.target_rep_max
+                                    : null;
+                                if (
+                                  targetRepMin &&
+                                  targetRepMax &&
+                                  !set.completed
+                                ) {
+                                  return (
+                                    <span className="text-blue-400/60 text-xs whitespace-nowrap">
+                                      ({targetRepMin}-{targetRepMax})
+                                    </span>
+                                  );
+                                }
+                                return null;
+                              })()}
                             </div>
                           )}
 

@@ -2,6 +2,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Loader2,
   PencilLine,
   Play,
   Plus,
@@ -20,6 +21,7 @@ interface SupersetCardProps {
   supersetExercises: ExerciseWithSets[];
   exerciseIndices: number[];
   coachingMap: Map<number, AIExerciseCoachingResponse>;
+  isLoading: (key: string) => boolean;
   onToggleExpand: () => void;
   onSetChange: (
     exerciseIndex: number,
@@ -44,6 +46,7 @@ export function SupersetCard({
   supersetExercises,
   exerciseIndices,
   coachingMap,
+  isLoading,
   onToggleExpand,
   onSetChange,
   onCompleteRound,
@@ -202,18 +205,36 @@ export function SupersetCard({
                       <button
                         type="button"
                         onClick={() => onCompleteRound(roundNumber)}
-                        className="px-2 py-1 text-xs bg-green-900/30 hover:bg-green-900/50 border border-green-700/50 rounded text-green-400 flex items-center gap-1.5 transition-colors"
+                        disabled={isLoading(
+                          `completeRound:${exerciseIndices[0]}:${roundNumber}`,
+                        )}
+                        className="px-2 py-1 text-xs bg-green-900/30 hover:bg-green-900/50 border border-green-700/50 rounded text-green-400 flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <Check size={12} />
-                        Complete
+                        {isLoading(
+                          `completeRound:${exerciseIndices[0]}:${roundNumber}`,
+                        ) ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          <Check size={12} />
+                        )}
+                        {isLoading(
+                          `completeRound:${exerciseIndices[0]}:${roundNumber}`,
+                        )
+                          ? 'Completing...'
+                          : 'Complete'}
                       </button>
                     )}
                     <button
                       type="button"
                       onClick={() => onDeleteRound(roundNumber)}
-                      className="p-1 text-red-400/70 hover:text-red-400 hover:bg-red-900/30 rounded transition-colors"
+                      disabled={isLoading(`deleteRound:${exerciseIndices[0]}`)}
+                      className="p-1 text-red-400/70 hover:text-red-400 hover:bg-red-900/30 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <Trash2 size={14} />
+                      {isLoading(`deleteRound:${exerciseIndices[0]}`) ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Trash2 size={14} />
+                      )}
                     </button>
                   </div>
                 </div>
@@ -368,10 +389,17 @@ export function SupersetCard({
           <button
             type="button"
             onClick={onAddRound}
-            className="w-full py-2 text-purple-400 text-sm flex items-center justify-center gap-1 hover:text-purple-300 border border-dashed border-slate-700 rounded-lg hover:border-purple-400/50 transition-colors"
+            disabled={isLoading(`addRound:${exerciseIndices[0]}`)}
+            className="w-full py-2 text-purple-400 text-sm flex items-center justify-center gap-1 hover:text-purple-300 border border-dashed border-slate-700 rounded-lg hover:border-purple-400/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Plus size={14} />
-            Add Round
+            {isLoading(`addRound:${exerciseIndices[0]}`) ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Plus size={14} />
+            )}
+            {isLoading(`addRound:${exerciseIndices[0]}`)
+              ? 'Adding...'
+              : 'Add Round'}
           </button>
         </div>
       )}

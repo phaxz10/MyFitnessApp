@@ -1,17 +1,21 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import { Button, ProgressSkeleton } from '../components/ui';
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-  OverviewTab,
-  ExercisesTab,
   ExerciseProgressDetail,
+  ExercisesTab,
+  OverviewTab,
 } from '../components/progress';
+import {
+  Button,
+  ProgressSkeleton,
+  type TimeRange,
+  TimeRangeSelector,
+} from '../components/ui';
 import { useExerciseProgress } from '../hooks/useExerciseProgress';
 import type { ExerciseProgressSummary } from '../types';
 
 type Tab = 'overview' | 'exercises';
-type TimeRange = '7d' | '30d' | '90d' | 'all';
 
 export function Progress() {
   const navigate = useNavigate();
@@ -89,22 +93,11 @@ export function Progress() {
       </div>
 
       {/* Time Range Selector */}
-      <div className="flex gap-1 mb-4">
-        {(['7d', '30d', '90d', 'all'] as const).map((range) => (
-          <button
-            key={range}
-            type="button"
-            onClick={() => setTimeRange(range)}
-            className={`flex-1 py-2 rounded text-sm font-medium transition-colors ${
-              timeRange === range
-                ? 'bg-blue-600 text-white'
-                : 'bg-slate-700 text-slate-400 hover:text-white'
-            }`}
-          >
-            {range === 'all' ? 'All Time' : range}
-          </button>
-        ))}
-      </div>
+      <TimeRangeSelector
+        value={timeRange}
+        onChange={setTimeRange}
+        className="mb-4"
+      />
 
       {/* Tab Selector */}
       <div className="flex gap-1 mb-6 bg-slate-800 p-1 rounded-lg">

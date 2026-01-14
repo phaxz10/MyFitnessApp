@@ -92,6 +92,29 @@ export function useWorkoutSession(dateOverride?: string) {
   >([]);
   const [isInitialized, setIsInitialized] = useState(false);
 
+  // Loading states for async operations
+  // Keys are formatted as: "action:exerciseIndex:setIndex" or "action:exerciseIndex" or just "action"
+  const [loadingStates, setLoadingStates] = useState<Set<string>>(new Set());
+
+  // Helper to set loading state
+  const setLoading = useCallback((key: string, isLoading: boolean) => {
+    setLoadingStates((prev) => {
+      const next = new Set(prev);
+      if (isLoading) {
+        next.add(key);
+      } else {
+        next.delete(key);
+      }
+      return next;
+    });
+  }, []);
+
+  // Helper to check if a specific operation is loading
+  const isLoading = useCallback(
+    (key: string) => loadingStates.has(key),
+    [loadingStates],
+  );
+
   // Ref to always have current state (fixes stale closure issues)
   const exercisesRef = useRef<ExerciseWithSets[]>([]);
   useEffect(() => {
@@ -412,6 +435,7 @@ export function useWorkoutSession(dateOverride?: string) {
   // Mark a single set as completed (sets completed_at in DB)
   const handleCompleteSet = useCallback(
     async (exerciseIndex: number, setIndex: number): Promise<boolean> => {
+      const loadingKey = `completeSet:${exerciseIndex}:${setIndex}`;
       const currentExercises = exercisesRef.current;
       const exerciseData = currentExercises[exerciseIndex];
       if (!exerciseData || !activeWorkout) return false;
@@ -419,6 +443,7 @@ export function useWorkoutSession(dateOverride?: string) {
       const setData = exerciseData.sets[setIndex];
       if (!setData || setData.completed) return false; // Already completed
 
+      setLoading(loadingKey, true);
       try {
         // First, ensure we save any pending field values
         const isDuration =
@@ -458,9 +483,11 @@ export function useWorkoutSession(dateOverride?: string) {
       } catch (err) {
         console.error('Failed to complete set:', err);
         return false;
+      } finally {
+        setLoading(loadingKey, false);
       }
     },
-    [activeWorkout, updateSet, completeSet],
+    [activeWorkout, updateSet, completeSet, setLoading],
   );
 
   // Uncomplete a set (user wants to edit it again)
@@ -505,8 +532,11 @@ export function useWorkoutSession(dateOverride?: string) {
     ): Promise<boolean> => {
       if (!activeWorkout) return false;
 
+      // Use first exercise index as the key for superset round loading
+      const loadingKey = `completeRound:${exerciseIndices[0]}:${roundNumber}`;
       const currentExercises = exercisesRef.current;
 
+      setLoading(loadingKey, true);
       try {
         // Save and complete all sets in the round
         for (const exerciseIndex of exerciseIndices) {
@@ -557,19 +587,23 @@ export function useWorkoutSession(dateOverride?: string) {
       } catch (err) {
         console.error('Failed to complete round:', err);
         return false;
+      } finally {
+        setLoading(loadingKey, false);
       }
     },
-    [activeWorkout, updateSet, completeSet],
+    [activeWorkout, updateSet, completeSet, setLoading],
   );
 
   // Add a new set to an exercise (inserts to DB and updates local state)
   const handleAddSet = useCallback(
     async (exerciseIndex: number) => {
+      const loadingKey = `addSet:${exerciseIndex}`;
       const currentExercises = exercisesRef.current;
       const exerciseData = currentExercises[exerciseIndex];
       if (!exerciseData) return;
       if (exerciseData.workoutLogExercise.id <= 0) return; // Can't add to legacy exercise
 
+      setLoading(loadingKey, true);
       try {
         const newSet = await addSetToExercise(
           exerciseData.workoutLogExercise.id,
@@ -613,14 +647,17 @@ export function useWorkoutSession(dateOverride?: string) {
         });
       } catch (err) {
         console.error('Failed to add set:', err);
+      } finally {
+        setLoading(loadingKey, false);
       }
     },
-    [addSetToExercise],
+    [addSetToExercise, setLoading],
   );
 
   // Add set to all exercises in a superset (inserts to DB for each)
   const handleAddSetToSuperset = useCallback(
     async (exerciseIndices: number[]) => {
+      const loadingKey = `addRound:${exerciseIndices[0]}`;
       const currentExercises = exercisesRef.current;
       if (!activeWorkout) return;
 
@@ -632,6 +669,7 @@ export function useWorkoutSession(dateOverride?: string) {
         firstExercise.workoutLogExercise.superset_group_id;
       if (!supersetGroupId) return;
 
+      setLoading(loadingKey, true);
       try {
         const newSets = await addRoundToSuperset(
           activeWorkout.id,
@@ -689,14 +727,17 @@ export function useWorkoutSession(dateOverride?: string) {
         });
       } catch (err) {
         console.error('Failed to add superset round:', err);
+      } finally {
+        setLoading(loadingKey, false);
       }
     },
-    [activeWorkout, addRoundToSuperset],
+    [activeWorkout, addRoundToSuperset, setLoading],
   );
 
   // Delete a set (removes from DB and local state)
   const handleDeleteSet = useCallback(
     async (exerciseIndex: number, _setIndex: number) => {
+      const loadingKey = `deleteSet:${exerciseIndex}`;
       const currentExercises = exercisesRef.current;
       const exerciseData = currentExercises[exerciseIndex];
       if (!exerciseData) return;
@@ -705,6 +746,7 @@ export function useWorkoutSession(dateOverride?: string) {
       // Don't allow removing if only 1 set left
       if (exerciseData.sets.length <= 1) return;
 
+      setLoading(loadingKey, true);
       try {
         await removeSetFromExercise(exerciseData.workoutLogExercise.id);
 
@@ -722,15 +764,18 @@ export function useWorkoutSession(dateOverride?: string) {
         });
       } catch (err) {
         console.error('Failed to delete set:', err);
+      } finally {
+        setLoading(loadingKey, false);
       }
     },
-    [removeSetFromExercise],
+    [removeSetFromExercise, setLoading],
   );
 
   // Delete a round from all exercises in a superset
   // If only 1 round left, delete the entire superset (all exercises)
   const handleDeleteRound = useCallback(
     async (supersetExerciseIndices: number[], _roundNumber: number) => {
+      const loadingKey = `deleteRound:${supersetExerciseIndices[0]}`;
       const currentExercises = exercisesRef.current;
       if (!activeWorkout) return;
 
@@ -742,9 +787,10 @@ export function useWorkoutSession(dateOverride?: string) {
         firstExercise.workoutLogExercise.superset_group_id;
       if (!supersetGroupId) return;
 
-      // If only 1 round left, delete all exercises in the superset
-      if (firstExercise.sets.length <= 1) {
-        try {
+      setLoading(loadingKey, true);
+      try {
+        // If only 1 round left, delete all exercises in the superset
+        if (firstExercise.sets.length <= 1) {
           // Delete all exercises in the superset from DB
           for (const exerciseIndex of supersetExerciseIndices) {
             const exerciseData = currentExercises[exerciseIndex];
@@ -759,13 +805,9 @@ export function useWorkoutSession(dateOverride?: string) {
           setExercisesWithSets((prev) =>
             prev.filter((_, i) => !supersetExerciseIndices.includes(i)),
           );
-        } catch (err) {
-          console.error('Failed to delete superset:', err);
+          return;
         }
-        return;
-      }
 
-      try {
         await removeRoundFromSuperset(activeWorkout.id, supersetGroupId);
 
         // Update local state - remove the last set from each exercise
@@ -786,9 +828,16 @@ export function useWorkoutSession(dateOverride?: string) {
         });
       } catch (err) {
         console.error('Failed to delete round:', err);
+      } finally {
+        setLoading(loadingKey, false);
       }
     },
-    [activeWorkout, removeRoundFromSuperset, deleteWorkoutLogExercise],
+    [
+      activeWorkout,
+      removeRoundFromSuperset,
+      deleteWorkoutLogExercise,
+      setLoading,
+    ],
   );
 
   // Remove an exercise entirely (from workout_log_exercises and all its sets)
@@ -1121,6 +1170,9 @@ export function useWorkoutSession(dateOverride?: string) {
     allExercises,
     totalCompletedSets,
     isInitialized,
+
+    // Loading state utilities
+    isLoading,
 
     // Actions
     handleSetChange,

@@ -57,6 +57,7 @@ export function WorkoutSession() {
     allExercises,
     totalCompletedSets,
     isInitialized,
+    isLoading,
     handleSetChange,
     handleCompleteSet,
     handleCompleteRound,
@@ -489,6 +490,7 @@ export function WorkoutSession() {
                     supersetExercises={item}
                     exerciseIndices={exerciseIndices}
                     coachingMap={exerciseCoaching}
+                    isLoading={isLoading}
                     onToggleExpand={() => {
                       item.forEach((ex) => {
                         const exIdx = exercisesWithSets.indexOf(ex);
@@ -547,8 +549,10 @@ export function WorkoutSession() {
               <CardContent className="p-3">
                 <ExerciseCard
                   exerciseData={item}
+                  exerciseIndex={exerciseIndex}
                   coaching={exerciseCoaching.get(exerciseId)}
                   isSelectedForLink={linkSupersetSelection === exerciseIndex}
+                  isLoading={isLoading}
                   onToggleExpand={() => toggleExerciseExpand(exerciseIndex)}
                   onSetChange={(setIndex, field, value) =>
                     handleSetChange(exerciseIndex, setIndex, field, value)

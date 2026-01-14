@@ -1,5 +1,4 @@
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import { Card, CardContent } from '../ui';
+import { Card, CardContent, getTrendDirection, TrendIndicator } from '../ui';
 
 interface MetricCardProps {
   label: string;
@@ -28,13 +27,6 @@ export function MetricCard({
     red: 'text-red-400',
   };
 
-  const getTrendIcon = () => {
-    if (change === undefined || change === null) return null;
-    if (change > 0) return <TrendingUp className="text-green-400" size={16} />;
-    if (change < 0) return <TrendingDown className="text-red-400" size={16} />;
-    return <Minus className="text-slate-400" size={16} />;
-  };
-
   const formatChange = (val: number) => {
     const prefix = val > 0 ? '+' : '';
     return `${prefix}${val.toFixed(1)}%`;
@@ -53,23 +45,11 @@ export function MetricCard({
               <p className="text-slate-500 text-xs mt-0.5">{subValue}</p>
             )}
             {change !== undefined && (
-              <div className="flex items-center gap-1 mt-1">
-                {getTrendIcon()}
-                <span
-                  className={`text-sm ${
-                    change > 0
-                      ? 'text-green-400'
-                      : change < 0
-                        ? 'text-red-400'
-                        : 'text-slate-400'
-                  }`}
-                >
-                  {formatChange(change)}
-                  {changeLabel && (
-                    <span className="text-slate-500 ml-1">{changeLabel}</span>
-                  )}
-                </span>
-              </div>
+              <TrendIndicator
+                direction={getTrendDirection(change)}
+                label={formatChange(change)}
+                secondaryLabel={changeLabel}
+              />
             )}
           </div>
           {icon && <div className="text-slate-500">{icon}</div>}

@@ -1,53 +1,54 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
-  Plus,
-  TrendingUp,
-  TrendingDown,
-  Minus,
   Camera,
-  X,
-  Trash2,
   ChevronLeft,
   ChevronRight,
   Image,
+  Plus,
+  Trash2,
+  X,
 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { useSearchParams } from 'react-router-dom';
 import {
-  LineChart,
   Line,
-  XAxis,
-  YAxis,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
+  XAxis,
+  YAxis,
 } from 'recharts';
 import {
+  Button,
   Card,
   CardContent,
-  Button,
-  Modal,
+  getTrendDirection,
   Input,
+  Modal,
+  type TimeRange,
+  TimeRangeSelector,
+  TrendIndicator,
   WeightTrackerSkeleton,
 } from '../components/ui';
-import { useWeight } from '../hooks/useWeight';
 import { useProfile } from '../hooks/useProfile';
 import { useProgressPhotos } from '../hooks/useProgressPhotos';
-import {
-  formatDate,
-  formatShortDate,
-  formatDisplayDate,
-  getDaysAgo,
-} from '../utils/date';
+import { useWeight } from '../hooks/useWeight';
+import { type WeightLogFormData, weightLogSchema } from '../schemas/forms';
+import type { PhotoType, ProgressPhoto } from '../types';
 import {
   calculateBodyFatPercentage,
   calculateWeeklyWeightChange,
+  formatWeight,
   hasEnoughDataForWeeklyTrend,
   isOnTrackWithGoal,
-  formatWeight,
 } from '../utils/calculations';
-import { weightLogSchema, type WeightLogFormData } from '../schemas/forms';
-import type { PhotoType, ProgressPhoto } from '../types';
+import {
+  formatDate,
+  formatDisplayDate,
+  formatShortDate,
+  getDaysAgo,
+} from '../utils/date';
 
 export function WeightTracker() {
   const [searchParams] = useSearchParams();
@@ -59,9 +60,7 @@ export function WeightTracker() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
-  const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | 'all'>(
-    '30d',
-  );
+  const [timeRange, setTimeRange] = useState<TimeRange>('30d');
   const [isEditingToday, setIsEditingToday] = useState(false);
 
   // Photo states
@@ -208,13 +207,8 @@ export function WeightTracker() {
     }
   };
 
-  const getTrendIcon = () => {
-    if (weeklyChange > 0.1)
-      return <TrendingUp className="text-green-400" size={20} />;
-    if (weeklyChange < -0.1)
-      return <TrendingDown className="text-red-400" size={20} />;
-    return <Minus className="text-slate-400" size={20} />;
-  };
+  // Trend direction for weekly change (using 0.1 threshold for significance)
+  const trendDirection = getTrendDirection(weeklyChange, 0.1);
 
   // Photo handlers
   const handleOpenPhotoModal = () => {
@@ -421,7 +415,7 @@ export function WeightTracker() {
                 {hasEnoughData ? 'Weekly Change' : 'Recent Change'}
               </p>
               <div className="flex items-center gap-2">
-                {getTrendIcon()}
+                <TrendIndicator direction={trendDirection} size={20} iconOnly />
                 <span
                   className={`text-xl font-semibold ${
                     weeklyChange > 0
@@ -461,22 +455,12 @@ export function WeightTracker() {
         <CardContent className="p-4">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-lg font-semibold text-white">Weight Trend</h3>
-            <div className="flex gap-1">
-              {(['7d', '30d', '90d', 'all'] as const).map((range) => (
-                <button
-                  key={range}
-                  type="button"
-                  onClick={() => setTimeRange(range)}
-                  className={`px-3 py-1 rounded text-sm ${
-                    timeRange === range
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-700 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {range === 'all' ? 'All' : range}
-                </button>
-              ))}
-            </div>
+            <TimeRangeSelector
+              value={timeRange}
+              onChange={setTimeRange}
+              allLabel="All"
+              compact
+            />
           </div>
 
           {chartData.length > 0 ? (

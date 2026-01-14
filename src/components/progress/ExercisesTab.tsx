@@ -1,14 +1,15 @@
+import { ChevronRight, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import {
-  Search,
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  ChevronRight,
-} from 'lucide-react';
-import { Card, CardContent, Input } from '../ui';
 import { useExerciseProgress } from '../../hooks/useExerciseProgress';
-import type { ExerciseProgressSummary, ProgressTrend } from '../../types';
+import type { ExerciseProgressSummary } from '../../types';
+import {
+  Card,
+  CardContent,
+  getProgressTrendLabel,
+  Input,
+  progressTrendToDirection,
+  TrendIndicator,
+} from '../ui';
 
 interface ExercisesTabProps {
   timeRange: '7d' | '30d' | '90d' | 'all';
@@ -51,39 +52,6 @@ export function ExercisesTab({
       ex.muscleGroups.toLowerCase().includes(filterMuscle.toLowerCase());
     return matchesSearch && matchesMuscle;
   });
-
-  const getTrendIcon = (trend: ProgressTrend) => {
-    switch (trend) {
-      case 'progressing':
-        return <TrendingUp className="text-green-400" size={16} />;
-      case 'regressing':
-        return <TrendingDown className="text-red-400" size={16} />;
-      default:
-        return <Minus className="text-slate-400" size={16} />;
-    }
-  };
-
-  const getTrendLabel = (trend: ProgressTrend) => {
-    switch (trend) {
-      case 'progressing':
-        return 'Progressing';
-      case 'regressing':
-        return 'Regressing';
-      default:
-        return 'Plateau';
-    }
-  };
-
-  const getTrendColor = (trend: ProgressTrend) => {
-    switch (trend) {
-      case 'progressing':
-        return 'text-green-400';
-      case 'regressing':
-        return 'text-red-400';
-      default:
-        return 'text-slate-400';
-    }
-  };
 
   if (loading && exercises.length === 0) {
     return (
@@ -175,14 +143,10 @@ export function ExercisesTab({
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1">
-                      {getTrendIcon(exercise.trend)}
-                      <span
-                        className={`text-sm ${getTrendColor(exercise.trend)}`}
-                      >
-                        {getTrendLabel(exercise.trend)}
-                      </span>
-                    </div>
+                    <TrendIndicator
+                      direction={progressTrendToDirection(exercise.trend)}
+                      label={getProgressTrendLabel(exercise.trend)}
+                    />
                     <ChevronRight className="text-slate-500" size={18} />
                   </div>
                 </button>

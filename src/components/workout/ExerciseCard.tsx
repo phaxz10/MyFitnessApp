@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronUp,
   Combine,
+  Loader2,
   PencilLine,
   Play,
   Plus,
@@ -21,8 +22,10 @@ import { Input } from '../ui';
 
 interface ExerciseCardProps {
   exerciseData: ExerciseWithSets;
+  exerciseIndex: number;
   coaching?: AIExerciseCoachingResponse;
   isSelectedForLink?: boolean;
+  isLoading: (key: string) => boolean;
   onToggleExpand: () => void;
   onSetChange: (
     setIndex: number,
@@ -40,8 +43,10 @@ interface ExerciseCardProps {
 
 export function ExerciseCard({
   exerciseData,
+  exerciseIndex,
   coaching,
   isSelectedForLink,
+  isLoading,
   onToggleExpand,
   onSetChange,
   onCompleteSet,
@@ -60,6 +65,10 @@ export function ExerciseCard({
   const hasWeight =
     exerciseData.exerciseType === 'reps_weight' ||
     exerciseData.exerciseType === 'duration_weight';
+
+  // Loading states
+  const isAddingSet = isLoading(`addSet:${exerciseIndex}`);
+  const isDeletingSet = isLoading(`deleteSet:${exerciseIndex}`);
 
   // Get target info from workoutLogExercise
   const targetRepMin = exerciseData.workoutLogExercise.target_rep_min;
@@ -157,6 +166,9 @@ export function ExerciseCard({
           <div className="space-y-1.5">
             {exerciseData.sets.map((set, setIndex) => {
               const setCoaching = coaching?.sets?.[setIndex];
+              const isCompletingSet = isLoading(
+                `completeSet:${exerciseIndex}:${setIndex}`,
+              );
 
               return (
                 <SetRow
@@ -169,6 +181,8 @@ export function ExerciseCard({
                   targetRepMax={targetRepMax}
                   targetDuration={targetDuration}
                   setCoaching={setCoaching}
+                  isCompleting={isCompletingSet}
+                  isDeleting={isDeletingSet}
                   onSetChange={onSetChange}
                   onComplete={() => onCompleteSet(setIndex)}
                   onDelete={() => onDeleteSet(setIndex)}
@@ -182,10 +196,15 @@ export function ExerciseCard({
           <button
             type="button"
             onClick={onAddSet}
-            className="mt-2 text-blue-400 text-sm flex items-center gap-1 hover:text-blue-300"
+            disabled={isAddingSet}
+            className="mt-2 text-blue-400 text-sm flex items-center gap-1 hover:text-blue-300 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Plus size={14} />
-            Add Set
+            {isAddingSet ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Plus size={14} />
+            )}
+            {isAddingSet ? 'Adding...' : 'Add Set'}
           </button>
         </div>
       )}
@@ -203,6 +222,8 @@ interface SetRowProps {
   targetRepMax: number | null;
   targetDuration: number | null;
   setCoaching?: { reps?: ProgressionDirection; weight?: ProgressionDirection };
+  isCompleting?: boolean;
+  isDeleting?: boolean;
   onSetChange: (
     setIndex: number,
     field: 'reps' | 'weight' | 'durationSeconds',
@@ -222,6 +243,8 @@ function SetRow({
   targetRepMax,
   targetDuration,
   setCoaching,
+  isCompleting = false,
+  isDeleting = false,
   onSetChange,
   onComplete,
   onDelete,
@@ -306,9 +329,14 @@ function SetRow({
             <button
               type="button"
               onClick={onDelete}
-              className="p-1.5 text-red-400/70 hover:text-red-400 hover:bg-red-900/30 rounded transition-colors"
+              disabled={isDeleting}
+              className="p-1.5 text-red-400/70 hover:text-red-400 hover:bg-red-900/30 rounded transition-colors disabled:opacity-50"
             >
-              <Trash2 size={16} />
+              {isDeleting ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Trash2 size={16} />
+              )}
             </button>
             {isDuration ? (
               <button
@@ -322,9 +350,14 @@ function SetRow({
               <button
                 type="button"
                 onClick={onComplete}
-                className="p-1.5 text-green-400/70 hover:text-green-400 hover:bg-green-900/30 rounded transition-colors"
+                disabled={isCompleting}
+                className="p-1.5 text-green-400/70 hover:text-green-400 hover:bg-green-900/30 rounded transition-colors disabled:opacity-50"
               >
-                <Check size={16} />
+                {isCompleting ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Check size={16} />
+                )}
               </button>
             )}
           </>

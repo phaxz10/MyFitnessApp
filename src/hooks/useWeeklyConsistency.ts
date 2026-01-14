@@ -9,6 +9,7 @@ export interface DayConsistency {
   hasWeight: boolean;
   hasFood: boolean;
   hasWorkout: boolean;
+  isScheduledWorkoutDay: boolean; // true if active program has a session for this day
   isToday: boolean;
   isFuture: boolean;
 }
@@ -56,27 +57,35 @@ export function useWeeklyConsistency() {
       try {
         const db = await getDB();
 
-        // Query all three data sources in parallel
-        const [weightResult, foodResult, workoutResult] = await Promise.all([
-          // Weight logs for the week
-          db.query(
-            `SELECT DISTINCT date FROM weight_logs 
+        // Query all data sources in parallel, including active program's scheduled days
+        const [weightResult, foodResult, workoutResult, activeProgramResult] =
+          await Promise.all([
+            // Weight logs for the week
+            db.query(
+              `SELECT DISTINCT date FROM weight_logs 
            WHERE date >= $1 AND date <= $2`,
-            [startStr, endStr],
-          ),
-          // Food entries for the week
-          db.query(
-            `SELECT DISTINCT date FROM food_entries 
+              [startStr, endStr],
+            ),
+            // Food entries for the week
+            db.query(
+              `SELECT DISTINCT date FROM food_entries 
            WHERE date >= $1 AND date <= $2`,
-            [startStr, endStr],
-          ),
-          // Completed workouts for the week
-          db.query(
-            `SELECT DISTINCT date FROM workout_logs 
+              [startStr, endStr],
+            ),
+            // Completed workouts for the week
+            db.query(
+              `SELECT DISTINCT date FROM workout_logs 
            WHERE date >= $1 AND date <= $2 AND status = 'completed'`,
-            [startStr, endStr],
-          ),
-        ]);
+              [startStr, endStr],
+            ),
+            // Get scheduled workout days from active program
+            db.query(
+              `SELECT DISTINCT ps.day_of_week 
+           FROM program_sessions ps
+           JOIN workout_programs wp ON ps.program_id = wp.id
+           WHERE wp.is_active = true AND ps.day_of_week IS NOT NULL`,
+            ),
+          ]);
 
         // Convert to sets for O(1) lookup
         const weightDates = new Set(
@@ -95,6 +104,13 @@ export function useWeeklyConsistency() {
           ),
         );
 
+        // Set of days of week (0-6) that have scheduled workouts
+        const scheduledWorkoutDays = new Set(
+          (activeProgramResult.rows as { day_of_week: number }[]).map(
+            (r) => r.day_of_week,
+          ),
+        );
+
         // Build the days array
         const days: DayConsistency[] = dates.map((date, index) => {
           const dateStr = formatDate(date);
@@ -105,6 +121,7 @@ export function useWeeklyConsistency() {
             hasWeight: weightDates.has(dateStr),
             hasFood: foodDates.has(dateStr),
             hasWorkout: workoutDates.has(dateStr),
+            isScheduledWorkoutDay: scheduledWorkoutDays.has(index),
             isToday: dateStr === todayStr,
             isFuture: date > new Date(),
           };
@@ -126,6 +143,7 @@ export function useWeeklyConsistency() {
             hasWeight: false,
             hasFood: false,
             hasWorkout: false,
+            isScheduledWorkoutDay: false,
             isToday: dateStr === todayStr,
             isFuture: date > new Date(),
           };

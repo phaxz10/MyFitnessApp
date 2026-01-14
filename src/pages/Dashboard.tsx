@@ -1,38 +1,38 @@
-import { useEffect, useState, useCallback } from 'react';
+import {
+  ChevronRight,
+  Dumbbell,
+  Scale,
+  Target,
+  TrendingDown,
+  TrendingUp,
+  Trophy,
+  Utensils,
+} from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Utensils,
-  Scale,
-  Dumbbell,
-  TrendingUp,
-  TrendingDown,
-  Trophy,
-  ChevronRight,
-  Target,
-} from 'lucide-react';
-import {
+  Button,
   Card,
   CardContent,
-  Button,
-  Modal,
   DashboardSkeleton,
+  Modal,
 } from '../components/ui';
 import {
   WeeklyReviewButton,
   WeeklyReviewModal,
 } from '../components/weekly-review';
-import { useProfile } from '../hooks/useProfile';
+import { useAppStore } from '../hooks/useAppStore';
 import { useCalories } from '../hooks/useCalories';
+import { useExerciseProgress } from '../hooks/useExerciseProgress';
+import { useProfile } from '../hooks/useProfile';
+import {
+  type DayConsistency,
+  useWeeklyConsistency,
+} from '../hooks/useWeeklyConsistency';
 import { useWeight } from '../hooks/useWeight';
 import { useWorkoutLogs } from '../hooks/useWorkoutLogs';
-import { useExerciseProgress } from '../hooks/useExerciseProgress';
-import {
-  useWeeklyConsistency,
-  type DayConsistency,
-} from '../hooks/useWeeklyConsistency';
-import { useAppStore } from '../hooks/useAppStore';
+import { calculateProgress, formatCalories } from '../utils/calculations';
 import { formatDate, formatDisplayDate } from '../utils/date';
-import { formatCalories, calculateProgress } from '../utils/calculations';
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -160,9 +160,17 @@ export function Dashboard() {
                           : 'bg-slate-600'
                     }`}
                   />
-                  {/* Workout dot - only show if there was a workout */}
-                  {day.hasWorkout && (
-                    <div className="w-2 h-2 rounded-full bg-orange-500" />
+                  {/* Workout dot - only show on scheduled workout days */}
+                  {day.isScheduledWorkoutDay && (
+                    <div
+                      className={`w-2 h-2 rounded-full ${
+                        day.isFuture
+                          ? 'bg-slate-700'
+                          : day.hasWorkout
+                            ? 'bg-orange-500'
+                            : 'bg-slate-600'
+                      }`}
+                    />
                   )}
                 </div>
               </button>
@@ -619,16 +627,21 @@ export function Dashboard() {
                 />
                 <span className="text-sm text-slate-300">Food</span>
               </div>
-              {selectedDay.hasWorkout && (
+              {selectedDay.isScheduledWorkoutDay && (
                 <div className="flex items-center gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-orange-500" />
+                  <div
+                    className={`w-3 h-3 rounded-full ${selectedDay.hasWorkout ? 'bg-orange-500' : 'bg-slate-600'}`}
+                  />
                   <span className="text-sm text-slate-300">Workout</span>
                 </div>
               )}
             </div>
 
             {/* Action buttons for missing items */}
-            {(!selectedDay.hasWeight || !selectedDay.hasFood) && (
+            {(!selectedDay.hasWeight ||
+              !selectedDay.hasFood ||
+              (selectedDay.isScheduledWorkoutDay &&
+                !selectedDay.hasWorkout)) && (
               <div className="space-y-2 pt-2 border-t border-slate-700">
                 <p className="text-slate-400 text-xs text-center mb-3">
                   {selectedDay.isToday
@@ -683,17 +696,44 @@ export function Dashboard() {
                     <ChevronRight size={18} className="text-slate-500" />
                   </button>
                 )}
+
+                {selectedDay.isScheduledWorkoutDay &&
+                  !selectedDay.hasWorkout && (
+                    <Link
+                      to="/workout"
+                      onClick={() => setSelectedDay(null)}
+                      className="w-full flex items-center gap-3 p-3 bg-slate-700/50 hover:bg-slate-700 rounded-lg transition-colors"
+                    >
+                      <div className="w-10 h-10 bg-orange-600/20 rounded-lg flex items-center justify-center">
+                        <Dumbbell size={20} className="text-orange-400" />
+                      </div>
+                      <div className="text-left flex-1">
+                        <p className="text-white font-medium text-sm">
+                          Workout Scheduled
+                        </p>
+                        <p className="text-slate-400 text-xs">
+                          {selectedDay.isToday
+                            ? 'Start your workout'
+                            : 'Workout was scheduled for this day'}
+                        </p>
+                      </div>
+                      <ChevronRight size={18} className="text-slate-500" />
+                    </Link>
+                  )}
               </div>
             )}
 
             {/* All complete message */}
-            {selectedDay.hasWeight && selectedDay.hasFood && (
-              <div className="text-center py-4">
-                <p className="text-green-400 text-sm">
-                  All logged for this day!
-                </p>
-              </div>
-            )}
+            {selectedDay.hasWeight &&
+              selectedDay.hasFood &&
+              (!selectedDay.isScheduledWorkoutDay ||
+                selectedDay.hasWorkout) && (
+                <div className="text-center py-4">
+                  <p className="text-green-400 text-sm">
+                    All logged for this day!
+                  </p>
+                </div>
+              )}
           </div>
         )}
       </Modal>

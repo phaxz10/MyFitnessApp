@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   Check,
   Clock,
+  Combine,
   Dumbbell,
   Plus,
   Send,
@@ -32,8 +33,13 @@ import {
   workoutNotesSchema,
 } from '../schemas/forms';
 import { getExerciseCoaching, isGeminiInitialized } from '../services/gemini';
-import type { AIExerciseCoachingResponse } from '../types';
+import type { AIExerciseCoachingResponse, Exercise } from '../types';
 import { parseLocalTimestamp } from '../utils/date';
+
+// Generate unique superset ID
+function generateSupersetId(): string {
+  return `ss-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
 
 export function WorkoutSession() {
   const navigate = useNavigate();
@@ -59,6 +65,8 @@ export function WorkoutSession() {
     handleDeleteRound,
     handleRemoveExercise,
     handleAddExercise,
+    handleLinkExercisesAsSuperset,
+    handleBreakSuperset,
     toggleExerciseExpand,
     saveDurationSet,
     handleEndWorkout,
@@ -85,6 +93,14 @@ export function WorkoutSession() {
   const [showEndWorkout, setShowEndWorkout] = useState(false);
   const [showCancelWorkout, setShowCancelWorkout] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Superset selection state in Add Exercise modal
+  const [supersetSelection, setSupersetSelection] = useState<Exercise[]>([]);
+
+  // Link superset selection state (for existing exercises)
+  const [linkSupersetSelection, setLinkSupersetSelection] = useState<
+    number | null
+  >(null);
 
   // Duration timer state
   const [durationTimerData, setDurationTimerData] = useState<{
@@ -471,6 +487,8 @@ export function WorkoutSession() {
 
             // Generate stable key from superset exercises
             const supersetKey = item.map((ex) => ex.exercise.id).join('-');
+            const supersetGroupId =
+              item[0]?.workoutLogExercise.superset_group_id;
 
             return (
               <Card
@@ -511,6 +529,11 @@ export function WorkoutSession() {
                         currentWeight,
                       );
                     }}
+                    onBreakSuperset={
+                      supersetGroupId
+                        ? () => handleBreakSuperset(supersetGroupId)
+                        : undefined
+                    }
                     getExerciseId={getExerciseId}
                   />
                 </CardContent>
@@ -521,13 +544,22 @@ export function WorkoutSession() {
           // Single exercise
           const exerciseIndex = exercisesWithSets.indexOf(item);
           const exerciseId = getExerciseId(item);
+          const isInSuperset = !!item.workoutLogExercise.superset_group_id;
 
           return (
-            <Card key={`exercise-${item.exercise.id}`}>
+            <Card
+              key={`exercise-${item.exercise.id}`}
+              className={
+                linkSupersetSelection === exerciseIndex
+                  ? 'border-purple-500/50 bg-purple-900/10'
+                  : ''
+              }
+            >
               <CardContent className="p-3">
                 <ExerciseCard
                   exerciseData={item}
                   coaching={exerciseCoaching.get(exerciseId)}
+                  isSelectedForLink={linkSupersetSelection === exerciseIndex}
                   onToggleExpand={() => toggleExerciseExpand(exerciseIndex)}
                   onSetChange={(setIndex, field, value) =>
                     handleSetChange(exerciseIndex, setIndex, field, value)
@@ -551,12 +583,49 @@ export function WorkoutSession() {
                     );
                   }}
                   onRemoveExercise={() => handleRemoveExercise(exerciseIndex)}
+                  onLinkExercise={
+                    !isInSuperset
+                      ? () => {
+                          if (linkSupersetSelection === null) {
+                            // First selection - mark this exercise
+                            setLinkSupersetSelection(exerciseIndex);
+                          } else if (linkSupersetSelection === exerciseIndex) {
+                            // Clicking same exercise - deselect
+                            setLinkSupersetSelection(null);
+                          } else {
+                            // Second selection - create superset
+                            handleLinkExercisesAsSuperset([
+                              linkSupersetSelection,
+                              exerciseIndex,
+                            ]);
+                            setLinkSupersetSelection(null);
+                          }
+                        }
+                      : undefined
+                  }
                 />
               </CardContent>
             </Card>
           );
         })}
       </div>
+
+      {/* Link superset hint */}
+      {linkSupersetSelection !== null && (
+        <div className="p-3 bg-purple-900/30 border border-purple-500/30 rounded-lg flex items-center justify-between">
+          <div className="text-sm text-purple-300">
+            <Combine size={14} className="inline mr-2" />
+            Select another exercise to create superset
+          </div>
+          <button
+            type="button"
+            onClick={() => setLinkSupersetSelection(null)}
+            className="text-xs text-slate-400 hover:text-white px-2 py-1"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       {/* Add Exercise Button */}
       <Button
@@ -595,8 +664,13 @@ export function WorkoutSession() {
         onClose={() => {
           setShowAddExercise(false);
           setSearchQuery('');
+          setSupersetSelection([]);
         }}
-        title="Add Exercise"
+        title={
+          supersetSelection.length > 0
+            ? `Add Superset (${supersetSelection.length} selected)`
+            : 'Add Exercise'
+        }
       >
         <Input
           placeholder="Search exercises..."
@@ -604,40 +678,139 @@ export function WorkoutSession() {
           onChange={(e) => setSearchQuery(e.target.value)}
           className="mb-4"
         />
+
+        {/* Selection info and actions */}
+        {supersetSelection.length > 0 && (
+          <div className="mb-4 p-3 bg-purple-900/30 border border-purple-500/30 rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-purple-300">
+                <Combine size={14} className="inline mr-1" />
+                {supersetSelection.length} exercise
+                {supersetSelection.length > 1 ? 's' : ''} selected
+              </span>
+              <button
+                type="button"
+                onClick={() => setSupersetSelection([])}
+                className="text-xs text-slate-400 hover:text-white"
+              >
+                Clear
+              </button>
+            </div>
+            <div className="text-xs text-slate-400 mb-2">
+              {supersetSelection.map((ex) => ex.name).join(' + ')}
+            </div>
+            {supersetSelection.length >= 2 && (
+              <Button
+                className="w-full"
+                onClick={async () => {
+                  const supersetId = generateSupersetId();
+                  for (const exercise of supersetSelection) {
+                    await handleAddExercise(exercise, supersetId);
+                  }
+                  setShowAddExercise(false);
+                  setSearchQuery('');
+                  setSupersetSelection([]);
+                }}
+              >
+                <Combine size={16} className="mr-2" />
+                Add as Superset
+              </Button>
+            )}
+            {supersetSelection.length === 1 && (
+              <p className="text-xs text-slate-500 text-center">
+                Select 1 more exercise for superset
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="max-h-80 overflow-y-auto space-y-2">
-          {filteredExercises.map((exercise) => (
-            <button
-              key={exercise.id}
-              type="button"
-              onClick={() => {
-                handleAddExercise(exercise);
-                setShowAddExercise(false);
-                setSearchQuery('');
-              }}
-              className="w-full text-left p-3 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
-            >
-              <div className="flex items-center gap-2">
-                {exercise.exercise_type === 'duration' ||
-                exercise.exercise_type === 'duration_weight' ? (
-                  <Clock size={16} className="text-slate-400" />
-                ) : (
-                  <Dumbbell size={16} className="text-slate-400" />
+          {filteredExercises.map((exercise) => {
+            const isSelected = supersetSelection.some(
+              (ex) => ex.id === exercise.id,
+            );
+
+            return (
+              <button
+                key={exercise.id}
+                type="button"
+                onClick={() => {
+                  if (isSelected) {
+                    // Deselect
+                    setSupersetSelection((prev) =>
+                      prev.filter((ex) => ex.id !== exercise.id),
+                    );
+                  } else if (supersetSelection.length > 0) {
+                    // Add to superset selection
+                    setSupersetSelection((prev) => [...prev, exercise]);
+                  } else {
+                    // No selection mode - add single exercise
+                    handleAddExercise(exercise);
+                    setShowAddExercise(false);
+                    setSearchQuery('');
+                  }
+                }}
+                onContextMenu={(e) => {
+                  // Long press / right click to start superset selection
+                  e.preventDefault();
+                  if (!isSelected) {
+                    setSupersetSelection((prev) => [...prev, exercise]);
+                  }
+                }}
+                className={`w-full text-left p-3 rounded-lg transition-colors ${
+                  isSelected
+                    ? 'bg-purple-900/50 border border-purple-500/50'
+                    : 'bg-slate-800 hover:bg-slate-700'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  {isSelected ? (
+                    <Check size={16} className="text-purple-400" />
+                  ) : exercise.exercise_type === 'duration' ||
+                    exercise.exercise_type === 'duration_weight' ? (
+                    <Clock size={16} className="text-slate-400" />
+                  ) : (
+                    <Dumbbell size={16} className="text-slate-400" />
+                  )}
+                  <span className="font-medium text-white">
+                    {exercise.name}
+                  </span>
+                  {supersetSelection.length === 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSupersetSelection([exercise]);
+                      }}
+                      className="ml-auto p-1 text-slate-500 hover:text-purple-400 hover:bg-purple-900/30 rounded"
+                      title="Start superset"
+                    >
+                      <Combine size={14} />
+                    </button>
+                  )}
+                </div>
+                {exercise.muscle_groups && (
+                  <p className="text-xs text-slate-400 mt-1">
+                    {exercise.muscle_groups}
+                  </p>
                 )}
-                <span className="font-medium text-white">{exercise.name}</span>
-              </div>
-              {exercise.muscle_groups && (
-                <p className="text-xs text-slate-400 mt-1">
-                  {exercise.muscle_groups}
-                </p>
-              )}
-            </button>
-          ))}
+              </button>
+            );
+          })}
           {filteredExercises.length === 0 && (
             <p className="text-center text-slate-400 py-4">
               No exercises found
             </p>
           )}
         </div>
+
+        {/* Hint for superset mode */}
+        {supersetSelection.length === 0 && (
+          <p className="text-xs text-slate-500 text-center mt-3">
+            Tap <Combine size={10} className="inline mx-1" /> to create a
+            superset
+          </p>
+        )}
       </Modal>
 
       {/* End Workout Modal */}

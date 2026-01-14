@@ -4,10 +4,11 @@ import {
   ChevronUp,
   Clock,
   Dumbbell,
-  MessageSquare,
+  PencilLine,
   Play,
   Plus,
   Trash2,
+  X,
 } from 'lucide-react';
 import type { ExerciseWithSets } from '../../hooks/useWorkoutSession';
 import type {
@@ -37,6 +38,7 @@ interface SupersetCardProps {
     exerciseName: string,
     currentWeight: string,
   ) => void;
+  onBreakSuperset?: () => void;
   getExerciseId: (ex: ExerciseWithSets) => number;
 }
 
@@ -68,6 +70,7 @@ export function SupersetCard({
   onAddRound,
   onStartDurationTimer,
   onOpenNotes,
+  onBreakSuperset,
   getExerciseId,
 }: SupersetCardProps) {
   const maxSets = Math.max(...supersetExercises.map((ex) => ex.sets.length));
@@ -144,11 +147,21 @@ export function SupersetCard({
                 }
                 className="px-2 py-1.5 text-xs bg-slate-700/50 hover:bg-slate-700 border border-slate-600 rounded text-slate-300 flex items-center gap-1.5 transition-colors"
               >
-                <MessageSquare size={12} />
+                <PencilLine size={12} />
                 {exerciseName}
               </button>
             );
           })}
+          {onBreakSuperset && (
+            <button
+              type="button"
+              onClick={onBreakSuperset}
+              className="px-2 py-1.5 text-xs bg-red-900/30 hover:bg-red-900/50 border border-red-700/50 rounded text-red-400 flex items-center gap-1.5 transition-colors ml-auto"
+            >
+              <X size={12} />
+              Break Superset
+            </button>
+          )}
         </div>
       )}
 

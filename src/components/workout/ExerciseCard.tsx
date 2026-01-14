@@ -3,8 +3,9 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  Combine,
   Dumbbell,
-  MessageSquare,
+  PencilLine,
   Play,
   Plus,
   Trash2,
@@ -20,6 +21,7 @@ import { Input } from '../ui';
 interface ExerciseCardProps {
   exerciseData: ExerciseWithSets;
   coaching?: AIExerciseCoachingResponse;
+  isSelectedForLink?: boolean;
   onToggleExpand: () => void;
   onSetChange: (
     setIndex: number,
@@ -32,6 +34,7 @@ interface ExerciseCardProps {
   onStartDurationTimer: (setIndex: number) => void;
   onOpenNotes: () => void;
   onRemoveExercise: () => void;
+  onLinkExercise?: () => void;
 }
 
 // Get exercise type icon
@@ -54,6 +57,7 @@ const getProgressionArrow = (direction: ProgressionDirection | undefined) => {
 export function ExerciseCard({
   exerciseData,
   coaching,
+  isSelectedForLink,
   onToggleExpand,
   onSetChange,
   onCompleteSet,
@@ -62,6 +66,7 @@ export function ExerciseCard({
   onStartDurationTimer,
   onOpenNotes,
   onRemoveExercise,
+  onLinkExercise,
 }: ExerciseCardProps) {
   const exerciseName = exerciseData.exercise.name;
 
@@ -137,9 +142,23 @@ export function ExerciseCard({
               onClick={onOpenNotes}
               className="px-2 py-1.5 text-xs bg-slate-700/50 hover:bg-slate-700 border border-slate-600 rounded text-slate-300 flex items-center gap-1.5 transition-colors"
             >
-              <MessageSquare size={12} />
+              <PencilLine size={12} />
               Notes
             </button>
+            {onLinkExercise && (
+              <button
+                type="button"
+                onClick={onLinkExercise}
+                className={`px-2 py-1.5 text-xs border rounded flex items-center gap-1.5 transition-colors ${
+                  isSelectedForLink
+                    ? 'bg-purple-900/50 border-purple-500/50 text-purple-300'
+                    : 'bg-slate-700/50 hover:bg-purple-900/30 border-slate-600 hover:border-purple-500/50 text-slate-300 hover:text-purple-300'
+                }`}
+              >
+                <Combine size={12} />
+                {isSelectedForLink ? 'Selected' : 'Superset'}
+              </button>
+            )}
             <button
               type="button"
               onClick={onRemoveExercise}

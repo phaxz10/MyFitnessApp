@@ -78,6 +78,7 @@ export function useWorkoutSession(dateOverride?: string) {
     getWorkoutLogExercises,
     addWorkoutLogExercise,
     deleteWorkoutLogExercise,
+    updateWorkoutLogExercise,
   } = useWorkoutLogs();
 
   const { exercises: allExercises, fetchExercises } = useExercises();
@@ -736,9 +737,88 @@ export function useWorkoutSession(dateOverride?: string) {
     [deleteWorkoutLogExercise],
   );
 
+  // Link two or more existing exercises into a superset
+  const handleLinkExercisesAsSuperset = useCallback(
+    async (exerciseIndices: number[]) => {
+      if (exerciseIndices.length < 2) return;
+
+      const currentExercises = exercisesRef.current;
+      const supersetGroupId = `ss-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+      try {
+        // Update all exercises with the new superset group ID
+        for (const exerciseIndex of exerciseIndices) {
+          const exerciseData = currentExercises[exerciseIndex];
+          if (exerciseData && exerciseData.workoutLogExercise.id > 0) {
+            await updateWorkoutLogExercise(exerciseData.workoutLogExercise.id, {
+              supersetGroupId,
+            });
+          }
+        }
+
+        // Update local state
+        setExercisesWithSets((prev) =>
+          prev.map((ex, idx) =>
+            exerciseIndices.includes(idx)
+              ? {
+                  ...ex,
+                  workoutLogExercise: {
+                    ...ex.workoutLogExercise,
+                    superset_group_id: supersetGroupId,
+                  },
+                }
+              : ex,
+          ),
+        );
+      } catch (err) {
+        console.error('Failed to link exercises as superset:', err);
+      }
+    },
+    [updateWorkoutLogExercise],
+  );
+
+  // Break a superset (remove superset_group_id from exercises)
+  const handleBreakSuperset = useCallback(
+    async (supersetGroupId: string) => {
+      const currentExercises = exercisesRef.current;
+      const affectedExercises = currentExercises.filter(
+        (ex) => ex.workoutLogExercise.superset_group_id === supersetGroupId,
+      );
+
+      try {
+        // Update all affected exercises in DB
+        for (const exerciseData of affectedExercises) {
+          if (exerciseData.workoutLogExercise.id > 0) {
+            await updateWorkoutLogExercise(exerciseData.workoutLogExercise.id, {
+              supersetGroupId: null,
+            });
+          }
+        }
+
+        // Update local state
+        setExercisesWithSets((prev) =>
+          prev.map((ex) =>
+            ex.workoutLogExercise.superset_group_id === supersetGroupId
+              ? {
+                  ...ex,
+                  workoutLogExercise: {
+                    ...ex.workoutLogExercise,
+                    superset_group_id: null,
+                  },
+                }
+              : ex,
+          ),
+        );
+      } catch (err) {
+        console.error('Failed to break superset:', err);
+      }
+    },
+    [updateWorkoutLogExercise],
+  );
+
   // Add a new exercise to the workout (with pre-created sets)
   const handleAddExercise = useCallback(
-    async (exercise: Exercise) => {
+    async (exercise: Exercise, supersetGroupId?: string) => {
       if (!activeWorkout) return;
 
       const lastPerf = await getLastPerformance(exercise.id);
@@ -760,6 +840,7 @@ export function useWorkoutSession(dateOverride?: string) {
           exercise.id,
           {
             orderIndex: maxOrderIndex + 1,
+            supersetGroupId: supersetGroupId || null,
             targetSets: 3,
             targetRepMin: isDuration ? null : 8,
             targetRepMax: isDuration ? null : 12,
@@ -968,6 +1049,8 @@ export function useWorkoutSession(dateOverride?: string) {
     handleDeleteRound,
     handleRemoveExercise,
     handleAddExercise,
+    handleLinkExercisesAsSuperset,
+    handleBreakSuperset,
     toggleExerciseExpand,
     updateExerciseNotes,
     saveDurationSet,

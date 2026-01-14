@@ -1,19 +1,24 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
-  Clock,
   Calendar,
+  Check,
+  Clock,
   Dumbbell,
   Edit2,
-  Check,
-  X,
+  RotateCcw,
   Trash2,
+  X,
 } from 'lucide-react';
-import { Card, CardContent, Button, Modal } from '../components/ui';
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Button, Card, CardContent, Modal } from '../components/ui';
 import { getDB } from '../services/db';
-import { parseLocalTimestamp } from '../utils/date';
 import type { WorkoutLog, WorkoutSetWithExercise } from '../types';
+import {
+  getLocalDateString,
+  getLocalTimestamp,
+  parseLocalTimestamp,
+} from '../utils/date';
 
 interface WorkoutLogWithDetails extends WorkoutLog {
   session_name?: string;
@@ -29,6 +34,7 @@ export function WorkoutDetail() {
   const [isEditingDuration, setIsEditingDuration] = useState(false);
   const [durationMinutes, setDurationMinutes] = useState('');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showRelogModal, setShowRelogModal] = useState(false);
 
   const fetchWorkout = useCallback(async () => {
     if (!id) return;
@@ -174,6 +180,32 @@ export function WorkoutDetail() {
     }
   };
 
+  const handleRelogWorkout = async () => {
+    if (!workout) return;
+
+    try {
+      const db = await getDB();
+
+      // Delete the old workout
+      await db.query('DELETE FROM workout_logs WHERE id = $1', [workout.id]);
+
+      // Start a new workout with the same program/session
+      const localISOString = getLocalTimestamp();
+      const today = getLocalDateString();
+
+      await db.query(
+        `INSERT INTO workout_logs (program_id, session_id, date, started_at, status)
+         VALUES ($1, $2, $3, $4, 'in_progress')`,
+        [workout.program_id, workout.session_id, today, localISOString],
+      );
+
+      // Navigate to workout session
+      navigate('/workout/session');
+    } catch (err) {
+      console.error('Failed to re-log workout:', err);
+    }
+  };
+
   // Group sets by exercise
   const exerciseGroups = workout?.sets.reduce(
     (acc, set) => {
@@ -236,13 +268,25 @@ export function WorkoutDetail() {
               )}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowDeleteModal(true)}
-            className="p-2 text-slate-400 hover:text-red-400"
-          >
-            <Trash2 size={20} />
-          </button>
+          <div className="flex items-center gap-1">
+            {workout.session_id && (
+              <button
+                type="button"
+                onClick={() => setShowRelogModal(true)}
+                className="p-2 text-slate-400 hover:text-blue-400"
+                title="Re-log this workout"
+              >
+                <RotateCcw size={20} />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowDeleteModal(true)}
+              className="p-2 text-slate-400 hover:text-red-400"
+            >
+              <Trash2 size={20} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -422,6 +466,35 @@ export function WorkoutDetail() {
             onClick={handleDeleteWorkout}
           >
             Delete
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Re-log Confirmation Modal */}
+      <Modal
+        isOpen={showRelogModal}
+        onClose={() => setShowRelogModal(false)}
+        title="Re-log Workout"
+      >
+        <p className="text-slate-300 mb-6">
+          This will delete the current workout data and start a fresh workout
+          session with the same exercises. Use this to re-enter your workout
+          data correctly.
+        </p>
+        <div className="flex gap-3">
+          <Button
+            variant="secondary"
+            className="flex-1"
+            onClick={() => setShowRelogModal(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            className="flex-1 bg-blue-600 hover:bg-blue-700"
+            onClick={handleRelogWorkout}
+          >
+            <RotateCcw size={18} className="mr-2" />
+            Re-log
           </Button>
         </div>
       </Modal>

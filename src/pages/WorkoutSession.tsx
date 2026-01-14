@@ -24,9 +24,11 @@ import {
   DurationTimer,
   ExerciseCard,
   RestTimer,
+  SessionChangesModal,
   SupersetCard,
 } from '../components/workout';
 import { useWorkoutLogs } from '../hooks/useWorkoutLogs';
+import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
 import { useWorkoutSession } from '../hooks/useWorkoutSession';
 import {
   type WorkoutNotesFormData,
@@ -36,6 +38,10 @@ import { getExerciseCoaching, isGeminiInitialized } from '../services/gemini';
 import type { AIExerciseCoachingResponse, Exercise } from '../types';
 import { parseLocalTimestamp } from '../utils/date';
 import { formatElapsedTime } from '../utils/formatters';
+import {
+  compareSessionToProgram,
+  type SessionDiff,
+} from '../utils/sessionDiff';
 
 // Generate unique superset ID
 function generateSupersetId(): string {
@@ -82,7 +88,11 @@ export function WorkoutSession() {
     getExerciseNotes,
     deleteExerciseNote,
     getRecentExerciseHistoryBySession,
+    getWorkoutLogExercises,
   } = useWorkoutLogs();
+
+  // Program management
+  const { getSessionExercises, syncSessionToProgram } = useWorkoutPrograms();
 
   // Timer state
   const [showTimer, setShowTimer] = useState(false);
@@ -130,6 +140,12 @@ export function WorkoutSession() {
     currentWeight: string;
   } | null>(null);
   const [newExerciseNoteContent, setNewExerciseNoteContent] = useState('');
+
+  // Session changes modal state
+  const [showChangesModal, setShowChangesModal] = useState(false);
+  const [sessionDiff, setSessionDiff] = useState<SessionDiff | null>(null);
+  const [pendingWorkoutNotes, setPendingWorkoutNotes] = useState<string>('');
+  const [isUpdatingProgram, setIsUpdatingProgram] = useState(false);
 
   // Wake lock ref
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
@@ -381,10 +397,120 @@ export function WorkoutSession() {
   };
 
   // End/Cancel workout handlers
+
+  // Check for changes between current session and program template
+  const checkForSessionChanges =
+    useCallback(async (): Promise<SessionDiff | null> => {
+      if (!activeWorkout?.session_id) {
+        // Not started from a program session, no comparison needed
+        return null;
+      }
+
+      try {
+        // Get original program exercises
+        const programExercises = await getSessionExercises(
+          activeWorkout.session_id,
+        );
+
+        if (programExercises.length === 0) {
+          // No program exercises to compare against
+          return null;
+        }
+
+        // Get current workout log exercises
+        const workoutLogExercises = await getWorkoutLogExercises(
+          activeWorkout.id,
+        );
+
+        // Create a map of actual set counts from exercisesWithSets
+        const exerciseSetCounts = new Map<number, number>();
+        exercisesWithSets.forEach((ex) => {
+          exerciseSetCounts.set(ex.workoutLogExercise.id, ex.sets.length);
+        });
+
+        // Compare
+        const diff = compareSessionToProgram(
+          programExercises,
+          workoutLogExercises,
+          exerciseSetCounts,
+        );
+
+        return diff.hasChanges ? diff : null;
+      } catch (err) {
+        console.error('Failed to check for session changes:', err);
+        return null;
+      }
+    }, [
+      activeWorkout,
+      exercisesWithSets,
+      getSessionExercises,
+      getWorkoutLogExercises,
+    ]);
+
   const onEndWorkout = async (data: WorkoutNotesFormData) => {
-    await handleEndWorkout(data.notes || undefined);
+    // Check if there are changes to the program
+    const diff = await checkForSessionChanges();
+
+    if (diff && diff.hasChanges) {
+      // Store the notes and show the changes modal
+      setPendingWorkoutNotes(data.notes || '');
+      setSessionDiff(diff);
+      setShowEndWorkout(false);
+      setShowChangesModal(true);
+    } else {
+      // No changes, just end the workout
+      await handleEndWorkout(data.notes || undefined);
+      resetNotesForm();
+      navigate('/workout');
+    }
+  };
+
+  // Handle "Save This Session Only" - just end workout without updating program
+  const handleSaveThisSessionOnly = async () => {
+    await handleEndWorkout(pendingWorkoutNotes || undefined);
     resetNotesForm();
+    setShowChangesModal(false);
+    setSessionDiff(null);
+    setPendingWorkoutNotes('');
     navigate('/workout');
+  };
+
+  // Handle "Update Program Template" - sync changes then end workout
+  const handleUpdateProgramTemplate = async () => {
+    if (!activeWorkout?.session_id) return;
+
+    setIsUpdatingProgram(true);
+    try {
+      // Get current workout log exercises
+      const workoutLogExercises = await getWorkoutLogExercises(
+        activeWorkout.id,
+      );
+
+      // Create a map of actual set counts
+      const exerciseSetCounts = new Map<number, number>();
+      exercisesWithSets.forEach((ex) => {
+        exerciseSetCounts.set(ex.workoutLogExercise.id, ex.sets.length);
+      });
+
+      // Sync changes to program
+      await syncSessionToProgram(
+        activeWorkout.session_id,
+        workoutLogExercises,
+        exerciseSetCounts,
+      );
+
+      // End the workout
+      await handleEndWorkout(pendingWorkoutNotes || undefined);
+      resetNotesForm();
+      setShowChangesModal(false);
+      setSessionDiff(null);
+      setPendingWorkoutNotes('');
+      navigate('/workout');
+    } catch (err) {
+      console.error('Failed to update program:', err);
+    } finally {
+      setIsUpdatingProgram(false);
+    }
   };
 
   const onCancelWorkout = async () => {
@@ -926,6 +1052,22 @@ export function WorkoutSession() {
           </div>
         )}
       </Modal>
+
+      {/* Session Changes Modal */}
+      {sessionDiff && (
+        <SessionChangesModal
+          isOpen={showChangesModal}
+          onClose={() => {
+            setShowChangesModal(false);
+            setSessionDiff(null);
+            setPendingWorkoutNotes('');
+          }}
+          diff={sessionDiff}
+          onSaveThisSessionOnly={handleSaveThisSessionOnly}
+          onUpdateProgram={handleUpdateProgramTemplate}
+          isUpdating={isUpdatingProgram}
+        />
+      )}
     </div>
   );
 }

@@ -15,6 +15,10 @@ export interface SetData {
   weight: string;
   durationSeconds: string;
   completed: boolean; // Based on completed_at IS NOT NULL
+  // Placeholder values for new sets (from last performance or targets)
+  placeholderReps?: string;
+  placeholderWeight?: string;
+  placeholderDuration?: string;
 }
 
 export interface ExerciseWithSets {
@@ -152,7 +156,10 @@ export function useWorkoutSession(dateOverride?: string) {
               return null;
             }
 
-            const lastPerf = await getLastPerformance(wle.exercise_id);
+            const lastPerf = await getLastPerformance(
+              wle.exercise_id,
+              activeWorkout.id,
+            );
             const exerciseType = wle.exercise_type || 'reps_weight';
             const isDuration =
               exerciseType === 'duration' || exerciseType === 'duration_weight';
@@ -169,26 +176,39 @@ export function useWorkoutSession(dateOverride?: string) {
                 // Pre-fill with last performance if values are NULL
                 const lastSet = lastPerf?.[i];
 
+                // Calculate placeholder values from last performance or targets
+                const placeholderReps = isDuration
+                  ? undefined
+                  : lastSet?.reps?.toString() ||
+                    wle.target_rep_min?.toString() ||
+                    '8';
+                const placeholderWeight = (lastSet?.weight_kg ?? 0).toString();
+                const placeholderDuration = isDuration
+                  ? wle.target_duration_seconds?.toString() || '30'
+                  : undefined;
+
+                // For sets that already have values in DB, use those values
+                // For new sets (null values), leave empty and use placeholders
+                const hasExistingReps = dbSet.reps !== null;
+                const hasExistingWeight = dbSet.weight_kg !== null;
+                const hasExistingDuration = dbSet.duration_seconds !== null;
+
                 return {
                   id: dbSet.id,
                   set_number: dbSet.set_number,
-                  reps:
-                    dbSet.reps?.toString() ||
-                    (isDuration
+                  reps: hasExistingReps
+                    ? dbSet.reps!.toString()
+                    : isDuration
                       ? ''
-                      : lastSet?.reps?.toString() ||
-                        (wle.target_rep_min?.toString() ?? '8')),
-                  weight: (
-                    dbSet.weight_kg ??
-                    lastSet?.weight_kg ??
-                    0
-                  ).toString(),
-                  durationSeconds:
-                    dbSet.duration_seconds?.toString() ||
-                    (isDuration
-                      ? wle.target_duration_seconds?.toString() || '30'
-                      : ''),
+                      : '',
+                  weight: hasExistingWeight ? dbSet.weight_kg!.toString() : '',
+                  durationSeconds: hasExistingDuration
+                    ? dbSet.duration_seconds!.toString()
+                    : '',
                   completed: dbSet.completed_at !== null,
+                  placeholderReps,
+                  placeholderWeight,
+                  placeholderDuration,
                 };
               });
 
@@ -218,7 +238,10 @@ export function useWorkoutSession(dateOverride?: string) {
 
             const dbSets =
               setsByWorkoutLogExercise[`exercise-${exerciseId}`] || [];
-            const lastPerf = await getLastPerformance(exerciseId);
+            const lastPerf = await getLastPerformance(
+              exerciseId,
+              activeWorkout.id,
+            );
             const exerciseType = exercise.exercise_type || 'reps_weight';
 
             const mockWorkoutLogExercise: WorkoutLogExerciseWithDetails = {
@@ -242,14 +265,30 @@ export function useWorkoutSession(dateOverride?: string) {
 
             const sets: SetData[] = dbSets
               .sort((a, b) => a.set_number - b.set_number)
-              .map((dbSet) => ({
-                id: dbSet.id,
-                set_number: dbSet.set_number,
-                reps: dbSet.reps?.toString() || '',
-                weight: (dbSet.weight_kg ?? 0).toString(),
-                durationSeconds: dbSet.duration_seconds?.toString() || '',
-                completed: dbSet.completed_at !== null,
-              }));
+              .map((dbSet, i) => {
+                const lastSet = lastPerf?.[i];
+                const isDur =
+                  exerciseType === 'duration' ||
+                  exerciseType === 'duration_weight';
+
+                return {
+                  id: dbSet.id,
+                  set_number: dbSet.set_number,
+                  reps: dbSet.reps !== null ? dbSet.reps.toString() : '',
+                  weight:
+                    dbSet.weight_kg !== null ? dbSet.weight_kg.toString() : '',
+                  durationSeconds:
+                    dbSet.duration_seconds !== null
+                      ? dbSet.duration_seconds.toString()
+                      : '',
+                  completed: dbSet.completed_at !== null,
+                  placeholderReps: isDur
+                    ? undefined
+                    : lastSet?.reps?.toString() || '8',
+                  placeholderWeight: (lastSet?.weight_kg ?? 0).toString(),
+                  placeholderDuration: isDur ? '30' : undefined,
+                };
+              });
 
             return {
               workoutLogExercise: mockWorkoutLogExercise,
@@ -541,7 +580,7 @@ export function useWorkoutSession(dateOverride?: string) {
           exerciseData.exerciseType === 'duration' ||
           exerciseData.exerciseType === 'duration_weight';
 
-        // Add to local state
+        // Add to local state - use empty values with placeholders from last set
         setExercisesWithSets((prev) => {
           const updated = [...prev];
           if (!updated[exerciseIndex]) return prev;
@@ -553,12 +592,20 @@ export function useWorkoutSession(dateOverride?: string) {
               {
                 id: newSet.id,
                 set_number: newSet.set_number,
-                reps: isDuration ? '' : lastSet?.reps || '0',
-                weight: lastSet?.weight || '0',
-                durationSeconds: isDuration
-                  ? lastSet?.durationSeconds || '30'
-                  : '',
+                reps: '',
+                weight: '',
+                durationSeconds: '',
                 completed: false,
+                placeholderReps: isDuration
+                  ? undefined
+                  : lastSet?.placeholderReps || lastSet?.reps || '0',
+                placeholderWeight:
+                  lastSet?.placeholderWeight || lastSet?.weight || '0',
+                placeholderDuration: isDuration
+                  ? lastSet?.placeholderDuration ||
+                    lastSet?.durationSeconds ||
+                    '30'
+                  : undefined,
               },
             ],
           };
@@ -591,7 +638,7 @@ export function useWorkoutSession(dateOverride?: string) {
           supersetGroupId,
         );
 
-        // Update local state for each exercise
+        // Update local state for each exercise - use empty values with placeholders
         setExercisesWithSets((prev) => {
           const updated = [...prev];
 
@@ -619,12 +666,20 @@ export function useWorkoutSession(dateOverride?: string) {
                 {
                   id: newSet.id,
                   set_number: newSet.set_number,
-                  reps: isDuration ? '' : lastSet?.reps || '0',
-                  weight: lastSet?.weight || '0',
-                  durationSeconds: isDuration
-                    ? lastSet?.durationSeconds || '30'
-                    : '',
+                  reps: '',
+                  weight: '',
+                  durationSeconds: '',
                   completed: false,
+                  placeholderReps: isDuration
+                    ? undefined
+                    : lastSet?.placeholderReps || lastSet?.reps || '0',
+                  placeholderWeight:
+                    lastSet?.placeholderWeight || lastSet?.weight || '0',
+                  placeholderDuration: isDuration
+                    ? lastSet?.placeholderDuration ||
+                      lastSet?.durationSeconds ||
+                      '30'
+                    : undefined,
                 },
               ],
             };
@@ -673,6 +728,7 @@ export function useWorkoutSession(dateOverride?: string) {
   );
 
   // Delete a round from all exercises in a superset
+  // If only 1 round left, delete the entire superset (all exercises)
   const handleDeleteRound = useCallback(
     async (supersetExerciseIndices: number[], _roundNumber: number) => {
       const currentExercises = exercisesRef.current;
@@ -686,8 +742,28 @@ export function useWorkoutSession(dateOverride?: string) {
         firstExercise.workoutLogExercise.superset_group_id;
       if (!supersetGroupId) return;
 
-      // Don't allow removing if only 1 round left
-      if (firstExercise.sets.length <= 1) return;
+      // If only 1 round left, delete all exercises in the superset
+      if (firstExercise.sets.length <= 1) {
+        try {
+          // Delete all exercises in the superset from DB
+          for (const exerciseIndex of supersetExerciseIndices) {
+            const exerciseData = currentExercises[exerciseIndex];
+            if (exerciseData && exerciseData.workoutLogExercise.id > 0) {
+              await deleteWorkoutLogExercise(
+                exerciseData.workoutLogExercise.id,
+              );
+            }
+          }
+
+          // Remove all superset exercises from local state
+          setExercisesWithSets((prev) =>
+            prev.filter((_, i) => !supersetExerciseIndices.includes(i)),
+          );
+        } catch (err) {
+          console.error('Failed to delete superset:', err);
+        }
+        return;
+      }
 
       try {
         await removeRoundFromSuperset(activeWorkout.id, supersetGroupId);
@@ -712,7 +788,7 @@ export function useWorkoutSession(dateOverride?: string) {
         console.error('Failed to delete round:', err);
       }
     },
-    [activeWorkout, removeRoundFromSuperset],
+    [activeWorkout, removeRoundFromSuperset, deleteWorkoutLogExercise],
   );
 
   // Remove an exercise entirely (from workout_log_exercises and all its sets)
@@ -821,7 +897,7 @@ export function useWorkoutSession(dateOverride?: string) {
     async (exercise: Exercise, supersetGroupId?: string) => {
       if (!activeWorkout) return;
 
-      const lastPerf = await getLastPerformance(exercise.id);
+      const lastPerf = await getLastPerformance(exercise.id, activeWorkout.id);
       const exerciseType = exercise.exercise_type || 'reps_weight';
       const isDuration =
         exerciseType === 'duration' || exerciseType === 'duration_weight';
@@ -864,15 +940,23 @@ export function useWorkoutSession(dateOverride?: string) {
           exercise_type: exerciseType,
         };
 
-        // Convert to SetData format
-        const sets: SetData[] = exerciseSets.map((dbSet, i) => ({
-          id: dbSet.id,
-          set_number: dbSet.set_number,
-          reps: isDuration ? '' : lastPerf?.[i]?.reps?.toString() || '10',
-          weight: (lastPerf?.[i]?.weight_kg ?? 0).toString(),
-          durationSeconds: isDuration ? '30' : '',
-          completed: false,
-        }));
+        // Convert to SetData format - use empty values with placeholders
+        const sets: SetData[] = exerciseSets.map((dbSet, i) => {
+          const lastSet = lastPerf?.[i];
+          return {
+            id: dbSet.id,
+            set_number: dbSet.set_number,
+            reps: '',
+            weight: '',
+            durationSeconds: '',
+            completed: false,
+            placeholderReps: isDuration
+              ? undefined
+              : lastSet?.reps?.toString() || '10',
+            placeholderWeight: (lastSet?.weight_kg ?? 0).toString(),
+            placeholderDuration: isDuration ? '30' : undefined,
+          };
+        });
 
         // Add to local state
         setExercisesWithSets((prev) => [

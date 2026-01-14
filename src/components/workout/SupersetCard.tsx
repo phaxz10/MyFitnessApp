@@ -290,8 +290,9 @@ export function SupersetCard({
                                   e.target.value,
                                 )
                               }
+                              onFocus={(e) => e.target.select()}
                               className="w-14 h-7 text-center text-xs p-1"
-                              placeholder="lbs"
+                              placeholder={set.placeholderWeight || 'lbs'}
                               disabled={isCompleted}
                             />
                             <span className="text-slate-500 text-xs">lbs</span>
@@ -317,8 +318,9 @@ export function SupersetCard({
                                   e.target.value,
                                 )
                               }
+                              onFocus={(e) => e.target.select()}
                               className="w-14 h-7 text-center text-xs p-1"
-                              placeholder="sec"
+                              placeholder={set.placeholderDuration || 'sec'}
                               disabled={isCompleted}
                             />
                             <span className="text-slate-500 text-xs">sec</span>
@@ -343,8 +345,9 @@ export function SupersetCard({
                                   e.target.value,
                                 )
                               }
+                              onFocus={(e) => e.target.select()}
                               className="w-12 h-7 text-center text-xs p-1"
-                              placeholder="reps"
+                              placeholder={set.placeholderReps || 'reps'}
                               disabled={isCompleted}
                             />
                             {!isCompleted && targetRepMin && targetRepMax && (

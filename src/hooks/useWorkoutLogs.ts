@@ -697,28 +697,36 @@ export function useWorkoutLogs() {
   );
 
   const getLastPerformance = useCallback(
-    async (exerciseId: number): Promise<WorkoutSet[] | null> => {
+    async (
+      exerciseId: number,
+      excludeWorkoutLogId?: number,
+    ): Promise<WorkoutSet[] | null> => {
       try {
         const db = await getDB();
 
-        // Get the most recent workout log that includes this exercise
+        // Get the most recent COMPLETED workout log that includes this exercise
+        // Exclude the current workout if provided, and only consider sets that were completed
         const logResult = await db.query(
-          `SELECT wl.id
+          `SELECT DISTINCT wl.id
          FROM workout_logs wl
          JOIN workout_sets ws ON wl.id = ws.workout_log_id
          WHERE ws.exercise_id = $1
-         ORDER BY wl.date DESC, wl.started_at DESC
+           AND ws.completed_at IS NOT NULL
+           ${excludeWorkoutLogId ? 'AND wl.id != $2' : ''}
+         ORDER BY wl.id DESC
          LIMIT 1`,
-          [exerciseId],
+          excludeWorkoutLogId
+            ? [exerciseId, excludeWorkoutLogId]
+            : [exerciseId],
         );
 
         if ((logResult.rows as { id: number }[]).length === 0) return null;
         const logId = (logResult.rows as { id: number }[])[0].id;
 
-        // Get all sets from that workout for this exercise
+        // Get all completed sets from that workout for this exercise
         const setsResult = await db.query(
           `SELECT * FROM workout_sets 
-         WHERE workout_log_id = $1 AND exercise_id = $2
+         WHERE workout_log_id = $1 AND exercise_id = $2 AND completed_at IS NOT NULL
          ORDER BY set_number`,
           [logId, exerciseId],
         );

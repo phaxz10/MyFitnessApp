@@ -264,8 +264,9 @@ function SetRow({
             type="number"
             value={set.weight}
             onChange={(e) => onSetChange(setIndex, 'weight', e.target.value)}
+            onFocus={(e) => e.target.select()}
             className="w-16 h-8 text-center text-sm p-1"
-            placeholder="lbs"
+            placeholder={set.placeholderWeight || 'lbs'}
             disabled={isCompleted}
           />
           <span className="text-slate-500 text-xs">lbs</span>
@@ -284,8 +285,9 @@ function SetRow({
             onChange={(e) =>
               onSetChange(setIndex, 'durationSeconds', e.target.value)
             }
+            onFocus={(e) => e.target.select()}
             className="w-16 h-8 text-center text-sm p-1"
-            placeholder="sec"
+            placeholder={set.placeholderDuration || 'sec'}
             disabled={isCompleted}
           />
           <span className="text-slate-500 text-xs">sec</span>
@@ -300,8 +302,9 @@ function SetRow({
             type="number"
             value={set.reps}
             onChange={(e) => onSetChange(setIndex, 'reps', e.target.value)}
+            onFocus={(e) => e.target.select()}
             className="w-14 h-8 text-center text-sm p-1"
-            placeholder="reps"
+            placeholder={set.placeholderReps || 'reps'}
             disabled={isCompleted}
           />
           {!isCompleted && targetRepMin && targetRepMax && (

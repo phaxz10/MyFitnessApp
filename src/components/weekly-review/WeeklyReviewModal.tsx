@@ -1,33 +1,34 @@
-import { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
-  TrendingUp,
-  TrendingDown,
+  AlertCircle,
+  ArrowRight,
+  Battery,
+  BatteryLow,
+  CheckCircle2,
+  ChevronRight,
+  Dumbbell,
+  Loader2,
   Minus,
   Scale,
   Target,
-  Dumbbell,
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
-  ChevronRight,
-  ArrowRight,
+  TrendingDown,
+  TrendingUp,
   Zap,
-  Battery,
-  BatteryLow,
 } from 'lucide-react';
-import { Modal, Button, Card, CardContent } from '../ui';
-import { useWeeklyReview } from '../../hooks/useWeeklyReview';
-import { useProfile } from '../../hooks/useProfile';
-import { useWeight } from '../../hooks/useWeight';
+import { useEffect, useState } from 'react';
 import { useAppStore } from '../../hooks/useAppStore';
+import { useProfile } from '../../hooks/useProfile';
+import { useWeeklyReview } from '../../hooks/useWeeklyReview';
+import { useWeight } from '../../hooks/useWeight';
 import { initGemini, reviewWeeklyProgress } from '../../services/gemini';
-import { calculateBodyFatPercentage } from '../../utils/calculations';
-import { formatDate, formatDisplayDate } from '../../utils/date';
 import type {
+  AIWeeklyReviewResponse,
   UserProfile,
   WeeklyReviewData,
-  AIWeeklyReviewResponse,
 } from '../../types';
+import { calculateBodyFatPercentage } from '../../utils/calculations';
+import { formatDate, formatDisplayDate } from '../../utils/date';
+import { Button, Card, CardContent, Modal } from '../ui';
 
 type ReviewStep =
   | 'loading'
@@ -48,9 +49,10 @@ export function WeeklyReviewModal({
   onClose,
   profile,
 }: WeeklyReviewModalProps) {
+  const queryClient = useQueryClient();
   const { fetchWeeklyData, saveWeeklyReview, getPastWeekRange } =
     useWeeklyReview();
-  const { updateProfile, fetchProfile } = useProfile();
+  const { updateProfile } = useProfile();
   const { addLog } = useWeight();
   const isOnline = useAppStore((state) => state.isOnline);
 
@@ -264,7 +266,8 @@ export function WeeklyReviewModal({
         // Silent fail - review still completed
       }
     }
-    await fetchProfile();
+    // Invalidate profile query to trigger refetch after updates
+    await queryClient.invalidateQueries({ queryKey: ['profile'] });
     onClose();
   }
 

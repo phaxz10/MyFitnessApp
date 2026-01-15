@@ -1,46 +1,47 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useQueryClient } from '@tanstack/react-query';
 import {
-  ChevronRight,
-  User,
-  Target,
-  Key,
-  Download,
-  Upload,
-  Trash2,
-  RefreshCw,
   AlertTriangle,
+  ChevronRight,
+  Download,
+  Key,
+  RefreshCw,
+  Target,
+  Trash2,
+  Upload,
+  User,
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { useNavigate } from 'react-router-dom';
+import { ExportModal } from '../components/settings/ExportModal';
 import {
+  Button,
   Card,
   CardContent,
-  Button,
   Input,
-  Select,
   Modal,
+  Select,
 } from '../components/ui';
-import { ExportModal } from '../components/settings/ExportModal';
-import { useProfile } from '../hooks/useProfile';
 import { useAppStore } from '../hooks/useAppStore';
-import { initGemini, calculateTargets } from '../services/gemini';
+import { useProfile } from '../hooks/useProfile';
 import {
+  type ApiKeyFormData,
+  apiKeyFormSchema,
+  type GoalsFormData,
+  goalsFormSchema,
+  type ProfileFormData,
+  profileFormSchema,
+} from '../schemas/forms';
+import {
+  downloadBackup,
+  type ExportOptions,
   exportData,
   importData,
-  downloadBackup,
   readBackupFile,
-  type ExportOptions,
 } from '../services/backup';
 import { resetDatabase } from '../services/db';
-import {
-  profileFormSchema,
-  goalsFormSchema,
-  apiKeyFormSchema,
-  type ProfileFormData,
-  type GoalsFormData,
-  type ApiKeyFormData,
-} from '../schemas/forms';
+import { calculateTargets, initGemini } from '../services/gemini';
 
 const activityOptions = [
   { value: 'sedentary', label: 'Sedentary' },
@@ -59,7 +60,8 @@ const goalOptions = [
 
 export function Settings() {
   const navigate = useNavigate();
-  const { profile, fetchProfile, updateProfile } = useProfile();
+  const queryClient = useQueryClient();
+  const { profile, updateProfile } = useProfile();
   const setOnboardingComplete = useAppStore(
     (state) => state.setOnboardingComplete,
   );
@@ -104,9 +106,7 @@ export function Settings() {
     },
   });
 
-  useEffect(() => {
-    fetchProfile();
-  }, [fetchProfile]);
+  // Profile is automatically fetched by useQuery - no need for manual useEffect
 
   useEffect(() => {
     if (profile) {
@@ -253,7 +253,8 @@ export function Settings() {
     try {
       const data = await readBackupFile(file);
       await importData(data);
-      await fetchProfile();
+      // Invalidate profile query to trigger refetch after import
+      await queryClient.invalidateQueries({ queryKey: ['profile'] });
       setSuccess('Data imported successfully');
     } catch (_err) {
       setError('Failed to import data');

@@ -1,3 +1,4 @@
+import { QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import {
   BrowserRouter,
@@ -11,6 +12,7 @@ import { BottomNav, Header } from './components/ui';
 import { useAppStore } from './hooks/useAppStore';
 import { useProfile } from './hooks/useProfile';
 import { useWorkoutLogs } from './hooks/useWorkoutLogs';
+import { queryClient } from './lib/queryClient';
 import { CalorieLog } from './pages/CalorieLog';
 
 // Pages
@@ -59,7 +61,7 @@ function AppRoutes() {
     setOnline,
     setUserProfile,
   } = useAppStore();
-  const { profile, fetchProfile } = useProfile();
+  const { profile } = useProfile();
   const { processStaleWorkouts } = useWorkoutLogs();
   const [isLoading, setIsLoading] = useState(true);
 
@@ -74,7 +76,6 @@ function AppRoutes() {
         setOnboardingComplete(complete);
 
         if (complete) {
-          await fetchProfile();
           // Process any stale in_progress workouts from previous days
           await processStaleWorkouts();
         }
@@ -86,7 +87,7 @@ function AppRoutes() {
     };
 
     init();
-  }, [setOnboardingComplete, fetchProfile, processStaleWorkouts]);
+  }, [setOnboardingComplete, processStaleWorkouts]);
 
   // Initialize Gemini when profile is loaded
   useEffect(() => {
@@ -159,9 +160,11 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <AppRoutes />
-      <GlobalModalContainer />
-    </BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <AppRoutes />
+        <GlobalModalContainer />
+      </BrowserRouter>
+    </QueryClientProvider>
   );
 }

@@ -31,7 +31,7 @@ import { formatDate, formatDisplayDate, getPreviousDay } from '../utils/date';
 
 export function CalorieLog() {
   const [searchParams] = useSearchParams();
-  const { profile, fetchProfile } = useProfile();
+  const { profile } = useProfile();
   const {
     fetchEntriesByDate,
     updateEntry,
@@ -72,10 +72,6 @@ export function CalorieLog() {
       fat: '',
     },
   });
-
-  useEffect(() => {
-    fetchProfile();
-  }, [fetchProfile]);
 
   // Sync currentDate with URL param when it changes
   useEffect(() => {

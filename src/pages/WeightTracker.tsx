@@ -53,7 +53,7 @@ import {
 export function WeightTracker() {
   const [searchParams] = useSearchParams();
   const { logs, fetchLogs, addLog } = useWeight();
-  const { profile, fetchProfile } = useProfile();
+  const { profile } = useProfile();
   const { photos, fetchAllPhotos, addPhoto, deletePhoto } = useProgressPhotos();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -96,13 +96,13 @@ export function WeightTracker() {
     const loadData = async () => {
       setInitialLoading(true);
       try {
-        await Promise.all([fetchProfile(), fetchLogs(), fetchAllPhotos()]);
+        await Promise.all([fetchLogs(), fetchAllPhotos()]);
       } finally {
         setInitialLoading(false);
       }
     };
     loadData();
-  }, [fetchProfile, fetchLogs, fetchAllPhotos]);
+  }, [fetchLogs, fetchAllPhotos]);
 
   useEffect(() => {
     if (searchParams.get('action') === 'add') {

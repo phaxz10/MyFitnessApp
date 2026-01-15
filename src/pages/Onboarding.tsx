@@ -1,17 +1,17 @@
-import { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useQueryClient } from '@tanstack/react-query';
 import { Dumbbell, Upload } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { useNavigate } from 'react-router-dom';
 import { Button, Input, Select } from '../components/ui';
 import { useAppStore } from '../hooks/useAppStore';
 import { useProfile } from '../hooks/useProfile';
 import { useWeight } from '../hooks/useWeight';
-import { initGemini } from '../services/gemini';
-import { calculateTargets } from '../services/gemini';
-import { formatDate } from '../utils/date';
-import { onboardingSchema, type OnboardingFormData } from '../schemas/forms';
+import { type OnboardingFormData, onboardingSchema } from '../schemas/forms';
 import { importData, readBackupFile } from '../services/backup';
+import { calculateTargets, initGemini } from '../services/gemini';
+import { formatDate } from '../utils/date';
 
 type Step =
   | 'welcome'
@@ -42,10 +42,11 @@ const goalOptions = [
 
 export function Onboarding() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const setOnboardingComplete = useAppStore(
     (state) => state.setOnboardingComplete,
   );
-  const { createProfile, fetchProfile } = useProfile();
+  const { createProfile } = useProfile();
   const { addLog } = useWeight();
 
   const [step, setStep] = useState<Step>('welcome');
@@ -268,8 +269,8 @@ export function Onboarding() {
       if (hasProfile) {
         // Profile exists in backup, skip onboarding
         setOnboardingComplete(true);
-        // Refresh profile state
-        await fetchProfile();
+        // Invalidate profile query to trigger refetch
+        await queryClient.invalidateQueries({ queryKey: ['profile'] });
         navigate('/');
       } else {
         // No profile in backup, continue with onboarding

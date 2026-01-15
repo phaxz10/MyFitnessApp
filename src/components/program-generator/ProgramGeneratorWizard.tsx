@@ -1,35 +1,35 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
-  Sparkles,
-  Dumbbell,
-  Clock,
-  Calendar,
-  Target,
-  ChevronRight,
-  ChevronLeft,
-  Check,
   AlertCircle,
-  Loader2,
+  Calendar,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Dumbbell,
   Info,
+  Loader2,
+  Sparkles,
+  Target,
 } from 'lucide-react';
-import { Modal, Button, Card, CardContent } from '../ui';
-import { useProgramGenerator } from '../../hooks/useProgramGenerator';
-import { useProfile } from '../../hooks/useProfile';
-import { useAppStore } from '../../hooks/useAppStore';
-import { initGemini, isGeminiInitialized } from '../../services/gemini';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   EQUIPMENT_CATEGORIES,
   EQUIPMENT_PRESETS,
-  TRAINING_SPLITS,
-  MUSCLE_GROUPS,
   EXPERIENCE_LEVELS,
+  MUSCLE_GROUPS,
+  TRAINING_SPLITS,
 } from '../../constants/equipment';
+import { useAppStore } from '../../hooks/useAppStore';
+import { useProfile } from '../../hooks/useProfile';
+import { useProgramGenerator } from '../../hooks/useProgramGenerator';
+import { initGemini, isGeminiInitialized } from '../../services/gemini';
 import type {
+  AIProgramGeneratorInput,
   EquipmentType,
   ExperienceLevel,
-  AIProgramGeneratorInput,
 } from '../../types';
+import { Button, Card, CardContent, Modal } from '../ui';
 
 type WizardStep =
   | 'frequency'
@@ -49,7 +49,7 @@ export function ProgramGeneratorWizard({
   onClose,
 }: ProgramGeneratorWizardProps) {
   const navigate = useNavigate();
-  const { profile, fetchProfile } = useProfile();
+  const { profile } = useProfile();
   const isOnline = useAppStore((state) => state.isOnline);
   const {
     state: generatorState,
@@ -72,13 +72,6 @@ export function ProgramGeneratorWizard({
     useState<AIProgramGeneratorInput['preferredTrainingSplit']>('auto');
   const [focusAreas, setFocusAreas] = useState<string[]>([]);
   const [injuries, setInjuries] = useState('');
-
-  // Load profile on mount
-  useEffect(() => {
-    if (isOpen && !profile) {
-      fetchProfile();
-    }
-  }, [isOpen, profile, fetchProfile]);
 
   // Initialize Gemini when profile loads
   useEffect(() => {

@@ -36,7 +36,7 @@ import { formatDate, formatDisplayDate } from '../utils/date';
 
 export function Dashboard() {
   const navigate = useNavigate();
-  const { profile, fetchProfile } = useProfile();
+  const { profile } = useProfile();
   const { fetchEntriesByDate, getDailySummary } = useCalories();
   const { getLatestLog, getFirstWeight } = useWeight();
   const { logs, fetchLogs, activeWorkout, resumeWorkout } = useWorkoutLogs();
@@ -60,7 +60,6 @@ export function Dashboard() {
     setIsLoading(true);
     try {
       await Promise.all([
-        fetchProfile(),
         fetchEntriesByDate(today),
         fetchLogs(5),
         resumeWorkout(),
@@ -83,7 +82,6 @@ export function Dashboard() {
       setIsLoading(false);
     }
   }, [
-    fetchProfile,
     fetchEntriesByDate,
     fetchLogs,
     resumeWorkout,

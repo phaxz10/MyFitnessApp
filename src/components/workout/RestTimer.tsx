@@ -7,7 +7,7 @@ import {
   VolumeX,
   X,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAlarmTone } from '../../hooks/useAlarmTone';
 import { formatTimerDisplay } from '../../utils/formatters';
 import { Button } from '../ui';
@@ -39,6 +39,65 @@ export function RestTimer({
   const [soundEnabled, setSoundEnabled] = useState(true);
   const { isAlarming, startAlarm, stopAlarm } = useAlarmTone();
 
+  const endAtRef = useRef<number | null>(null);
+  const notificationTimeoutRef = useRef<number | null>(null);
+
+  const clearNotificationTimeout = useCallback(() => {
+    if (notificationTimeoutRef.current) {
+      clearTimeout(notificationTimeoutRef.current);
+      notificationTimeoutRef.current = null;
+    }
+  }, []);
+
+  const requestNotificationPermission = useCallback(async () => {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'default') {
+      await Notification.requestPermission();
+    }
+  }, []);
+
+  const scheduleFinishNotification = useCallback(
+    (endAt: number) => {
+      if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+        return;
+      }
+
+      const delay = endAt - Date.now();
+      if (delay <= 0) return;
+
+      clearNotificationTimeout();
+      notificationTimeoutRef.current = window.setTimeout(async () => {
+        if (document.visibilityState !== 'hidden') return;
+
+        let permission = Notification.permission;
+        if (permission === 'default') {
+          permission = await Notification.requestPermission();
+        }
+        if (permission !== 'granted') return;
+
+        const registration = await navigator.serviceWorker.ready;
+        registration.showNotification('Rest timer finished', {
+          body: 'Tap to return to your workout.',
+          icon: '/icon-192.png',
+          badge: '/icon-192.png',
+          tag: 'rest-timer-finished',
+          data: { type: 'rest-timer' },
+        });
+
+        if (navigator.vibrate) {
+          navigator.vibrate([200, 100, 200, 100, 300]);
+        }
+
+        endAtRef.current = null;
+        startTimeRef.current = null;
+        setIsRunning(false);
+        setSeconds(0);
+        notificationTimeoutRef.current = null;
+      }, delay);
+    },
+    [clearNotificationTimeout, setIsRunning, setSeconds],
+  );
+
   // Use timestamp-based timing to handle background/sleep
   const startTimeRef = useRef<number | null>(null);
   const remainingAtStartRef = useRef<number>(seconds);
@@ -53,6 +112,60 @@ export function RestTimer({
       startTimeRef.current = null;
     }
   }, [isRunning, seconds]);
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type !== 'rest-timer-ring') return;
+      onOpenChange(true);
+      if (soundEnabled) {
+        startAlarm();
+      } else if (navigator.vibrate) {
+        navigator.vibrate([200, 100, 200, 100, 200]);
+      }
+    };
+
+    navigator.serviceWorker.addEventListener('message', handleMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleMessage);
+    };
+  }, [onOpenChange, soundEnabled, startAlarm]);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (!endAtRef.current) return;
+      if (document.visibilityState !== 'visible') return;
+
+      if (Date.now() >= endAtRef.current && seconds > 0) {
+        endAtRef.current = null;
+        clearNotificationTimeout();
+        setIsRunning(false);
+        setSeconds(0);
+        if (soundEnabled) {
+          startAlarm();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [
+    clearNotificationTimeout,
+    seconds,
+    setIsRunning,
+    setSeconds,
+    soundEnabled,
+    startAlarm,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      clearNotificationTimeout();
+    };
+  }, [clearNotificationTimeout]);
 
   useEffect(() => {
     let animationFrame: number;
@@ -73,6 +186,8 @@ export function RestTimer({
         if (newSeconds === 0) {
           setIsRunning(false);
           startTimeRef.current = null;
+          endAtRef.current = null;
+          clearNotificationTimeout();
           // Start looping alarm sound
           if (soundEnabled) {
             startAlarm();
@@ -94,19 +209,35 @@ export function RestTimer({
     return () => {
       if (animationFrame) cancelAnimationFrame(animationFrame);
     };
-  }, [isRunning, soundEnabled, setSeconds, setIsRunning, startAlarm]);
+  }, [
+    clearNotificationTimeout,
+    isRunning,
+    setSeconds,
+    setIsRunning,
+    soundEnabled,
+    startAlarm,
+  ]);
 
   const toggleTimer = () => {
     if (!isRunning) {
       // Starting timer - set new start time
       startTimeRef.current = Date.now();
       remainingAtStartRef.current = seconds;
+      const endAt = Date.now() + seconds * 1000;
+      endAtRef.current = endAt;
+      requestNotificationPermission();
+      scheduleFinishNotification(endAt);
+    } else {
+      endAtRef.current = null;
+      clearNotificationTimeout();
     }
     setIsRunning(!isRunning);
   };
 
   const resetTimer = () => {
     stopAlarm();
+    clearNotificationTimeout();
+    endAtRef.current = null;
     setIsRunning(false);
     setSeconds(initialSeconds);
     startTimeRef.current = null;
@@ -114,6 +245,10 @@ export function RestTimer({
 
   const setPresetTime = (time: number) => {
     stopAlarm(); // Stop alarm if user selects a new time
+    const endAt = Date.now() + time * 1000;
+    endAtRef.current = endAt;
+    requestNotificationPermission();
+    scheduleFinishNotification(endAt);
     setSeconds(time);
     setInitialSeconds(time);
     startTimeRef.current = Date.now();
@@ -123,6 +258,8 @@ export function RestTimer({
 
   const dismissTimer = () => {
     stopAlarm(); // Stop the looping alarm
+    clearNotificationTimeout();
+    endAtRef.current = null;
     setIsRunning(false);
     setSeconds(initialSeconds);
     startTimeRef.current = null;

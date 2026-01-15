@@ -1,7 +1,8 @@
 import { Check, Pause, Play, RotateCcw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useAlarmTone } from '../../hooks/useAlarmTone';
 import { formatTimerDisplay } from '../../utils/formatters';
-import { Button } from '../ui';
+import { Button, Input } from '../ui';
 
 interface DurationTimerProps {
   targetSeconds: number;
@@ -16,7 +17,10 @@ export function DurationTimer({
 }: DurationTimerProps) {
   const [seconds, setSeconds] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
+  const [ringIntervalSeconds, setRingIntervalSeconds] = useState(0);
+  const { isAlarming, playAlarmBeep, startAlarm, stopAlarm } = useAlarmTone();
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastRingSecondRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (isRunning) {
@@ -25,11 +29,44 @@ export function DurationTimer({
       }, 1000);
     } else if (intervalRef.current) {
       clearInterval(intervalRef.current);
+      lastRingSecondRef.current = null;
     }
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [isRunning]);
+
+  useEffect(() => {
+    if (!isRunning || ringIntervalSeconds <= 0) return;
+    if (seconds === 0 || seconds >= targetSeconds) return;
+
+    if (
+      seconds % ringIntervalSeconds === 0 &&
+      lastRingSecondRef.current !== seconds
+    ) {
+      playAlarmBeep();
+      lastRingSecondRef.current = seconds;
+    }
+  }, [isRunning, playAlarmBeep, ringIntervalSeconds, seconds, targetSeconds]);
+
+  useEffect(() => {
+    if (targetSeconds <= 0) return;
+
+    if (seconds >= targetSeconds) {
+      if (!isAlarming) startAlarm();
+    } else if (isAlarming) {
+      stopAlarm();
+    }
+  }, [isAlarming, seconds, startAlarm, stopAlarm, targetSeconds]);
+
+  const handleRingIntervalChange = (value: string) => {
+    const parsed = Number(value);
+    if (Number.isNaN(parsed)) {
+      setRingIntervalSeconds(0);
+      return;
+    }
+    setRingIntervalSeconds(Math.max(0, Math.floor(parsed)));
+  };
 
   const progress = Math.min((seconds / targetSeconds) * 100, 100);
   const isOverTarget = seconds >= targetSeconds;
@@ -56,13 +93,35 @@ export function DurationTimer({
           />
         </div>
 
+        <div className="flex items-center gap-3 mb-6">
+          <label
+            htmlFor="duration-ring-interval"
+            className="text-sm text-slate-400"
+          >
+            Ring every
+          </label>
+          <Input
+            id="duration-ring-interval"
+            type="number"
+            min={0}
+            inputMode="numeric"
+            value={ringIntervalSeconds === 0 ? '' : ringIntervalSeconds}
+            onChange={(event) => handleRingIntervalChange(event.target.value)}
+            placeholder="Off"
+            className="w-20 text-center"
+          />
+          <span className="text-sm text-slate-400">sec</span>
+        </div>
+
         <div className="flex gap-3">
           <Button
             variant="secondary"
             className="flex-1"
             onClick={() => {
+              stopAlarm();
               setIsRunning(false);
               setSeconds(0);
+              lastRingSecondRef.current = null;
             }}
           >
             <RotateCcw size={18} className="mr-2" />
@@ -87,12 +146,20 @@ export function DurationTimer({
         </div>
 
         <div className="flex gap-3 mt-3">
-          <Button variant="secondary" className="flex-1" onClick={onCancel}>
+          <Button
+            variant="secondary"
+            className="flex-1"
+            onClick={() => {
+              stopAlarm();
+              onCancel();
+            }}
+          >
             Cancel
           </Button>
           <Button
             className="flex-1 bg-green-600 hover:bg-green-700"
             onClick={() => {
+              stopAlarm();
               setIsRunning(false);
               onComplete(seconds);
             }}

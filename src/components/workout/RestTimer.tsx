@@ -7,7 +7,8 @@ import {
   VolumeX,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useAlarmTone } from '../../hooks/useAlarmTone';
 import { formatTimerDisplay } from '../../utils/formatters';
 import { Button } from '../ui';
 
@@ -36,110 +37,7 @@ export function RestTimer({
   setInitialSeconds,
 }: RestTimerProps) {
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [isAlarming, setIsAlarming] = useState(false);
-  const alarmIntervalRef = useRef<number | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-
-  // Play a single alarm beep pattern (3 beeps)
-  const playAlarmBeep = useCallback(() => {
-    try {
-      // Reuse or create audio context
-      if (
-        !audioContextRef.current ||
-        audioContextRef.current.state === 'closed'
-      ) {
-        audioContextRef.current = new (
-          window.AudioContext ||
-          (window as unknown as { webkitAudioContext: typeof AudioContext })
-            .webkitAudioContext
-        )();
-      }
-
-      const audioContext = audioContextRef.current;
-
-      // Resume if suspended (needed for some browsers)
-      if (audioContext.state === 'suspended') {
-        audioContext.resume();
-      }
-
-      const gainNode = audioContext.createGain();
-      gainNode.connect(audioContext.destination);
-      gainNode.gain.value = 0.4;
-
-      // Beep 1
-      const osc1 = audioContext.createOscillator();
-      osc1.connect(gainNode);
-      osc1.frequency.value = 880;
-      osc1.type = 'sine';
-      osc1.start(audioContext.currentTime);
-      osc1.stop(audioContext.currentTime + 0.15);
-
-      // Beep 2
-      const osc2 = audioContext.createOscillator();
-      osc2.connect(gainNode);
-      osc2.frequency.value = 880;
-      osc2.type = 'sine';
-      osc2.start(audioContext.currentTime + 0.25);
-      osc2.stop(audioContext.currentTime + 0.4);
-
-      // Beep 3 (higher pitch)
-      const osc3 = audioContext.createOscillator();
-      osc3.connect(gainNode);
-      osc3.frequency.value = 1100;
-      osc3.type = 'sine';
-      osc3.start(audioContext.currentTime + 0.5);
-      osc3.stop(audioContext.currentTime + 0.7);
-    } catch {
-      // Audio not supported
-    }
-  }, []);
-
-  // Start looping alarm
-  const startAlarm = useCallback(() => {
-    if (alarmIntervalRef.current) return; // Already alarming
-
-    setIsAlarming(true);
-    playAlarmBeep(); // Play immediately
-
-    // Loop every 1.5 seconds
-    alarmIntervalRef.current = window.setInterval(() => {
-      playAlarmBeep();
-    }, 1500);
-
-    // Vibrate pattern (loops via interval)
-    if (navigator.vibrate) {
-      navigator.vibrate([200, 100, 200, 100, 300]);
-    }
-  }, [playAlarmBeep]);
-
-  // Stop the alarm
-  const stopAlarm = useCallback(() => {
-    if (alarmIntervalRef.current) {
-      clearInterval(alarmIntervalRef.current);
-      alarmIntervalRef.current = null;
-    }
-    setIsAlarming(false);
-
-    // Stop vibration
-    if (navigator.vibrate) {
-      navigator.vibrate(0);
-    }
-  }, []);
-
-  // Cleanup alarm on unmount
-  useEffect(() => {
-    return () => {
-      if (alarmIntervalRef.current) {
-        clearInterval(alarmIntervalRef.current);
-      }
-      if (
-        audioContextRef.current &&
-        audioContextRef.current.state !== 'closed'
-      ) {
-        audioContextRef.current.close();
-      }
-    };
-  }, []);
+  const { isAlarming, startAlarm, stopAlarm } = useAlarmTone();
 
   // Use timestamp-based timing to handle background/sleep
   const startTimeRef = useRef<number | null>(null);

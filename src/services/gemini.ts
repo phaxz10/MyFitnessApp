@@ -74,8 +74,9 @@ Return format:
       temperature: 1,
       tools: [{ googleSearch: {} }],
       thinkingConfig: {
-        thinkingLevel: ThinkingLevel.MEDIUM,
+        thinkingLevel: ThinkingLevel.HIGH,
         includeThoughts: false,
+        thinkingBudget: 1000,
       },
     },
   });
@@ -133,7 +134,8 @@ Return JSON format only, no markdown code blocks:
       tools: [{ googleSearch: {} }],
       thinkingConfig: {
         includeThoughts: false,
-        thinkingLevel: ThinkingLevel.MEDIUM,
+        thinkingLevel: ThinkingLevel.HIGH,
+        thinkingBudget: 2000,
       },
     },
   });
@@ -203,6 +205,11 @@ Guidelines:
     contents: prompt,
     config: {
       tools: [{ googleSearch: {} }],
+      thinkingConfig: {
+        includeThoughts: false,
+        thinkingLevel: ThinkingLevel.HIGH,
+        thinkingBudget: 1500,
+      },
     },
   });
 
@@ -258,6 +265,11 @@ Guidelines:
     contents: prompt,
     config: {
       tools: [{ googleSearch: {} }],
+      thinkingConfig: {
+        includeThoughts: false,
+        thinkingBudget: 3000,
+        thinkingLevel: ThinkingLevel.HIGH,
+      },
     },
   });
 
@@ -370,6 +382,7 @@ Return JSON format only, no markdown code blocks:
       thinkingConfig: {
         includeThoughts: false,
         thinkingLevel: ThinkingLevel.MEDIUM,
+        thinkingBudget: 512,
       },
     },
   });
@@ -460,6 +473,7 @@ Return JSON format only, no markdown code blocks:
       thinkingConfig: {
         includeThoughts: false,
         thinkingLevel: ThinkingLevel.HIGH,
+        thinkingBudget: 1500,
       },
     },
   });
@@ -599,6 +613,7 @@ Guidelines:
       thinkingConfig: {
         includeThoughts: false,
         thinkingLevel: ThinkingLevel.HIGH,
+        thinkingBudget: 1500,
       },
     },
   });
@@ -839,6 +854,14 @@ CRITICAL RULES:
   const response = await ai.models.generateContent({
     model: MODEL,
     contents: prompt,
+    config: {
+      tools: [{ googleSearch: {} }],
+      thinkingConfig: {
+        includeThoughts: false,
+        thinkingLevel: ThinkingLevel.HIGH,
+        thinkingBudget: 3000,
+      },
+    },
   });
 
   const text = response.text ?? '';
@@ -925,6 +948,11 @@ RULES:
     contents: prompt,
     config: {
       tools: [{ googleSearch: {} }],
+      thinkingConfig: {
+        includeThoughts: false,
+        thinkingLevel: ThinkingLevel.LOW,
+        thinkingBudget: 256,
+      },
     },
   });
 

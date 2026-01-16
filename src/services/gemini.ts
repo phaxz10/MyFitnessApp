@@ -1,20 +1,20 @@
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import { ALWAYS_AVAILABLE_EQUIPMENT } from '../constants/equipment';
 import type {
-  AIFoodAnalysisResponse,
+  AIExerciseCoachingResponse,
   AIExerciseResponse,
-  AITargetResponse,
+  AIFoodAnalysisResponse,
   AIGoalReviewResponse,
-  AIWeeklyReviewResponse,
   AIProgramGeneratorInput,
   AIProgramGeneratorResponse,
-  AIExerciseCoachingResponse,
-  UserProfile,
-  WeightLog,
+  AITargetResponse,
+  AIWeeklyReviewResponse,
   Exercise,
+  UserProfile,
   WeeklyReviewData,
+  WeightLog,
   WorkoutSet,
 } from '../types';
-import { ALWAYS_AVAILABLE_EQUIPMENT } from '../constants/equipment';
 
 let ai: GoogleGenAI | null = null;
 
@@ -74,7 +74,7 @@ Return format:
       temperature: 1,
       tools: [{ googleSearch: {} }],
       thinkingConfig: {
-        thinkingLevel: ThinkingLevel.HIGH,
+        thinkingLevel: ThinkingLevel.LOW,
         includeThoughts: false,
       },
     },
@@ -132,8 +132,8 @@ Return JSON format only, no markdown code blocks:
       temperature: 1,
       tools: [{ googleSearch: {} }],
       thinkingConfig: {
+        thinkingLevel: ThinkingLevel.LOW,
         includeThoughts: false,
-        thinkingLevel: ThinkingLevel.HIGH,
       },
     },
   });
@@ -204,9 +204,8 @@ Guidelines:
     config: {
       tools: [{ googleSearch: {} }],
       thinkingConfig: {
-        includeThoughts: false,
         thinkingLevel: ThinkingLevel.HIGH,
-        thinkingBudget: 6000,
+        includeThoughts: false,
       },
     },
   });
@@ -264,9 +263,8 @@ Guidelines:
     config: {
       tools: [{ googleSearch: {} }],
       thinkingConfig: {
-        includeThoughts: false,
-        thinkingBudget: 6000,
         thinkingLevel: ThinkingLevel.HIGH,
+        includeThoughts: false,
       },
     },
   });
@@ -378,9 +376,8 @@ Return JSON format only, no markdown code blocks:
     config: {
       tools: [{ googleSearch: {} }],
       thinkingConfig: {
-        includeThoughts: false,
         thinkingLevel: ThinkingLevel.MEDIUM,
-        thinkingBudget: 3000,
+        includeThoughts: false,
       },
     },
   });
@@ -469,9 +466,8 @@ Return JSON format only, no markdown code blocks:
     config: {
       tools: [{ googleSearch: {} }],
       thinkingConfig: {
-        includeThoughts: false,
         thinkingLevel: ThinkingLevel.HIGH,
-        thinkingBudget: 3000,
+        includeThoughts: false,
       },
     },
   });
@@ -609,9 +605,8 @@ Guidelines:
     config: {
       tools: [{ googleSearch: {} }],
       thinkingConfig: {
-        includeThoughts: false,
         thinkingLevel: ThinkingLevel.HIGH,
-        thinkingBudget: 6000,
+        includeThoughts: false,
       },
     },
   });
@@ -855,9 +850,8 @@ CRITICAL RULES:
     config: {
       tools: [{ googleSearch: {} }],
       thinkingConfig: {
-        includeThoughts: false,
         thinkingLevel: ThinkingLevel.HIGH,
-        thinkingBudget: 6000,
+        includeThoughts: false,
       },
     },
   });
@@ -947,9 +941,8 @@ RULES:
     config: {
       tools: [{ googleSearch: {} }],
       thinkingConfig: {
-        includeThoughts: false,
         thinkingLevel: ThinkingLevel.LOW,
-        thinkingBudget: 512,
+        includeThoughts: false,
       },
     },
   });

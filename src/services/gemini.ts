@@ -647,11 +647,11 @@ export async function generateWorkoutProgram(
       ? 'Choose the most appropriate training split based on the frequency'
       : `Use a ${input.preferredTrainingSplit?.replace(/_/g, ' ')} split`;
 
-  const prompt = `You are an expert strength and conditioning coach using evidence-based programming principles. Create a complete workout program based on these specifications:
+  const prompt = `You are an expert strength and conditioning coach using evidence-based programming principles. Create a complete workout program based on these specifications. Use BuiltWithScience-style programming as your primary reference if possible.
 
 USER PREFERENCES:
 - Training frequency: ${input.trainingDaysPerWeek} days per week
-- Session duration: ${input.sessionDurationMinutes} minutes per session
+- Session duration: ${input.sessionDurationMinutes} minutes per session (HARD CAP)
 - Experience level: ${input.experienceLevel}
 - Goal: ${input.goal} - ${goalDescriptions[input.goal] || input.goal}
 - Split preference: ${splitPreference}
@@ -796,6 +796,15 @@ ${existingExercisesList || 'No existing exercises'}
    - For ${input.trainingDaysPerWeek} days: optimal spacing with rest days between
    - Don't cluster all training days together
 
+9. HARD TIME BUDGET (must obey):
+   - Estimate time per exercise using: (sets × 2 minutes) + rest time
+   - Rest time defaults: compounds 2-3 min, accessories 60-90 sec, core 45-60 sec
+   - Assume 5 minutes warmup per session
+   - Sum all exercise times + warmup to get sessionTimeMinutes
+   - If sessionTimeMinutes > ${input.sessionDurationMinutes}, REMOVE lowest-priority accessories until it fits
+   - Use priority order: compounds first, then major accessories, then small isolation, then core
+   - Cap exercises per session to fit time, typically ${Math.floor(input.sessionDurationMinutes / 10)}-${Math.floor(input.sessionDurationMinutes / 7)} exercises
+
 Return JSON format only, no markdown code blocks:
 {
   "programName": "descriptive program name",
@@ -804,6 +813,7 @@ Return JSON format only, no markdown code blocks:
     {
       "name": "Session name (e.g., 'Push Day', 'Upper Body A')",
       "dayOfWeek": 1,
+      "sessionTimeMinutes": 60,
       "exercises": [
         {
           "name": "Exercise Name (use exact name from library if exists)",
@@ -841,8 +851,8 @@ CRITICAL RULES:
 - Exercise names should be standard, recognizable names
 - For duration-based exercises (planks, holds), set targetDurationSeconds instead of reps
 - Ensure balanced muscle development unless specific focus areas requested
-- ${input.sessionDurationMinutes} minute sessions should have roughly ${Math.floor(input.sessionDurationMinutes / 7)}-${Math.floor(input.sessionDurationMinutes / 5)} exercises
-- If possible, research for builtwithscience.com publicly available routines to align with evidence-based practices`;
+- Do NOT exceed the hard session time cap of ${input.sessionDurationMinutes} minutes
+- If possible, prioritize builtwithscience.com publicly available routines to align with evidence-based practices`;
 
   const response = await ai.models.generateContent({
     model: MODEL,

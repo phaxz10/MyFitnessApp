@@ -1,16 +1,19 @@
 /// <reference lib="webworker" />
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 import { ExpirationPlugin } from 'workbox-expiration';
-import { precacheAndRoute } from 'workbox-precaching';
+import { type PrecacheEntry, precacheAndRoute } from 'workbox-precaching';
 import { registerRoute } from 'workbox-routing';
 import { NetworkFirst } from 'workbox-strategies';
 
-declare const self: ServiceWorkerGlobalScope;
+declare const self: ServiceWorkerGlobalScope & {
+  __WB_MANIFEST: PrecacheEntry[];
+};
 
 precacheAndRoute(self.__WB_MANIFEST || []);
 
 registerRoute(
-  ({ url }) => url.origin === 'https://generativelanguage.googleapis.com',
+  ({ url }: { url: URL }) =>
+    url.origin === 'https://generativelanguage.googleapis.com',
   new NetworkFirst({
     cacheName: 'gemini-api-cache',
     plugins: [

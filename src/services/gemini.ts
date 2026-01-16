@@ -76,7 +76,6 @@ Return format:
       thinkingConfig: {
         thinkingLevel: ThinkingLevel.HIGH,
         includeThoughts: false,
-        thinkingBudget: 1000,
       },
     },
   });
@@ -135,7 +134,6 @@ Return JSON format only, no markdown code blocks:
       thinkingConfig: {
         includeThoughts: false,
         thinkingLevel: ThinkingLevel.HIGH,
-        thinkingBudget: 2000,
       },
     },
   });

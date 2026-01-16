@@ -462,7 +462,7 @@ export function RestTimer({
                   >
                     {time < 60
                       ? `${time}s`
-                      : `${time / 60}m${time % 60 > 0 ? ` ${time % 60}s` : ''}`}
+                      : `${Math.floor(time / 60)}m${time % 60 > 0 ? ` ${time % 60}s` : ''}`}
                   </button>
                 ))}
               </div>

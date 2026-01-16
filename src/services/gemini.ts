@@ -145,14 +145,32 @@ Return JSON format only, no markdown code blocks:
 // Valid muscle group categories for filtering
 const MUSCLE_GROUP_CATEGORIES = [
   'Chest',
+  'Upper Chest',
+  'Mid Chest',
+  'Lower Chest',
   'Back',
+  'Upper Back',
+  'Mid Back',
+  'Lower Back',
   'Shoulders',
+  'Front Shoulders',
+  'Side Shoulders',
+  'Rear Shoulders',
+  'Arms',
   'Biceps',
   'Triceps',
+  'Forearms',
   'Legs',
-  'Core',
+  'Quads',
+  'Hamstrings',
+  'Calves',
   'Glutes',
-  'Full Body',
+  'Upper Glutes',
+  'Lower Glutes',
+  'Core',
+  'Upper Abs',
+  'Lower Abs',
+  'Obliques',
 ] as const;
 
 // Generate exercise details
@@ -166,7 +184,7 @@ export async function generateExerciseDetails(
 Provide detailed, actionable information that helps someone perform this exercise safely and effectively.
 
 IMPORTANT: For muscle_groups, you MUST ONLY use values from this list: ${MUSCLE_GROUP_CATEGORIES.join(', ')}
-- Map anatomical terms to these categories (e.g., "Pectoralis Major" -> "Chest", "Latissimus Dorsi" -> "Back", "Quadriceps/Hamstrings" -> "Legs", "Deltoids" -> "Shoulders", "Abdominals/Obliques" -> "Core", "Gluteus Maximus" -> "Glutes")
+- Map anatomical terms to these categories, using simple region cues to pick the best category (upper/mid/lower chest or back, front/side/rear shoulders, quads/hamstrings/calves for legs, upper/lower abs or obliques for core, upper/lower glutes). Example mappings: "Pectoralis Major" -> "Chest", "Latissimus Dorsi" -> "Back", "Quadriceps" -> "Quads", "Hamstrings" -> "Hamstrings", "Deltoids" -> "Shoulders", "Abdominals" -> "Core", "Obliques" -> "Core", "Gluteus Maximus/Med" -> "Glutes", "Calves" -> "Calves"
 - List primary muscle group first
 - For compound movements targeting many areas, you can include "Full Body"
 

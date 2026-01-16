@@ -206,7 +206,7 @@ Guidelines:
       thinkingConfig: {
         includeThoughts: false,
         thinkingLevel: ThinkingLevel.HIGH,
-        thinkingBudget: 1500,
+        thinkingBudget: 6000,
       },
     },
   });
@@ -265,7 +265,7 @@ Guidelines:
       tools: [{ googleSearch: {} }],
       thinkingConfig: {
         includeThoughts: false,
-        thinkingBudget: 3000,
+        thinkingBudget: 6000,
         thinkingLevel: ThinkingLevel.HIGH,
       },
     },
@@ -380,7 +380,7 @@ Return JSON format only, no markdown code blocks:
       thinkingConfig: {
         includeThoughts: false,
         thinkingLevel: ThinkingLevel.MEDIUM,
-        thinkingBudget: 512,
+        thinkingBudget: 3000,
       },
     },
   });
@@ -471,7 +471,7 @@ Return JSON format only, no markdown code blocks:
       thinkingConfig: {
         includeThoughts: false,
         thinkingLevel: ThinkingLevel.HIGH,
-        thinkingBudget: 1500,
+        thinkingBudget: 3000,
       },
     },
   });
@@ -611,7 +611,7 @@ Guidelines:
       thinkingConfig: {
         includeThoughts: false,
         thinkingLevel: ThinkingLevel.HIGH,
-        thinkingBudget: 1500,
+        thinkingBudget: 6000,
       },
     },
   });
@@ -857,7 +857,7 @@ CRITICAL RULES:
       thinkingConfig: {
         includeThoughts: false,
         thinkingLevel: ThinkingLevel.HIGH,
-        thinkingBudget: 3000,
+        thinkingBudget: 6000,
       },
     },
   });
@@ -949,7 +949,7 @@ RULES:
       thinkingConfig: {
         includeThoughts: false,
         thinkingLevel: ThinkingLevel.LOW,
-        thinkingBudget: 256,
+        thinkingBudget: 512,
       },
     },
   });

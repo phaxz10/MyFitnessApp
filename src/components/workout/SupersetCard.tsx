@@ -30,6 +30,7 @@ interface SupersetCardProps {
     value: string,
   ) => void;
   onCompleteRound: (roundNumber: number) => void;
+  onUncompleteRound: (roundNumber: number) => void;
   onDeleteRound: (roundNumber: number) => void;
   onAddRound: () => void;
   onStartDurationTimer: (exerciseIndex: number, setIndex: number) => void;
@@ -38,6 +39,7 @@ interface SupersetCardProps {
     exerciseName: string,
     currentWeight: string,
   ) => void;
+  onExerciseNameClick?: (exerciseId: number, exerciseName: string) => void;
   onBreakSuperset?: () => void;
   getExerciseId: (ex: ExerciseWithSets) => number;
 }
@@ -50,10 +52,12 @@ export function SupersetCard({
   onToggleExpand,
   onSetChange,
   onCompleteRound,
+  onUncompleteRound,
   onDeleteRound,
   onAddRound,
   onStartDurationTimer,
   onOpenNotes,
+  onExerciseNameClick,
   onBreakSuperset,
   getExerciseId,
 }: SupersetCardProps) {
@@ -81,18 +85,24 @@ export function SupersetCard({
   return (
     <>
       {/* Superset Header */}
-      <button
-        type="button"
-        className="flex items-center justify-between w-full text-left mb-4"
-        onClick={onToggleExpand}
-      >
+      <div className="flex items-center justify-between w-full text-left mb-4">
         <div className="flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             {supersetExercises.map((ex, idx) => {
               const exerciseName = ex.exercise.name;
+              const exerciseId = getExerciseId(ex);
               return (
                 <div key={ex.exercise.id} className="flex items-center gap-1">
-                  <span className="font-medium text-white">{exerciseName}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onExerciseNameClick?.(exerciseId, exerciseName);
+                    }}
+                    className="font-medium text-white hover:text-blue-400 transition-colors underline decoration-dotted underline-offset-2"
+                  >
+                    {exerciseName}
+                  </button>
                   {getExerciseTypeIcon(ex.exerciseType)}
                   {idx < supersetExercises.length - 1 && (
                     <span className="text-purple-400 font-bold ml-1">+</span>
@@ -105,14 +115,18 @@ export function SupersetCard({
             {totalCompletedSets} / {totalSetsInSuperset} sets complete
           </p>
         </div>
-        <div className="flex items-center">
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          className="flex items-center p-2 hover:bg-slate-700/50 rounded transition-colors"
+        >
           {allExpanded ? (
             <ChevronUp size={20} className="text-slate-400" />
           ) : (
             <ChevronDown size={20} className="text-slate-400" />
           )}
-        </div>
-      </button>
+        </button>
+      </div>
 
       {/* Exercise Notes Buttons */}
       {allExpanded && (
@@ -201,7 +215,7 @@ export function SupersetCard({
                     {roundComplete && ' ✓'}
                   </span>
                   <div className="flex items-center gap-2">
-                    {!roundComplete && (
+                    {!roundComplete ? (
                       <button
                         type="button"
                         onClick={() => onCompleteRound(roundNumber)}
@@ -222,6 +236,16 @@ export function SupersetCard({
                         )
                           ? 'Completing...'
                           : 'Complete'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onUncompleteRound(roundNumber)}
+                        className="px-2 py-1 text-xs bg-orange-900/30 hover:bg-orange-900/50 border border-orange-700/50 rounded text-orange-400 flex items-center gap-1.5 transition-colors"
+                        title="Mark as incomplete to edit"
+                      >
+                        <X size={12} />
+                        Undo
                       </button>
                     )}
                     <button

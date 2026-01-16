@@ -8,6 +8,7 @@ import {
   Play,
   Plus,
   Trash2,
+  X,
 } from 'lucide-react';
 import type { ExerciseWithSets, SetData } from '../../hooks/useWorkoutSession';
 import type {
@@ -33,10 +34,12 @@ interface ExerciseCardProps {
     value: string,
   ) => void;
   onCompleteSet: (setIndex: number) => void;
+  onUncompleteSet: (setIndex: number) => void;
   onDeleteSet: (setIndex: number) => void;
   onAddSet: () => void;
   onStartDurationTimer: (setIndex: number) => void;
   onOpenNotes: () => void;
+  onExerciseNameClick?: () => void;
   onRemoveExercise: () => void;
   onLinkExercise?: () => void;
 }
@@ -50,10 +53,12 @@ export function ExerciseCard({
   onToggleExpand,
   onSetChange,
   onCompleteSet,
+  onUncompleteSet,
   onDeleteSet,
   onAddSet,
   onStartDurationTimer,
   onOpenNotes,
+  onExerciseNameClick,
   onRemoveExercise,
   onLinkExercise,
 }: ExerciseCardProps) {
@@ -92,14 +97,19 @@ export function ExerciseCard({
   return (
     <>
       {/* Exercise Header */}
-      <button
-        type="button"
-        className="flex items-center justify-between w-full text-left"
-        onClick={onToggleExpand}
-      >
+      <div className="flex items-center justify-between w-full text-left">
         <div className="flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-white">{exerciseName}</h3>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onExerciseNameClick?.();
+              }}
+              className="font-semibold text-white hover:text-blue-400 transition-colors underline decoration-dotted underline-offset-2"
+            >
+              {exerciseName}
+            </button>
             {getExerciseTypeIcon(exerciseData.exerciseType)}
           </div>
           {targetInfo && (
@@ -110,13 +120,19 @@ export function ExerciseCard({
           <span className="text-slate-400 text-sm">
             {completedSetsCount}/{exerciseData.sets.length}
           </span>
-          {exerciseData.isExpanded ? (
-            <ChevronUp size={20} className="text-slate-400" />
-          ) : (
-            <ChevronDown size={20} className="text-slate-400" />
-          )}
+          <button
+            type="button"
+            onClick={onToggleExpand}
+            className="p-2 hover:bg-slate-700/50 rounded transition-colors"
+          >
+            {exerciseData.isExpanded ? (
+              <ChevronUp size={20} className="text-slate-400" />
+            ) : (
+              <ChevronDown size={20} className="text-slate-400" />
+            )}
+          </button>
         </div>
-      </button>
+      </div>
 
       {/* Sets */}
       {exerciseData.isExpanded && (
@@ -185,6 +201,7 @@ export function ExerciseCard({
                   isDeleting={isDeletingSet}
                   onSetChange={onSetChange}
                   onComplete={() => onCompleteSet(setIndex)}
+                  onUncomplete={() => onUncompleteSet(setIndex)}
                   onDelete={() => onDeleteSet(setIndex)}
                   onStartTimer={() => onStartDurationTimer(setIndex)}
                 />
@@ -230,6 +247,7 @@ interface SetRowProps {
     value: string,
   ) => void;
   onComplete: () => void;
+  onUncomplete: () => void;
   onDelete: () => void;
   onStartTimer: () => void;
 }
@@ -247,6 +265,7 @@ function SetRow({
   isDeleting = false,
   onSetChange,
   onComplete,
+  onUncomplete,
   onDelete,
   onStartTimer,
 }: SetRowProps) {
@@ -362,7 +381,16 @@ function SetRow({
             )}
           </>
         )}
-        {isCompleted && <Check size={16} className="text-green-400 mx-1.5" />}
+        {isCompleted && (
+          <button
+            type="button"
+            onClick={onUncomplete}
+            className="p-1.5 text-orange-400/70 hover:text-orange-400 hover:bg-orange-900/30 rounded transition-colors"
+            title="Mark as incomplete to edit"
+          >
+            <X size={16} />
+          </button>
+        )}
       </div>
     </div>
   );

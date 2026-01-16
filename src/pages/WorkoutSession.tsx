@@ -5,6 +5,7 @@ import {
   Clock,
   Combine,
   Dumbbell,
+  Play,
   Plus,
   Send,
   Trash2,
@@ -66,6 +67,7 @@ export function WorkoutSession() {
     isLoading,
     handleSetChange,
     handleCompleteSet,
+    handleUncompleteSet,
     handleCompleteRound,
     handleAddSet,
     handleAddSetToSuperset,
@@ -146,6 +148,16 @@ export function WorkoutSession() {
   const [sessionDiff, setSessionDiff] = useState<SessionDiff | null>(null);
   const [pendingWorkoutNotes, setPendingWorkoutNotes] = useState<string>('');
   const [isUpdatingProgram, setIsUpdatingProgram] = useState(false);
+
+  // Exercise info modal state
+  const [exerciseInfoModal, setExerciseInfoModal] = useState<{
+    exerciseId: number;
+    exerciseName: string;
+    videoUrl: string | null;
+    description: string;
+    muscleGroups: string;
+    equipment: string;
+  } | null>(null);
 
   // Wake lock ref
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
@@ -288,6 +300,24 @@ export function WorkoutSession() {
     });
   }, [exercisesWithSets, fetchExerciseCoaching, getExerciseId]);
 
+  // Exercise info modal handler
+  const handleOpenExerciseInfo = useCallback(
+    (exerciseId: number, exerciseName: string) => {
+      const exercise = allExercises.find((e) => e.id === exerciseId);
+      if (exercise) {
+        setExerciseInfoModal({
+          exerciseId,
+          exerciseName,
+          videoUrl: exercise.video_url,
+          description: exercise.description,
+          muscleGroups: exercise.muscle_groups,
+          equipment: exercise.equipment,
+        });
+      }
+    },
+    [allExercises],
+  );
+
   // Exercise notes handlers
   const handleOpenExerciseNotes = useCallback(
     async (exerciseId: number, exerciseName: string, currentWeight: string) => {
@@ -393,6 +423,16 @@ export function WorkoutSession() {
     const success = await handleCompleteRound(exerciseIndices, roundNumber);
     if (success) {
       startRestTimer();
+    }
+  };
+
+  // Wrapper for uncompleting all sets in a superset round
+  const onUncompleteRound = async (
+    exerciseIndices: number[],
+    roundNumber: number,
+  ) => {
+    for (const exerciseIndex of exerciseIndices) {
+      await handleUncompleteSet(exerciseIndex, roundNumber);
     }
   };
 
@@ -627,6 +667,9 @@ export function WorkoutSession() {
                     onCompleteRound={(roundNumber) =>
                       onCompleteRound(exerciseIndices, roundNumber)
                     }
+                    onUncompleteRound={(roundNumber) =>
+                      onUncompleteRound(exerciseIndices, roundNumber)
+                    }
                     onDeleteRound={(roundNumber) =>
                       handleDeleteRound(exerciseIndices, roundNumber)
                     }
@@ -645,6 +688,9 @@ export function WorkoutSession() {
                         exerciseName,
                         currentWeight,
                       );
+                    }}
+                    onExerciseNameClick={(exerciseId, exerciseName) => {
+                      handleOpenExerciseInfo(exerciseId, exerciseName);
                     }}
                     onBreakSuperset={
                       supersetGroupId
@@ -686,6 +732,9 @@ export function WorkoutSession() {
                   onCompleteSet={(setIndex) =>
                     onCompleteSet(exerciseIndex, setIndex)
                   }
+                  onUncompleteSet={(setIndex) =>
+                    handleUncompleteSet(exerciseIndex, setIndex)
+                  }
                   onDeleteSet={(setIndex) =>
                     handleDeleteSet(exerciseIndex, setIndex)
                   }
@@ -700,6 +749,9 @@ export function WorkoutSession() {
                       name,
                       item.sets[0]?.weight || '0',
                     );
+                  }}
+                  onExerciseNameClick={() => {
+                    handleOpenExerciseInfo(exerciseId, item.exercise.name);
                   }}
                   onRemoveExercise={() => handleRemoveExercise(exerciseIndex)}
                   onLinkExercise={
@@ -1068,6 +1120,83 @@ export function WorkoutSession() {
           isUpdating={isUpdatingProgram}
         />
       )}
+
+      {/* Exercise Info Modal */}
+      <Modal
+        isOpen={!!exerciseInfoModal}
+        onClose={() => setExerciseInfoModal(null)}
+        title={exerciseInfoModal?.exerciseName || 'Exercise Info'}
+      >
+        {exerciseInfoModal && (
+          <div className="space-y-4">
+            {/* Description */}
+            {exerciseInfoModal.description && (
+              <div>
+                <h4 className="text-sm font-medium text-slate-400 mb-1">
+                  Description
+                </h4>
+                <p className="text-slate-300 text-sm">
+                  {exerciseInfoModal.description}
+                </p>
+              </div>
+            )}
+
+            {/* Muscle Groups */}
+            {exerciseInfoModal.muscleGroups && (
+              <div>
+                <h4 className="text-sm font-medium text-slate-400 mb-1">
+                  Muscle Groups
+                </h4>
+                <p className="text-slate-300 text-sm">
+                  {exerciseInfoModal.muscleGroups}
+                </p>
+              </div>
+            )}
+
+            {/* Equipment */}
+            {exerciseInfoModal.equipment && (
+              <div>
+                <h4 className="text-sm font-medium text-slate-400 mb-1">
+                  Equipment
+                </h4>
+                <p className="text-slate-300 text-sm">
+                  {exerciseInfoModal.equipment}
+                </p>
+              </div>
+            )}
+
+            {/* Tutorial Link */}
+            <div>
+              <h4 className="text-sm font-medium text-slate-400 mb-2">
+                Tutorial
+              </h4>
+              {exerciseInfoModal.videoUrl ? (
+                <a
+                  href={exerciseInfoModal.videoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                >
+                  <Play size={16} />
+                  Watch Tutorial
+                </a>
+              ) : (
+                <a
+                  href={`https://www.youtube.com/results?search_query=${encodeURIComponent(
+                    `${exerciseInfoModal.exerciseName} exercise form tutorial`,
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                >
+                  <Play size={16} />
+                  Search on YouTube
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

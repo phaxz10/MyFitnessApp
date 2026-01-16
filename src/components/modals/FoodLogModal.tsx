@@ -30,6 +30,16 @@ interface EditableFoodItem extends AIFoodItem {
   originalPortion: number;
 }
 
+const getMealTypeForCurrentTime = (): MealType => {
+  const hour = new Date().getHours();
+
+  if (hour >= 5 && hour < 10) return 'breakfast';
+  if (hour >= 11 && hour < 14) return 'lunch';
+  if (hour >= 17 && hour < 21) return 'dinner';
+
+  return 'snack';
+};
+
 export function FoodLogModal() {
   const { foodLogModal, closeFoodLogModal, setFoodLogModalMode, isOnline } =
     useAppStore();
@@ -46,7 +56,9 @@ export function FoodLogModal() {
     'input',
   );
   const [textResults, setTextResults] = useState<EditableFoodItem[]>([]);
-  const [textMealType, setTextMealType] = useState<MealType>('lunch');
+  const [textMealType, setTextMealType] = useState<MealType>(
+    getMealTypeForCurrentTime(),
+  );
   const [textDescription, setTextDescription] = useState('');
 
   // Scanner mode state
@@ -59,7 +71,9 @@ export function FoodLogModal() {
     mimeType: string;
   } | null>(null);
   const [scannerResults, setScannerResults] = useState<EditableFoodItem[]>([]);
-  const [scannerMealType, setScannerMealType] = useState<MealType>('lunch');
+  const [scannerMealType, setScannerMealType] = useState<MealType>(
+    getMealTypeForCurrentTime(),
+  );
   const [scannerDescription, setScannerDescription] = useState('');
 
   // React Hook Form for manual mode
@@ -73,7 +87,7 @@ export function FoodLogModal() {
   } = useForm<FoodEntryFormData>({
     resolver: zodResolver(foodEntrySchema),
     defaultValues: {
-      mealType: 'breakfast',
+      mealType: getMealTypeForCurrentTime(),
       foodDescription: '',
       portionGrams: '',
       calories: '',
@@ -88,16 +102,21 @@ export function FoodLogModal() {
   // Reset state when modal opens/closes
   useEffect(() => {
     if (foodLogModal.isOpen) {
+      const detectedMealType = getMealTypeForCurrentTime();
       // Set meal type if provided
       if (foodLogModal.mealType) {
         setValue('mealType', foodLogModal.mealType);
         setScannerMealType(foodLogModal.mealType);
         setTextMealType(foodLogModal.mealType);
+      } else {
+        setValue('mealType', detectedMealType);
+        setScannerMealType(detectedMealType);
+        setTextMealType(detectedMealType);
       }
       setError(null);
     } else {
       // Reset all state when closed
-      reset();
+      reset({ mealType: getMealTypeForCurrentTime() });
       setError(null);
       setIsAnalyzing(false);
       setIsSaving(false);

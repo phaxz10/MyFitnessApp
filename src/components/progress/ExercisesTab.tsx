@@ -1,7 +1,9 @@
 import { ChevronRight, Search } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { useExerciseProgress } from '../../hooks/useExerciseProgress';
-import type { ExerciseProgressSummary } from '../../types';
+import { useMemo, useState } from 'react';
+import {
+  type TimeRange,
+  useAllExercisesProgress,
+} from '../../hooks/useStrengthProgress';
 import {
   Card,
   CardContent,
@@ -12,7 +14,7 @@ import {
 } from '../ui';
 
 interface ExercisesTabProps {
-  timeRange: '7d' | '30d' | '90d' | 'all';
+  timeRange: TimeRange;
   onSelectExercise: (exerciseId: number) => void;
 }
 
@@ -20,40 +22,37 @@ export function ExercisesTab({
   timeRange,
   onSelectExercise,
 }: ExercisesTabProps) {
-  const { getAllExercisesProgress, loading } = useExerciseProgress();
-  const [exercises, setExercises] = useState<ExerciseProgressSummary[]>([]);
+  const { data: exercises = [], isLoading } =
+    useAllExercisesProgress(timeRange);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMuscle, setFilterMuscle] = useState<string>('all');
 
-  useEffect(() => {
-    const fetchData = async () => {
-      const data = await getAllExercisesProgress(timeRange);
-      setExercises(data);
-    };
-    fetchData();
-  }, [timeRange, getAllExercisesProgress]);
-
   // Get unique muscle groups for filter
-  const muscleGroups = Array.from(
-    new Set(
-      exercises
-        .flatMap((e) => e.muscleGroups.split(',').map((m) => m.trim()))
-        .filter((m) => m),
-    ),
-  ).sort();
+  const muscleGroups = useMemo(() => {
+    return Array.from(
+      new Set(
+        exercises
+          .flatMap((e) => e.muscleGroups.split(',').map((m) => m.trim()))
+          .filter((m) => m),
+      ),
+    ).sort();
+  }, [exercises]);
 
   // Filter exercises
-  const filteredExercises = exercises.filter((ex) => {
-    const matchesSearch = ex.exerciseName
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase());
-    const matchesMuscle =
-      filterMuscle === 'all' ||
-      ex.muscleGroups.toLowerCase().includes(filterMuscle.toLowerCase());
-    return matchesSearch && matchesMuscle;
-  });
+  const filteredExercises = useMemo(() => {
+    return exercises.filter((ex) => {
+      const matchesSearch = ex.exerciseName
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase());
+      const matchesMuscle =
+        filterMuscle === 'all' ||
+        ex.muscleGroups.toLowerCase().includes(filterMuscle.toLowerCase());
+      return matchesSearch && matchesMuscle;
+    });
+  }, [exercises, searchQuery, filterMuscle]);
 
-  if (loading && exercises.length === 0) {
+  // Show loading only on initial load, not when data exists
+  if (isLoading && exercises.length === 0) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
@@ -114,9 +113,15 @@ export function ExercisesTab({
         <CardContent className="p-0">
           {filteredExercises.length === 0 ? (
             <div className="p-8 text-center text-slate-500">
-              {exercises.length === 0
-                ? 'No exercises performed yet'
-                : 'No exercises match your search'}
+              {isLoading ? (
+                <div className="flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500" />
+                </div>
+              ) : exercises.length === 0 ? (
+                'No exercises performed yet'
+              ) : (
+                'No exercises match your search'
+              )}
             </div>
           ) : (
             <div className="divide-y divide-slate-700">

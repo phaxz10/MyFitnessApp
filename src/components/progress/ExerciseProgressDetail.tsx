@@ -1,27 +1,26 @@
-import { useEffect, useState } from 'react';
 import {
   ArrowLeft,
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  Trophy,
-  Dumbbell,
   Calendar,
+  Dumbbell,
+  Minus,
+  TrendingDown,
+  TrendingUp,
+  Trophy,
 } from 'lucide-react';
-import { Card, CardContent, Button } from '../ui';
-import { OneRMChart } from './OneRMChart';
-import { useExerciseProgress } from '../../hooks/useExerciseProgress';
+import {
+  type TimeRange,
+  useAllExercisesProgress,
+  useExercisePRs,
+  useExerciseSessionData,
+} from '../../hooks/useStrengthProgress';
 import { formatDisplayDate } from '../../utils/date';
-import type {
-  ExerciseSessionData,
-  ExercisePR,
-  ExerciseProgressSummary,
-} from '../../types';
+import { Button, Card, CardContent } from '../ui';
+import { OneRMChart } from './OneRMChart';
 
 interface ExerciseProgressDetailProps {
   exerciseId: number;
   exerciseName: string;
-  timeRange: '7d' | '30d' | '90d' | 'all';
+  timeRange: TimeRange;
   onBack: () => void;
 }
 
@@ -31,35 +30,16 @@ export function ExerciseProgressDetail({
   timeRange,
   onBack,
 }: ExerciseProgressDetailProps) {
-  const { getExerciseSessionData, getExercisePRs, getAllExercisesProgress } =
-    useExerciseProgress();
+  const { data: sessions = [], isLoading: sessionsLoading } =
+    useExerciseSessionData(exerciseId, timeRange);
 
-  const [sessions, setSessions] = useState<ExerciseSessionData[]>([]);
-  const [prs, setPRs] = useState<ExercisePR | null>(null);
-  const [summary, setSummary] = useState<ExerciseProgressSummary | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { data: prs, isLoading: prsLoading } = useExercisePRs(exerciseId);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      const [sessionData, prData, allProgress] = await Promise.all([
-        getExerciseSessionData(exerciseId, timeRange),
-        getExercisePRs(exerciseId),
-        getAllExercisesProgress(timeRange),
-      ]);
-      setSessions(sessionData);
-      setPRs(prData);
-      setSummary(allProgress.find((p) => p.exerciseId === exerciseId) ?? null);
-      setLoading(false);
-    };
-    fetchData();
-  }, [
-    exerciseId,
-    timeRange,
-    getExerciseSessionData,
-    getExercisePRs,
-    getAllExercisesProgress,
-  ]);
+  const { data: allExercises = [] } = useAllExercisesProgress(timeRange);
+
+  const summary = allExercises.find((p) => p.exerciseId === exerciseId) ?? null;
+
+  const isLoading = sessionsLoading || prsLoading;
 
   const getTrendInfo = () => {
     if (!summary)
@@ -88,7 +68,7 @@ export function ExerciseProgressDetail({
 
   const trendInfo = getTrendInfo();
 
-  if (loading) {
+  if (isLoading && sessions.length === 0) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
@@ -190,7 +170,14 @@ export function ExerciseProgressDetail({
           </h3>
           {sessions.length === 0 ? (
             <p className="text-slate-500 text-center py-4">
-              No sessions in this time range
+              {isLoading ? (
+                <span className="flex items-center justify-center">
+                  <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500 mr-2" />
+                  Loading...
+                </span>
+              ) : (
+                'No sessions in this time range'
+              )}
             </p>
           ) : (
             <div className="space-y-3">
@@ -198,9 +185,9 @@ export function ExerciseProgressDetail({
                 .slice()
                 .reverse()
                 .slice(0, 10)
-                .map((session, index) => (
+                .map((session) => (
                   <div
-                    key={`${session.date}-${index}`}
+                    key={session.date}
                     className="border-b border-slate-700 last:border-0 pb-3 last:pb-0"
                   >
                     <div className="flex justify-between items-start mb-2">
@@ -218,7 +205,7 @@ export function ExerciseProgressDetail({
                     <div className="flex flex-wrap gap-2">
                       {session.sets.map((set, setIndex) => (
                         <span
-                          key={`set-${setIndex}-${set.weight}-${set.reps}`}
+                          key={`${session.date}-set-${setIndex}-${set.weight}-${set.reps}`}
                           className="bg-slate-700 text-slate-300 text-sm px-2 py-1 rounded"
                         >
                           {set.weight ?? 0} x {set.reps ?? 0}
@@ -236,7 +223,7 @@ export function ExerciseProgressDetail({
       </Card>
 
       {/* Empty State */}
-      {sessions.length === 0 && !prs && (
+      {sessions.length === 0 && !prs && !isLoading && (
         <Card>
           <CardContent className="p-8 text-center">
             <Dumbbell className="mx-auto mb-3 text-slate-600" size={48} />

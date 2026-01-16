@@ -1,25 +1,18 @@
 import { ArrowLeft } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ExerciseProgressDetail,
   ExercisesTab,
   OverviewTab,
 } from '../components/progress';
-import {
-  Button,
-  ProgressSkeleton,
-  type TimeRange,
-  TimeRangeSelector,
-} from '../components/ui';
-import { useExerciseProgress } from '../hooks/useExerciseProgress';
-import type { ExerciseProgressSummary } from '../types';
+import { Button, type TimeRange, TimeRangeSelector } from '../components/ui';
+import { useAllExercisesProgress } from '../hooks/useStrengthProgress';
 
 type Tab = 'overview' | 'exercises';
 
 export function Progress() {
   const navigate = useNavigate();
-  const { getAllExercisesProgress } = useExerciseProgress();
 
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [timeRange, setTimeRange] = useState<TimeRange>('30d');
@@ -28,22 +21,8 @@ export function Progress() {
   );
   const [selectedExerciseName, setSelectedExerciseName] = useState<string>('');
 
-  // Fetch exercises for name lookup
-  const [exercises, setExercises] = useState<ExerciseProgressSummary[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchExercises = async () => {
-      setIsLoading(true);
-      try {
-        const data = await getAllExercisesProgress(timeRange);
-        setExercises(data);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchExercises();
-  }, [timeRange, getAllExercisesProgress]);
+  // Use TanStack Query for exercises data (this keeps it cached across tab switches)
+  const { data: exercises = [] } = useAllExercisesProgress(timeRange);
 
   const handleSelectExercise = useCallback(
     (exerciseId: number) => {
@@ -58,11 +37,6 @@ export function Progress() {
     setSelectedExerciseId(null);
     setSelectedExerciseName('');
   };
-
-  // If loading, show skeleton
-  if (isLoading) {
-    return <ProgressSkeleton />;
-  }
 
   // If an exercise is selected, show the detail view
   if (selectedExerciseId) {

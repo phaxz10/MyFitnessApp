@@ -1,6 +1,7 @@
+export { ExerciseProgressDetail } from './ExerciseProgressDetail';
+export { ExercisesTab } from './ExercisesTab';
 export { MetricCard } from './MetricCard';
-export { VolumeChart } from './VolumeChart';
+export { MuscleHeatmap } from './MuscleHeatmap';
 export { OneRMChart } from './OneRMChart';
 export { OverviewTab } from './OverviewTab';
-export { ExercisesTab } from './ExercisesTab';
-export { ExerciseProgressDetail } from './ExerciseProgressDetail';
+export { VolumeChart } from './VolumeChart';

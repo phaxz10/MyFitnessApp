@@ -1,43 +1,37 @@
 import { Clock, Dumbbell, Target, Trophy } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { useExerciseProgress } from '../../hooks/useExerciseProgress';
-import type {
-  OverallProgressMetrics,
-  PersonalRecord,
-  VolumeChartData,
-} from '../../types';
+import {
+  type TimeRange,
+  useOverallProgress,
+  useVolumeChartData,
+  useWeeklyMuscleStats,
+} from '../../hooks/useStrengthProgress';
+import type { PersonalRecord } from '../../types';
 import {
   formatDurationMinutes,
   formatLargeNumber,
 } from '../../utils/formatters';
 import { Card, CardContent } from '../ui';
 import { MetricCard } from './MetricCard';
+import { MuscleHeatmap } from './MuscleHeatmap';
 import { VolumeChart } from './VolumeChart';
 
 interface OverviewTabProps {
-  timeRange: '7d' | '30d' | '90d' | 'all';
+  timeRange: TimeRange;
 }
 
 export function OverviewTab({ timeRange }: OverviewTabProps) {
-  const { getOverallProgress, getVolumeChartData, loading } =
-    useExerciseProgress();
+  const { data: metrics, isLoading: metricsLoading } =
+    useOverallProgress(timeRange);
 
-  const [metrics, setMetrics] = useState<OverallProgressMetrics | null>(null);
-  const [volumeData, setVolumeData] = useState<VolumeChartData[]>([]);
+  const { data: volumeData = [], isLoading: volumeLoading } =
+    useVolumeChartData(timeRange);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      const [progressData, chartData] = await Promise.all([
-        getOverallProgress(timeRange),
-        getVolumeChartData(timeRange),
-      ]);
-      setMetrics(progressData);
-      setVolumeData(chartData);
-    };
-    fetchData();
-  }, [timeRange, getOverallProgress, getVolumeChartData]);
+  const { data: weeklyMuscles, isLoading: musclesLoading } =
+    useWeeklyMuscleStats();
 
-  if (loading && !metrics) {
+  const isLoading = metricsLoading || volumeLoading;
+
+  if (isLoading && !metrics) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
@@ -81,6 +75,41 @@ export function OverviewTab({ timeRange }: OverviewTabProps) {
           color={metrics && metrics.recentPRs.length > 0 ? 'yellow' : 'default'}
         />
       </div>
+
+      {/* Weekly Muscle Coverage */}
+      {weeklyMuscles && !musclesLoading && (
+        <MuscleHeatmap
+          breakdown={weeklyMuscles.breakdown}
+          totalSets={weeklyMuscles.totalSets}
+          weekStart={weeklyMuscles.weekStart}
+          weekEnd={weeklyMuscles.weekEnd}
+        />
+      )}
+
+      {musclesLoading && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="animate-pulse">
+              <div className="h-6 bg-slate-700 rounded w-48 mb-4" />
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  'chest',
+                  'back',
+                  'shoulders',
+                  'biceps',
+                  'triceps',
+                  'legs',
+                ].map((muscle) => (
+                  <div
+                    key={`skeleton-${muscle}`}
+                    className="h-20 bg-slate-800 rounded"
+                  />
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Volume Chart */}
       <VolumeChart data={volumeData} title="Training Volume" height={180} />

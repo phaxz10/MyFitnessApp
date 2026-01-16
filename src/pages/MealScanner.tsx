@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Camera, Minus, Plus, Upload, X } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { Camera, ImageIcon, Minus, Plus, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -28,11 +28,19 @@ export function MealScanner() {
   const navigate = useNavigate();
   const { addEntry } = useCalories();
   const isOnline = useAppStore((state) => state.isOnline);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Refs
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  // State
   const [step, setStep] = useState<'capture' | 'analyzing' | 'results'>(
     'capture',
   );
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageData, setImageData] = useState<{
     base64: string;
@@ -42,7 +50,7 @@ export function MealScanner() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // React Hook Form for the capture step form
+  // React Hook Form
   const { register, watch } = useForm<MealScannerFormData>({
     resolver: zodResolver(mealScannerSchema),
     defaultValues: {
@@ -54,36 +62,109 @@ export function MealScanner() {
   const mealType = watch('mealType');
   const description = watch('description');
 
+  // Start camera
+  const startCamera = useCallback(async () => {
+    try {
+      setCameraError(null);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      });
+
+      streamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+        setCameraActive(true);
+      }
+    } catch (err) {
+      console.error('Camera error:', err);
+      setCameraError(
+        'Unable to access camera. Please use the upload button instead.',
+      );
+      setCameraActive(false);
+    }
+  }, []);
+
+  // Stop camera
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      for (const track of streamRef.current.getTracks()) {
+        track.stop();
+      }
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setCameraActive(false);
+  }, []);
+
+  // Capture frame from video
+  const captureFrame = useCallback(() => {
+    if (!videoRef.current || !canvasRef.current) return;
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) return;
+
+    // Set canvas size to video size
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    // Draw video frame to canvas
+    ctx.drawImage(video, 0, 0);
+
+    // Get image data
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    const base64 = dataUrl.split(',')[1];
+
+    setImagePreview(dataUrl);
+    setImageData({ base64, mimeType: 'image/jpeg' });
+    stopCamera();
+  }, [stopCamera]);
+
+  // Handle file upload
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
     if (!file.type.startsWith('image/')) {
       setError('Please select an image file');
       return;
     }
 
-    // Create preview
     const reader = new FileReader();
     reader.onload = (event) => {
       const result = event.target?.result as string;
       setImagePreview(result);
 
-      // Extract base64 data
       const base64 = result.split(',')[1];
       setImageData({ base64, mimeType: file.type });
+      stopCamera();
     };
     reader.readAsDataURL(file);
+
+    // Reset input so same file can be selected again
+    e.target.value = '';
   };
 
-  const handleCapture = () => {
-    fileInputRef.current?.click();
-  };
-
+  // Analyze image
   const handleAnalyze = async () => {
+    // If camera is active and no image yet, capture first
+    if (cameraActive && !imageData) {
+      captureFrame();
+      return;
+    }
+
     if (!imageData) {
-      setError('Please select an image first');
+      setError('Please capture or upload an image first');
       return;
     }
 
@@ -123,6 +204,7 @@ export function MealScanner() {
     }
   };
 
+  // Portion change handler
   const handlePortionChange = (index: number, newPortion: number) => {
     setResults((prev) =>
       prev.map((item, i) => {
@@ -157,6 +239,7 @@ export function MealScanner() {
     setResults((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // Save results
   const handleSave = async () => {
     if (results.length === 0) {
       setError('No food items to save');
@@ -189,19 +272,40 @@ export function MealScanner() {
     }
   };
 
+  // Reset everything
   const handleReset = () => {
     setStep('capture');
     setImagePreview(null);
     setImageData(null);
     setResults([]);
     setError(null);
+    startCamera();
   };
+
+  // Clear uploaded image and restart camera
+  const handleClearImage = () => {
+    setImagePreview(null);
+    setImageData(null);
+    startCamera();
+  };
+
+  // Start camera on mount
+  useEffect(() => {
+    if (step === 'capture' && !imagePreview) {
+      startCamera();
+    }
+
+    return () => {
+      stopCamera();
+    };
+  }, [step, imagePreview, startCamera, stopCamera]);
 
   const totalCalories = results.reduce((sum, item) => sum + item.calories, 0);
   const totalProtein = results.reduce((sum, item) => sum + item.protein_g, 0);
   const totalCarbs = results.reduce((sum, item) => sum + item.carbs_g, 0);
   const totalFat = results.reduce((sum, item) => sum + item.fat_g, 0);
 
+  // Offline state
   if (!isOnline) {
     return (
       <div className="p-4 pb-20">
@@ -247,6 +351,16 @@ export function MealScanner() {
         </div>
       )}
 
+      {/* Hidden elements */}
+      <canvas ref={canvasRef} className="hidden" />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleFileSelect}
+        className="hidden"
+      />
+
       {/* Capture Step */}
       {step === 'capture' && (
         <div className="space-y-4">
@@ -256,72 +370,60 @@ export function MealScanner() {
             options={mealTypes}
           />
 
+          {/* Camera / Image Preview */}
           <Card>
-            <CardContent className="p-4">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={handleFileSelect}
-                className="hidden"
-              />
-
-              {imagePreview ? (
-                <div className="relative">
-                  <img
-                    src={imagePreview}
-                    alt="Food preview"
-                    className="w-full h-64 object-cover rounded-lg"
+            <CardContent className="p-0 overflow-hidden">
+              <div className="relative aspect-[4/3] bg-black">
+                {imagePreview ? (
+                  // Uploaded/Captured image preview
+                  <>
+                    <img
+                      src={imagePreview}
+                      alt="Food preview"
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleClearImage}
+                      className="absolute top-2 right-2 p-2 bg-black/50 rounded-full text-white hover:bg-black/70"
+                    >
+                      <X size={20} />
+                    </button>
+                  </>
+                ) : cameraError ? (
+                  // Camera error state
+                  <div className="w-full h-full flex flex-col items-center justify-center text-center p-4">
+                    <Camera size={48} className="text-slate-500 mb-4" />
+                    <p className="text-slate-400 text-sm">{cameraError}</p>
+                  </div>
+                ) : (
+                  // Live camera feed
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
                   />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setImagePreview(null);
-                      setImageData(null);
-                    }}
-                    className="absolute top-2 right-2 p-2 bg-black/50 rounded-full text-white hover:bg-black/70"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleCapture}
-                  className="h-64 w-full border-2 border-dashed border-slate-600 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-slate-500 transition-colors"
-                >
-                  <Camera size={48} className="text-slate-500 mb-4" />
-                  <p className="text-slate-400">Tap to capture or upload</p>
-                  <p className="text-slate-500 text-sm">JPG, PNG supported</p>
-                </button>
-              )}
+                )}
 
-              <div className="flex gap-2 mt-4">
+                {/* Camera loading indicator */}
+                {!cameraActive && !cameraError && !imagePreview && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
+                    <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                )}
+              </div>
+
+              {/* Action buttons */}
+              <div className="p-4">
                 <Button
                   variant="secondary"
-                  onClick={handleCapture}
-                  className="flex-1"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full"
                 >
-                  <Camera size={18} className="mr-2" />
-                  Camera
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    const input = document.createElement('input');
-                    input.type = 'file';
-                    input.accept = 'image/*';
-                    input.onchange = (e) =>
-                      handleFileSelect(
-                        e as unknown as React.ChangeEvent<HTMLInputElement>,
-                      );
-                    input.click();
-                  }}
-                  className="flex-1"
-                >
-                  <Upload size={18} className="mr-2" />
-                  Gallery
+                  <ImageIcon size={18} className="mr-2" />
+                  Upload from Gallery
                 </Button>
               </div>
             </CardContent>
@@ -337,10 +439,11 @@ export function MealScanner() {
 
           <Button
             onClick={handleAnalyze}
-            disabled={!imageData}
+            disabled={!cameraActive && !imageData}
             className="w-full"
           >
-            Analyze Food
+            <Camera size={18} className="mr-2" />
+            {imageData ? 'Analyze Food' : 'Capture & Analyze'}
           </Button>
         </div>
       )}
@@ -420,7 +523,7 @@ export function MealScanner() {
                           onChange={(e) =>
                             handlePortionChange(
                               index,
-                              parseInt(e.target.value, 10) || 0,
+                              Number.parseInt(e.target.value, 10) || 0,
                             )
                           }
                           className="w-20 text-center"

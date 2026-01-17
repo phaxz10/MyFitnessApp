@@ -3,23 +3,19 @@ import { z } from 'zod';
 // ============== Onboarding Schemas ==============
 
 export const onboardingBasicSchema = z.object({
-  age: z
+  birthdate: z
     .string()
-    .min(1, 'Age is required')
+    .min(1, 'Birthdate is required')
     .transform((val, ctx) => {
-      const num = parseInt(val, 10);
-      if (Number.isNaN(num) || num < 13) {
+      const parsed = new Date(val);
+      if (Number.isNaN(parsed.getTime())) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Must be at least 13 years old',
+          message: 'Invalid birthdate',
         });
         return z.NEVER;
       }
-      if (num > 120) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Invalid age' });
-        return z.NEVER;
-      }
-      return num;
+      return val;
     }),
   gender: z.enum(['male', 'female']),
   heightCm: z
@@ -77,10 +73,6 @@ export const onboardingGoalSchema = z.object({
   goal: z.enum(['bulk', 'lean_bulk', 'recomp', 'cut', 'maintain']),
 });
 
-export const onboardingRateSchema = z.object({
-  targetRate: z.string(),
-});
-
 export const onboardingApiSchema = z.object({
   apiKey: z.string().optional(),
 });
@@ -103,13 +95,12 @@ export const onboardingTargetsSchema = z.object({
 
 // Combined onboarding schema for the full form data
 export const onboardingSchema = z.object({
-  age: z.string().min(1, 'Age is required'),
+  birthdate: z.string().min(1, 'Birthdate is required'),
   gender: z.enum(['male', 'female']),
   heightCm: z.string().min(1, 'Height is required'),
   weightKg: z.string().min(1, 'Weight is required'),
   activityLevel: z.enum(['sedentary', 'light', 'moderate', 'active']),
   goal: z.enum(['bulk', 'lean_bulk', 'recomp', 'cut', 'maintain']),
-  targetRate: z.string(),
   apiKey: z.string().optional(),
   targets: z.object({
     calories: z.number(),
@@ -124,14 +115,13 @@ export type OnboardingFormData = z.infer<typeof onboardingSchema>;
 // ============== Settings Schemas ==============
 
 export const profileFormSchema = z.object({
-  age: z.string().min(1, 'Age is required'),
+  birthdate: z.string().min(1, 'Birthdate is required'),
   heightCm: z.string().min(1, 'Height is required'),
   activityLevel: z.string().min(1, 'Activity level is required'),
 });
 
 export const goalsFormSchema = z.object({
   goal: z.string().min(1, 'Goal is required'),
-  targetRate: z.string(),
   calories: z.string().min(1, 'Calories is required'),
   protein: z.string().min(1, 'Protein is required'),
   carbs: z.string().min(1, 'Carbs is required'),

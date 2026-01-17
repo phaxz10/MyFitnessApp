@@ -4,14 +4,14 @@ import { Dumbbell, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
-import { Button, Input, Select } from '../components/ui';
+import { Button, Input } from '../components/ui';
 import { useAppStore } from '../hooks/useAppStore';
 import { useProfile } from '../hooks/useProfile';
 import { useWeight } from '../hooks/useWeight';
 import { type OnboardingFormData, onboardingSchema } from '../schemas/forms';
 import { importData, readBackupFile } from '../services/backup';
 import { calculateTargets, initGemini } from '../services/gemini';
-import { formatDate } from '../utils/date';
+import { calculateAgeFromBirthdate, formatDate } from '../utils/date';
 
 type Step =
   | 'welcome'
@@ -19,7 +19,6 @@ type Step =
   | 'weight'
   | 'activity'
   | 'goal'
-  | 'rate'
   | 'api'
   | 'calculating'
   | 'targets'
@@ -65,13 +64,12 @@ export function Onboarding() {
   } = useForm<OnboardingFormData>({
     resolver: zodResolver(onboardingSchema),
     defaultValues: {
-      age: '',
+      birthdate: '',
       gender: 'male',
       heightCm: '',
       weightKg: '',
       activityLevel: 'moderate',
       goal: 'lean_bulk',
-      targetRate: '0.25',
       apiKey: '',
       targets: {
         calories: 2000,
@@ -94,7 +92,7 @@ export function Onboarding() {
         setStep('basic');
         break;
       case 'basic': {
-        const isValid = await trigger(['age', 'heightCm']);
+        const isValid = await trigger(['birthdate', 'heightCm']);
         if (!isValid) {
           setError('Please fill in all fields');
           return;
@@ -115,13 +113,6 @@ export function Onboarding() {
         setStep('goal');
         break;
       case 'goal':
-        if (goal === 'maintain' || goal === 'recomp') {
-          setStep('api');
-        } else {
-          setStep('rate');
-        }
-        break;
-      case 'rate':
         setStep('api');
         break;
       case 'api':
@@ -140,13 +131,12 @@ export function Onboarding() {
       if (values.apiKey) {
         initGemini(values.apiKey);
         const result = await calculateTargets({
-          age: parseInt(values.age, 10),
+          age: calculateAgeFromBirthdate(values.birthdate),
           gender: values.gender,
           height_cm: parseFloat(values.heightCm),
           weight_kg: parseFloat(values.weightKg),
           activity_level: values.activityLevel,
           goal: values.goal,
-          target_rate_kg_per_week: parseFloat(values.targetRate) || 0,
         });
         setValue('targets', {
           calories: result.calorie_target,
@@ -163,16 +153,11 @@ export function Onboarding() {
           moderate: 1.55,
           active: 1.725,
         };
+        const age = calculateAgeFromBirthdate(values.birthdate);
         const bmr =
           values.gender === 'male'
-            ? 10 * weight +
-              6.25 * parseFloat(values.heightCm) -
-              5 * parseInt(values.age, 10) +
-              5
-            : 10 * weight +
-              6.25 * parseFloat(values.heightCm) -
-              5 * parseInt(values.age, 10) -
-              161;
+            ? 10 * weight + 6.25 * parseFloat(values.heightCm) - 5 * age + 5
+            : 10 * weight + 6.25 * parseFloat(values.heightCm) - 5 * age - 161;
 
         const tdee = bmr * multipliers[values.activityLevel];
 
@@ -210,12 +195,11 @@ export function Onboarding() {
     const values = getValues();
     try {
       await createProfile({
-        age: parseInt(values.age, 10),
+        birthdate: values.birthdate,
         gender: values.gender,
         height_cm: parseFloat(values.heightCm),
         activity_level: values.activityLevel,
         goal: values.goal,
-        target_rate_kg_per_week: parseFloat(values.targetRate) || 0,
         calorie_target: values.targets.calories,
         protein_target_g: values.targets.protein,
         carbs_target_g: values.targets.carbs,
@@ -344,11 +328,10 @@ export function Onboarding() {
             </h2>
             <div className="space-y-4">
               <Input
-                label="Age"
-                type="number"
-                {...register('age')}
-                placeholder="Enter your age"
-                error={errors.age?.message}
+                label="Birthdate"
+                type="date"
+                {...register('birthdate')}
+                error={errors.birthdate?.message}
               />
               <div>
                 <label
@@ -468,32 +451,6 @@ export function Onboarding() {
                 </button>
               ))}
             </div>
-            <Button onClick={handleNext} size="lg" className="w-full mt-6">
-              Continue
-            </Button>
-          </div>
-        )}
-
-        {/* Target Rate Step */}
-        {step === 'rate' && (
-          <div>
-            <h2 className="text-2xl font-bold text-white mb-6">Target Rate</h2>
-            <p className="text-slate-400 mb-4">
-              How fast do you want to {goal === 'cut' ? 'lose' : 'gain'} weight?
-            </p>
-            <Select
-              label="Weekly target (kg)"
-              {...register('targetRate')}
-              options={[
-                { value: '0.25', label: '0.25 kg/week (Slow & steady)' },
-                { value: '0.5', label: '0.5 kg/week (Moderate)' },
-                { value: '0.75', label: '0.75 kg/week (Aggressive)' },
-                { value: '1', label: '1 kg/week (Very aggressive)' },
-              ]}
-            />
-            <p className="text-slate-500 text-sm mt-2">
-              Slower rates are more sustainable and preserve muscle.
-            </p>
             <Button onClick={handleNext} size="lg" className="w-full mt-6">
               Continue
             </Button>

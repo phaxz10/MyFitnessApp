@@ -15,6 +15,7 @@ import type {
   WeightLog,
   WorkoutSet,
 } from '../types';
+import { calculateAgeFromBirthdate } from '../utils/date';
 
 let ai: GoogleGenAI | null = null;
 
@@ -361,7 +362,6 @@ export async function calculateTargets(profile: {
   weight_kg: number;
   activity_level: 'sedentary' | 'light' | 'moderate' | 'active';
   goal: 'bulk' | 'lean_bulk' | 'recomp' | 'cut' | 'maintain';
-  target_rate_kg_per_week: number;
 }): Promise<AITargetResponse> {
   if (!ai) throw new Error('Gemini API not initialized');
 
@@ -374,9 +374,8 @@ Profile:
 - Weight: ${profile.weight_kg}kg
 - Activity Level: ${profile.activity_level}
 - Goal: ${profile.goal}
-- Target Rate: ${profile.target_rate_kg_per_week}kg/week
 
-Provide personalized daily targets considering the goal and sustainable progress.
+Provide personalized daily targets considering the goal and sustainable progress. Aim for a reasonable, sustainable rate based on recent progress rather than user-selected targets.
 
 Note:
 - Use builtwithscience.com publicly available data as reference where applicable
@@ -439,9 +438,8 @@ export async function reviewGoals(
   const prompt = `Review my fitness progress and provide recommendations.
 
 Current Profile:
-- Age: ${profile.age}, Gender: ${profile.gender}, Height: ${profile.height_cm}cm
+- Age: ${calculateAgeFromBirthdate(profile.birthdate)}, Gender: ${profile.gender}, Height: ${profile.height_cm}cm
 - Goal: ${profile.goal}
-- Target rate: ${profile.target_rate_kg_per_week}kg/week
 - Current calorie target: ${profile.calorie_target}
 
 Weight History (recent):
@@ -520,8 +518,8 @@ export async function reviewWeeklyProgress(
   const prompt = `You are a fitness coach conducting a weekly check-in review. Analyze the user's past week of progress and provide actionable recommendations.
 
 User Profile:
-- Age: ${profile.age}, Gender: ${profile.gender}, Height: ${profile.height_cm}cm
-- Current Goal: ${profile.goal} (target rate: ${profile.target_rate_kg_per_week}kg/week)
+- Age: ${calculateAgeFromBirthdate(profile.birthdate)}, Gender: ${profile.gender}, Height: ${profile.height_cm}cm
+- Current Goal: ${profile.goal}
 - Current Calorie Target: ${profile.calorie_target} kcal/day
 - Macro Targets: ${profile.protein_target_g}g protein, ${profile.carbs_target_g}g carbs, ${profile.fat_target_g}g fat
 

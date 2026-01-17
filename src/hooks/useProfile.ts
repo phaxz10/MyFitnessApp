@@ -21,20 +21,19 @@ async function createProfileFn(
 ): Promise<void> {
   const db = await getDB();
   await db.query(
-    `INSERT INTO user_profile (id, age, gender, height_cm, activity_level, goal, target_rate_kg_per_week, calorie_target, protein_target_g, carbs_target_g, fat_target_g, gemini_api_key)
-     VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    `INSERT INTO user_profile (id, birthdate, gender, height_cm, activity_level, goal, calorie_target, protein_target_g, carbs_target_g, fat_target_g, gemini_api_key)
+     VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      ON CONFLICT (id) DO UPDATE SET
-       age = $1, gender = $2, height_cm = $3, activity_level = $4, goal = $5,
-       target_rate_kg_per_week = $6, calorie_target = $7, protein_target_g = $8,
-       carbs_target_g = $9, fat_target_g = $10, gemini_api_key = $11,
+       birthdate = $1, gender = $2, height_cm = $3, activity_level = $4, goal = $5,
+       calorie_target = $6, protein_target_g = $7, carbs_target_g = $8,
+       fat_target_g = $9, gemini_api_key = $10,
        updated_at = CURRENT_TIMESTAMP`,
     [
-      data.age,
+      data.birthdate,
       data.gender,
       data.height_cm,
       data.activity_level,
       data.goal,
-      data.target_rate_kg_per_week,
       data.calorie_target,
       data.protein_target_g,
       data.carbs_target_g,

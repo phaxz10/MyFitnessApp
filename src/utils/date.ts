@@ -1,10 +1,10 @@
 import {
+  endOfWeek,
   format,
+  isValid,
   parseISO,
   startOfWeek,
-  endOfWeek,
   subDays,
-  isValid,
 } from 'date-fns';
 
 export function formatDate(date: Date | string): string {
@@ -64,6 +64,24 @@ export function daysBetween(date1: string, date2: string): number {
   const d2 = parseISO(date2);
   const diffTime = Math.abs(d2.getTime() - d1.getTime());
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+}
+
+export function calculateAgeFromBirthdate(birthdate: string): number {
+  const parsedBirthdate = parseISO(birthdate);
+  if (!isValid(parsedBirthdate)) return 0;
+
+  const today = new Date();
+  let age = today.getFullYear() - parsedBirthdate.getFullYear();
+  const monthDifference = today.getMonth() - parsedBirthdate.getMonth();
+
+  if (
+    monthDifference < 0 ||
+    (monthDifference === 0 && today.getDate() < parsedBirthdate.getDate())
+  ) {
+    age -= 1;
+  }
+
+  return age;
 }
 
 /**

@@ -123,12 +123,11 @@ Stores user information for calculations.
 | Column | Type | Description |
 |--------|------|-------------|
 | id | INTEGER | Primary key (always 1 for single user) |
-| age | INTEGER | User's age |
+| birthdate | DATE | User's birthdate |
 | gender | TEXT | 'male' or 'female' |
 | height_cm | REAL | Height in centimeters |
 | activity_level | TEXT | 'sedentary', 'light', 'moderate', 'active' |
 | goal | TEXT | 'bulk', 'lean_bulk', 'recomp', 'cut', 'maintain' |
-| target_rate_kg_per_week | REAL | Target weight change rate |
 | calorie_target | INTEGER | Daily calorie goal |
 | protein_target_g | INTEGER | Daily protein goal (grams) |
 | carbs_target_g | INTEGER | Daily carbs goal (grams) |
@@ -426,15 +425,14 @@ Additional access via:
 
 10-step onboarding process:
 1. Welcome screen
-2. Basic info (age, gender, height)
+2. Basic info (birthdate, gender, height)
 3. Current weight
 4. Activity level
 5. Goal selection
-6. Target rate (if applicable)
-7. API key setup
-8. AI calculates targets
-9. Review and confirm
-10. Dashboard
+6. API key setup
+7. AI calculates targets
+8. Review and confirm
+9. Dashboard
 
 ---
 

@@ -1,12 +1,11 @@
 // User Profile Types
 export interface UserProfile {
   id: number;
-  age: number;
+  birthdate: string;
   gender: 'male' | 'female';
   height_cm: number;
   activity_level: 'sedentary' | 'light' | 'moderate' | 'active';
   goal: 'bulk' | 'lean_bulk' | 'recomp' | 'cut' | 'maintain';
-  target_rate_kg_per_week: number;
   calorie_target: number;
   protein_target_g: number;
   carbs_target_g: number;

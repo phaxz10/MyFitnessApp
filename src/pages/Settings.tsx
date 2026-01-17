@@ -42,6 +42,7 @@ import {
 } from '../services/backup';
 import { resetDatabase } from '../services/db';
 import { calculateTargets, initGemini } from '../services/gemini';
+import { calculateAgeFromBirthdate } from '../utils/date';
 
 const activityOptions = [
   { value: 'sedentary', label: 'Sedentary' },
@@ -79,7 +80,7 @@ export function Settings() {
   const profileForm = useForm<ProfileFormData>({
     resolver: zodResolver(profileFormSchema),
     defaultValues: {
-      age: '',
+      birthdate: '',
       heightCm: '',
       activityLevel: '',
     },
@@ -90,7 +91,6 @@ export function Settings() {
     resolver: zodResolver(goalsFormSchema),
     defaultValues: {
       goal: '',
-      targetRate: '',
       calories: '',
       protein: '',
       carbs: '',
@@ -111,13 +111,12 @@ export function Settings() {
   useEffect(() => {
     if (profile) {
       profileForm.reset({
-        age: profile.age.toString(),
+        birthdate: profile.birthdate,
         heightCm: profile.height_cm.toString(),
         activityLevel: profile.activity_level,
       });
       goalsForm.reset({
         goal: profile.goal,
-        targetRate: profile.target_rate_kg_per_week.toString(),
         calories: profile.calorie_target.toString(),
         protein: profile.protein_target_g.toString(),
         carbs: profile.carbs_target_g.toString(),
@@ -134,7 +133,7 @@ export function Settings() {
     setError(null);
     try {
       await updateProfile({
-        age: parseInt(data.age, 10),
+        birthdate: data.birthdate,
         height_cm: parseFloat(data.heightCm),
         activity_level: data.activityLevel as
           | 'sedentary'
@@ -157,7 +156,6 @@ export function Settings() {
     try {
       await updateProfile({
         goal: data.goal as 'bulk' | 'lean_bulk' | 'recomp' | 'cut' | 'maintain',
-        target_rate_kg_per_week: parseFloat(data.targetRate),
         calorie_target: parseInt(data.calories, 10),
         protein_target_g: parseInt(data.protein, 10),
         carbs_target_g: parseInt(data.carbs, 10),
@@ -184,7 +182,7 @@ export function Settings() {
       initGemini(profile.gemini_api_key);
       const values = goalsForm.getValues();
       const result = await calculateTargets({
-        age: parseInt(profileForm.getValues().age, 10),
+        age: calculateAgeFromBirthdate(profileForm.getValues().birthdate),
         gender: profile.gender,
         height_cm: parseFloat(profileForm.getValues().heightCm),
         weight_kg: 70, // Would need to get latest weight
@@ -199,7 +197,6 @@ export function Settings() {
           | 'recomp'
           | 'cut'
           | 'maintain',
-        target_rate_kg_per_week: parseFloat(values.targetRate),
       });
 
       goalsForm.setValue('calories', result.calorie_target.toString());
@@ -309,10 +306,11 @@ export function Settings() {
               <div>
                 <p className="text-white font-medium">Profile</p>
                 <p className="text-slate-400 text-sm">
-                  Age, height, activity level
+                  Birthdate, height, activity level
                 </p>
               </div>
             </div>
+
             <ChevronRight
               size={20}
               className={`text-slate-400 transition-transform ${activeSection === 'profile' ? 'rotate-90' : ''}`}
@@ -325,10 +323,10 @@ export function Settings() {
               className="px-4 pb-4 space-y-3 border-t border-slate-700 pt-4"
             >
               <Input
-                label="Age"
-                type="number"
-                {...profileForm.register('age')}
-                error={profileForm.formState.errors.age?.message}
+                label="Birthdate"
+                type="date"
+                {...profileForm.register('birthdate')}
+                error={profileForm.formState.errors.birthdate?.message}
               />
               <Input
                 label="Height (cm)"
@@ -386,13 +384,6 @@ export function Settings() {
                 options={goalOptions}
                 error={goalsForm.formState.errors.goal?.message}
               />
-              <Input
-                label="Target Rate (kg/week)"
-                type="number"
-                step="0.25"
-                {...goalsForm.register('targetRate')}
-                error={goalsForm.formState.errors.targetRate?.message}
-              />
               <div className="grid grid-cols-2 gap-3">
                 <Input
                   label="Calories"
@@ -419,6 +410,7 @@ export function Settings() {
                   error={goalsForm.formState.errors.fat?.message}
                 />
               </div>
+
               <div className="flex gap-2">
                 <Button type="submit" isLoading={isLoading} className="flex-1">
                   Save Changes
@@ -573,12 +565,6 @@ export function Settings() {
               <span className="font-mono font-bold text-white">DELETE</span> to
               confirm:
             </p>
-            <Input
-              value={clearDataConfirmText}
-              onChange={(e) => setClearDataConfirmText(e.target.value)}
-              placeholder="Type DELETE to confirm"
-              className="font-mono"
-            />
           </div>
 
           <div className="flex gap-3 pt-2">

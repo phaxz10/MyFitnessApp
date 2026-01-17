@@ -535,15 +535,6 @@ export function Dashboard() {
                       </p>
                     </div>
                   </div>
-
-                  {profile.target_rate_kg_per_week > 0 && (
-                    <div className="text-center pt-2 border-t border-slate-700">
-                      <p className="text-slate-400 text-xs">
-                        Target: {isLosingGoal ? '-' : '+'}
-                        {profile.target_rate_kg_per_week} kg/week
-                      </p>
-                    </div>
-                  )}
                 </div>
               );
             })()}

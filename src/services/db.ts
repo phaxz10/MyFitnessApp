@@ -17,12 +17,11 @@ async function initSchema(): Promise<void> {
     -- User Profile Table
     CREATE TABLE IF NOT EXISTS user_profile (
       id INTEGER PRIMARY KEY DEFAULT 1,
-      age INTEGER NOT NULL,
+      birthdate DATE NOT NULL,
       gender TEXT NOT NULL CHECK (gender IN ('male', 'female')),
       height_cm REAL NOT NULL,
       activity_level TEXT NOT NULL CHECK (activity_level IN ('sedentary', 'light', 'moderate', 'active')),
       goal TEXT NOT NULL CHECK (goal IN ('bulk', 'lean_bulk', 'recomp', 'cut', 'maintain')),
-      target_rate_kg_per_week REAL DEFAULT 0,
       calorie_target INTEGER NOT NULL,
       protein_target_g INTEGER NOT NULL,
       carbs_target_g INTEGER NOT NULL,
@@ -206,6 +205,49 @@ async function initSchema(): Promise<void> {
     `);
   } catch {
     // Column may already exist or table doesn't support IF NOT EXISTS, ignore
+  }
+
+  // Migration: Switch to birthdate and remove target rate from user_profile
+  try {
+    await db.exec(`
+      ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS birthdate DATE;
+    `);
+  } catch {
+    // Column may already exist, ignore
+  }
+
+  try {
+    await db.exec(`
+      UPDATE user_profile
+      SET birthdate = CURRENT_DATE - (age * INTERVAL '1 year')
+      WHERE birthdate IS NULL;
+    `);
+  } catch {
+    // Age column may already be removed, ignore
+  }
+
+  try {
+    await db.exec(`
+      ALTER TABLE user_profile ALTER COLUMN birthdate SET NOT NULL;
+    `);
+  } catch {
+    // Column may already be set, ignore
+  }
+
+  try {
+    await db.exec(`
+      ALTER TABLE user_profile DROP COLUMN IF EXISTS age;
+    `);
+  } catch {
+    // Column may already be removed, ignore
+  }
+
+  try {
+    await db.exec(`
+      ALTER TABLE user_profile DROP COLUMN IF EXISTS target_rate_kg_per_week;
+    `);
+  } catch {
+    // Column may already be removed, ignore
   }
 
   // Migration: Add exercise_type column to exercises

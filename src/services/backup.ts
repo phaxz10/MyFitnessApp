@@ -135,7 +135,7 @@ export async function exportData(
   ]);
 
   const backup: BackupData = {
-    version: '1.6', // Bumped version for workout_log_exercises table and workout_sets updates
+    version: '1.7', // Bumped version for birthdate field migration
     exported_at: new Date().toISOString(),
     data: {
       user_profile: userProfile.rows,
@@ -210,16 +210,15 @@ export async function importData(jsonString: string): Promise<void> {
   if (hasData(data.user_profile)) {
     for (const row of data.user_profile as Record<string, unknown>[]) {
       await db.query(
-        `INSERT INTO user_profile (id, age, gender, height_cm, activity_level, goal, target_rate_kg_per_week, calorie_target, protein_target_g, carbs_target_g, fat_target_g, gemini_api_key, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+        `INSERT INTO user_profile (id, birthdate, gender, height_cm, activity_level, goal, calorie_target, protein_target_g, carbs_target_g, fat_target_g, gemini_api_key, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
         [
           row.id,
-          row.age,
+          row.birthdate ?? getLocalDateString(),
           row.gender,
           row.height_cm,
           row.activity_level,
           row.goal,
-          row.target_rate_kg_per_week,
           row.calorie_target,
           row.protein_target_g,
           row.carbs_target_g,

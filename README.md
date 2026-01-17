@@ -20,13 +20,15 @@ Personal fitness tracker with AI-powered coaching, nutrition scanning, and offli
 
 - **Cloud sync + multi-device sign-in** so progress follows users everywhere.
 - **Push notifications** for workout reminders, rest timers, and daily check-ins.
-- **Barcode + OCR food input** to speed up nutrition logging at scale.
 - **Adaptive workout progression** that auto-adjusts loads based on performance.
-- **Goal-based meal planning** with shopping lists and recipe macros.
-- **Wearable integrations** (Apple Health/Google Fit) for steps, sleep, and HRV.
-- **Recovery tracking** (sleep quality, readiness, soreness) to guide training volume.
-- **Social accountability** via streaks, sharing milestones, or small groups.
-- **Coach dashboard** to let trainers monitor client progress remotely.
+- **Deload + fatigue management** with auto-suggested volume reductions.
+- **Wearable integrations** (Apple Health/Google Fit) for sleep, HRV, and steps.
+- **Recovery tracking** (sleep quality, soreness, stress) to guide training volume.
+- **Mobility & prehab plans** tied to weak points and injury history.
+- **Pain/injury logging** to flag recurring issues and modify exercises.
+- **Hydration + micronutrient targets** to round out health tracking.
+- **Form check capture** with AI cues from short clips.
+- **Performance insights** like volume PRs, estimated 1RM, and load recommendations.
 - **Data insights export** (CSV/API) for deeper analytics and BI tools.
 
 ## Getting Started

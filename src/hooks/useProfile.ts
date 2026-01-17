@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getDB } from '../services/db';
 import type { UserProfile } from '../types';
+import { formatDate } from '../utils/date';
 
 // Query keys
 export const profileKeys = {
@@ -12,7 +13,15 @@ async function fetchProfileFn(): Promise<UserProfile | null> {
   const db = await getDB();
   const result = await db.query('SELECT * FROM user_profile WHERE id = 1');
   const rows = result.rows as UserProfile[];
-  return rows.length > 0 ? rows[0] : null;
+  if (rows.length === 0) return null;
+
+  const profile = rows[0];
+  return {
+    ...profile,
+    birthdate: profile.birthdate
+      ? formatDate(profile.birthdate)
+      : profile.birthdate,
+  };
 }
 
 // Mutation function - creates/upserts profile

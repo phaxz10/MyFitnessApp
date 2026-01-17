@@ -42,7 +42,7 @@ import {
 } from '../services/backup';
 import { resetDatabase } from '../services/db';
 import { calculateTargets, initGemini } from '../services/gemini';
-import { calculateAgeFromBirthdate } from '../utils/date';
+import { calculateAgeFromBirthdate, formatDate } from '../utils/date';
 
 const activityOptions = [
   { value: 'sedentary', label: 'Sedentary' },
@@ -111,7 +111,7 @@ export function Settings() {
   useEffect(() => {
     if (profile) {
       profileForm.reset({
-        birthdate: profile.birthdate,
+        birthdate: profile.birthdate ? formatDate(profile.birthdate) : '',
         heightCm: profile.height_cm.toString(),
         activityLevel: profile.activity_level,
       });

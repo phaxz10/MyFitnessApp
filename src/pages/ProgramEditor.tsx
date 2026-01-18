@@ -34,11 +34,9 @@ import {
   MUSCLE_GROUPS,
   TRAINING_SPLITS,
 } from '../constants/equipment';
-import { useAppStore } from '../hooks/useAppStore';
 import { useExercises } from '../hooks/useExercises';
 import { useProfile } from '../hooks/useProfile';
 import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
-import { getDB } from '../services/db';
 import {
   initGemini,
   isGeminiInitialized,
@@ -51,7 +49,7 @@ import type {
   ExerciseType,
   ExperienceLevel,
 } from '../types';
-import { calculateAgeFromBirthdate, getDaysAgo } from '../utils/date';
+import { calculateAgeFromBirthdate } from '../utils/date';
 
 const DAY_OPTIONS = [
   { value: '', label: 'Any Day' },
@@ -133,6 +131,7 @@ export function ProgramEditor() {
     loading,
   } = useWorkoutPrograms();
   const { exercises: allExercises, fetchExercises } = useExercises();
+  const { profile } = useProfile();
 
   const [showAddExercise, setShowAddExercise] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -600,6 +599,216 @@ export function ProgramEditor() {
     }
   };
 
+  // Handle AI optimization
+  const handleOptimize = async () => {
+    if (!profile) {
+      setOptimizeError('Please set up your profile first in Settings.');
+      return;
+    }
+
+    // Initialize Gemini if needed
+    if (!isGeminiInitialized()) {
+      if (!profile.gemini_api_key) {
+        setOptimizeError(
+          'Please add your Gemini API key in Settings to use AI features.',
+        );
+        return;
+      }
+      initGemini(profile.gemini_api_key);
+    }
+
+    setIsOptimizing(true);
+    setOptimizeError(null);
+
+    try {
+      // Build the current program data from the form
+      const currentFormData = watchedSessions;
+      const programName =
+        document.querySelector<HTMLInputElement>('#programName')?.value ||
+        'My Program';
+      const programDescription =
+        document.querySelector<HTMLTextAreaElement>('#programDescription')
+          ?.value || '';
+
+      // Build weekly volume summary from current exercises
+      const muscleGroupBreakdown: Record<string, number> = {};
+      let totalSets = 0;
+
+      for (const session of currentFormData) {
+        for (const exercise of session.exercises) {
+          totalSets += exercise.targetSets;
+          // Find the exercise in the library to get muscle groups
+          const libraryExercise = allExercises.find(
+            (e) => e.id === exercise.exerciseId,
+          );
+          if (libraryExercise?.muscle_groups) {
+            const muscles = libraryExercise.muscle_groups
+              .split(',')
+              .map((m) => m.trim());
+            for (const muscle of muscles) {
+              muscleGroupBreakdown[muscle] =
+                (muscleGroupBreakdown[muscle] || 0) + exercise.targetSets;
+            }
+          }
+        }
+      }
+
+      // Build the optimization input
+      const optimizationInput: AIProgramOptimizationInput = {
+        profile: {
+          age: profile.birthdate
+            ? calculateAgeFromBirthdate(profile.birthdate)
+            : 30,
+          gender: profile.gender,
+          goal: profile.goal,
+          activity_level: profile.activity_level,
+          calorie_target: profile.calorie_target,
+          protein_target_g: profile.protein_target_g,
+          carbs_target_g: profile.carbs_target_g,
+          fat_target_g: profile.fat_target_g,
+        },
+        program: {
+          name: programName,
+          description: programDescription,
+          sessionsPerWeek: currentFormData.length,
+          sessions: currentFormData.map((session) => ({
+            name: session.name,
+            dayOfWeek: session.dayOfWeek
+              ? parseInt(session.dayOfWeek, 10)
+              : null,
+            exercises: session.exercises.map((exercise) => {
+              const libraryExercise = allExercises.find(
+                (e) => e.id === exercise.exerciseId,
+              );
+              return {
+                name: exercise.exerciseName,
+                muscle_groups: libraryExercise?.muscle_groups || '',
+                equipment: libraryExercise?.equipment || '',
+                exercise_type: exercise.exerciseType,
+                targetSets: exercise.targetSets,
+                targetRepMin: exercise.targetRepMin,
+                targetRepMax: exercise.targetRepMax,
+                targetDurationSeconds: exercise.targetDurationSeconds,
+                notes: exercise.notes || null,
+                supersetGroupId: exercise.supersetGroupId,
+              };
+            }),
+          })),
+        },
+        exerciseLibrary: allExercises.map((e) => ({
+          name: e.name,
+          muscle_groups: e.muscle_groups,
+          equipment: e.equipment,
+          exercise_type: e.exercise_type,
+        })),
+        performanceSummary: [], // Could be populated from workout logs if needed
+        weeklyVolumeSummary: {
+          totalSets,
+          muscleGroupBreakdown,
+        },
+        preferences: {
+          injuries: injuries || null,
+          focusAreas,
+          experienceLevel,
+          preferredTrainingSplit: preferredSplit,
+          availableEquipment,
+          sessionDurationMinutes,
+        },
+      };
+
+      // Call the Gemini optimization
+      const result = await optimizeWorkoutProgram(optimizationInput);
+
+      // Generate superset group IDs for paired exercises
+      const generateSupersetIdForPair = () =>
+        `ss-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+      // Apply the optimized program to the form
+      const newSessions = result.sessions.map((session) => {
+        // Track superset pairs by name
+        const supersetPairs: Record<string, string> = {};
+
+        // First pass: identify superset pairs and generate IDs
+        for (const exercise of session.exercises) {
+          if (exercise.supersetWith) {
+            const key = [exercise.name, exercise.supersetWith].sort().join('|');
+            if (!supersetPairs[key]) {
+              supersetPairs[key] = generateSupersetIdForPair();
+            }
+          }
+        }
+
+        return {
+          name: session.name,
+          dayOfWeek: session.dayOfWeek?.toString() ?? '',
+          isExpanded: true,
+          exercises: session.exercises.map((exercise) => {
+            // Find the exercise in library to get ID and type
+            const libraryExercise = allExercises.find(
+              (e) => e.name.toLowerCase() === exercise.name.toLowerCase(),
+            );
+
+            // Determine superset group ID
+            let supersetGroupId: string | null = null;
+            if (exercise.supersetWith) {
+              const key = [exercise.name, exercise.supersetWith]
+                .sort()
+                .join('|');
+              supersetGroupId = supersetPairs[key] || null;
+            }
+
+            const exerciseType =
+              libraryExercise?.exercise_type || 'reps_weight';
+            const isDuration =
+              exerciseType === 'duration' || exerciseType === 'duration_weight';
+
+            return {
+              exerciseId: libraryExercise?.id || 0,
+              exerciseName: libraryExercise?.name || exercise.name,
+              exerciseType,
+              targetSets: exercise.targetSets,
+              targetRepMin: isDuration ? null : exercise.targetRepMin,
+              targetRepMax: isDuration ? null : exercise.targetRepMax,
+              targetDurationSeconds: isDuration
+                ? exercise.targetDurationSeconds || 30
+                : null,
+              supersetGroupId,
+              notes: exercise.notes || '',
+            };
+          }),
+        };
+      });
+
+      // Reset the form with new sessions
+      reset({
+        name: result.programName,
+        description: result.programDescription,
+        sessions: newSessions,
+      });
+
+      setShowOptimizeModal(false);
+
+      // Show recommendations in an alert
+      if (result.recommendations && result.recommendations.length > 0) {
+        setTimeout(() => {
+          alert(
+            'Optimization complete!\n\nRecommendations:\n- ' +
+              result.recommendations.join('\n- '),
+          );
+        }, 100);
+      }
+    } catch (error) {
+      console.error('Optimization failed:', error);
+      setOptimizeError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to optimize program. Please try again.',
+      );
+    } finally {
+      setIsOptimizing(false);
+    }
+  };
+
   const filteredExercises = allExercises.filter(
     (ex) =>
       ex.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -764,9 +973,22 @@ export function ProgramEditor() {
         >
           <ArrowLeft size={24} />
         </button>
-        <h1 className="text-xl font-bold text-white">
+        <h1 className="text-xl font-bold text-white flex-1">
           {isEditing ? 'Edit Program' : 'New Program'}
         </h1>
+        {/* AI Optimize Button - only show when there are sessions */}
+        {sessionFields.length > 0 && (
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => setShowOptimizeModal(true)}
+            className="flex items-center gap-2"
+            disabled={isOptimizing}
+          >
+            <Sparkles size={16} />
+            <span className="hidden sm:inline">Optimize</span>
+          </Button>
+        )}
       </div>
 
       {/* Superset Selection Hint */}
@@ -1105,6 +1327,215 @@ export function ProgramEditor() {
           >
             Discard
           </Button>
+        </div>
+      </Modal>
+
+      {/* AI Optimize Modal */}
+      <Modal
+        isOpen={showOptimizeModal}
+        onClose={() => {
+          if (!isOptimizing) {
+            setShowOptimizeModal(false);
+            setOptimizeError(null);
+          }
+        }}
+        title="Optimize with AI"
+      >
+        <div className="space-y-4">
+          <p className="text-slate-300 text-sm">
+            AI will analyze your program and suggest improvements based on your
+            preferences, exercise selection, and training principles.
+          </p>
+
+          {/* Experience Level */}
+          <div>
+            <label
+              htmlFor="optimize-experience"
+              className="block text-slate-400 text-sm mb-1"
+            >
+              Experience Level
+            </label>
+            <Select
+              id="optimize-experience"
+              value={experienceLevel}
+              onChange={(e) =>
+                setExperienceLevel(e.target.value as ExperienceLevel)
+              }
+              options={Object.entries(EXPERIENCE_LEVELS).map(([key, val]) => ({
+                value: key,
+                label: `${val.label} - ${val.description}`,
+              }))}
+            />
+          </div>
+
+          {/* Preferred Split */}
+          <div>
+            <label
+              htmlFor="optimize-split"
+              className="block text-slate-400 text-sm mb-1"
+            >
+              Preferred Training Split
+            </label>
+            <Select
+              id="optimize-split"
+              value={preferredSplit ?? 'auto'}
+              onChange={(e) =>
+                setPreferredSplit(
+                  e.target
+                    .value as AIProgramOptimizationInput['preferences']['preferredTrainingSplit'],
+                )
+              }
+              options={Object.entries(TRAINING_SPLITS).map(([key, val]) => ({
+                value: key,
+                label: `${val.label} - ${val.description}`,
+              }))}
+            />
+          </div>
+
+          {/* Session Duration */}
+          <div>
+            <label
+              htmlFor="optimize-duration"
+              className="block text-slate-400 text-sm mb-1"
+            >
+              Session Duration (minutes)
+            </label>
+            <Input
+              id="optimize-duration"
+              type="number"
+              value={sessionDurationMinutes}
+              onChange={(e) =>
+                setSessionDurationMinutes(parseInt(e.target.value) || 60)
+              }
+              min={20}
+              max={180}
+            />
+          </div>
+
+          {/* Focus Areas */}
+          <div>
+            <span className="block text-slate-400 text-sm mb-1">
+              Focus Areas (optional)
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {MUSCLE_GROUPS.map((muscle) => (
+                <button
+                  key={muscle}
+                  type="button"
+                  onClick={() => {
+                    setFocusAreas((prev) =>
+                      prev.includes(muscle)
+                        ? prev.filter((m) => m !== muscle)
+                        : [...prev, muscle],
+                    );
+                  }}
+                  className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                    focusAreas.includes(muscle)
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                  }`}
+                >
+                  {muscle}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Injuries */}
+          <div>
+            <label
+              htmlFor="optimize-injuries"
+              className="block text-slate-400 text-sm mb-1"
+            >
+              Injuries / Limitations (optional)
+            </label>
+            <TextArea
+              id="optimize-injuries"
+              value={injuries}
+              onChange={(e) => setInjuries(e.target.value)}
+              placeholder="e.g., Bad lower back, shoulder impingement..."
+              rows={2}
+            />
+          </div>
+
+          {/* Equipment */}
+          <div>
+            <span className="block text-slate-400 text-sm mb-1">
+              Available Equipment
+            </span>
+            <div className="max-h-40 overflow-y-auto space-y-2">
+              {Object.entries(EQUIPMENT_CATEGORIES).map(
+                ([categoryKey, category]) => (
+                  <div key={categoryKey}>
+                    <p className="text-xs text-slate-500 mb-1">
+                      {category.label}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {category.items.map((item) => (
+                        <button
+                          key={item}
+                          type="button"
+                          onClick={() => {
+                            setAvailableEquipment((prev) =>
+                              prev.includes(item)
+                                ? prev.filter((e) => e !== item)
+                                : [...prev, item],
+                            );
+                          }}
+                          className={`px-2 py-0.5 rounded text-xs transition-colors ${
+                            availableEquipment.includes(item)
+                              ? 'bg-green-600 text-white'
+                              : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                          }`}
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ),
+              )}
+            </div>
+          </div>
+
+          {/* Error display */}
+          {optimizeError && (
+            <div className="p-3 bg-red-600/20 border border-red-500 rounded-lg">
+              <p className="text-red-300 text-sm">{optimizeError}</p>
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div className="flex gap-3 pt-2">
+            <Button
+              variant="secondary"
+              className="flex-1"
+              onClick={() => {
+                setShowOptimizeModal(false);
+                setOptimizeError(null);
+              }}
+              disabled={isOptimizing}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="flex-1 flex items-center justify-center gap-2"
+              onClick={handleOptimize}
+              disabled={isOptimizing || !profile}
+            >
+              {isOptimizing ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Optimizing...
+                </>
+              ) : (
+                <>
+                  <Sparkles size={16} />
+                  Optimize Program
+                </>
+              )}
+            </Button>
+          </div>
         </div>
       </Modal>
     </div>

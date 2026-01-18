@@ -13,6 +13,7 @@ import {
   Target,
   TrendingDown,
   TrendingUp,
+  Utensils,
   Zap,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -54,7 +55,7 @@ export function WeeklyReviewModal({
     useWeeklyReview();
   const { updateProfile } = useProfile();
   const { addLog } = useWeight();
-  const isOnline = useAppStore((state) => state.isOnline);
+  const { isOnline, openFoodLogModal, openWeightLogModal } = useAppStore();
 
   const [step, setStep] = useState<ReviewStep>('loading');
   const [weeklyData, setWeeklyData] = useState<WeeklyReviewData | null>(null);
@@ -85,6 +86,9 @@ export function WeeklyReviewModal({
     targets: false,
     goal: false,
   });
+
+  // Track if we've already loaded data for this modal session
+  const [hasLoadedData, setHasLoadedData] = useState(false);
 
   // Load data and get AI review when modal opens
   useEffect(() => {
@@ -129,15 +133,36 @@ export function WeeklyReviewModal({
         }
 
         setStep('summary');
+        setHasLoadedData(true);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load review');
       }
     }
 
-    if (isOpen && profile) {
+    // Only load data if modal is open AND we haven't already loaded data
+    if (isOpen && profile && !hasLoadedData) {
       loadData();
     }
-  }, [isOpen, profile, fetchWeeklyData, isOnline]);
+  }, [isOpen, profile, fetchWeeklyData, isOnline, hasLoadedData]);
+
+  // Reset state when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setHasLoadedData(false);
+      setStep('loading');
+      setWeeklyData(null);
+      setAiReview(null);
+      setError(null);
+      setMeasurementsForm({ weight: '', waist: '', neck: '', arm: '' });
+      setTargetsForm({ calories: '', protein: '', carbs: '', fat: '' });
+      setSelectedGoal(null);
+      setAppliedRecommendations({
+        measurements: false,
+        targets: false,
+        goal: false,
+      });
+    }
+  }, [isOpen]);
 
   async function handleSaveMeasurements() {
     if (!measurementsForm.weight) return;
@@ -901,20 +926,22 @@ export function WeeklyReviewModal({
 
         {/* Complete Step */}
         {step === 'complete' && (
-          <div className="text-center py-8">
-            <CheckCircle2 size={64} className="text-green-400 mx-auto mb-4" />
-            <h3 className="text-white font-semibold text-xl mb-2">
-              Check-In Complete!
-            </h3>
-            <p className="text-slate-400 mb-6">
-              Your weekly review has been saved. Keep up the great work!
-            </p>
+          <div className="space-y-6 py-4">
+            <div className="text-center">
+              <CheckCircle2 size={56} className="text-green-400 mx-auto mb-3" />
+              <h3 className="text-white font-semibold text-xl mb-1">
+                Check-In Complete!
+              </h3>
+              <p className="text-slate-400 text-sm">
+                Your weekly review has been saved.
+              </p>
+            </div>
 
             {/* Summary of changes */}
             {(appliedRecommendations.measurements ||
               appliedRecommendations.targets ||
               appliedRecommendations.goal) && (
-              <div className="bg-slate-700/50 rounded-lg p-4 mb-6 text-left">
+              <div className="bg-slate-700/50 rounded-lg p-4 text-left">
                 <p className="text-slate-400 text-sm mb-2">Changes Applied:</p>
                 <ul className="space-y-1">
                   {appliedRecommendations.measurements && (
@@ -939,7 +966,66 @@ export function WeeklyReviewModal({
               </div>
             )}
 
-            <Button onClick={handleComplete} className="px-8">
+            {/* Quick Actions */}
+            <div className="space-y-3">
+              <p className="text-slate-400 text-sm font-medium text-center">
+                Start Your Week Strong
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleComplete();
+                    // Use setTimeout to ensure modal closes first
+                    setTimeout(() => {
+                      openWeightLogModal();
+                    }, 100);
+                  }}
+                  className="flex flex-col items-center gap-2 p-4 bg-slate-700/50 hover:bg-slate-700 border border-slate-600 hover:border-blue-500/50 rounded-xl transition-all"
+                >
+                  <div className="w-10 h-10 bg-blue-500/20 rounded-full flex items-center justify-center">
+                    <Scale size={20} className="text-blue-400" />
+                  </div>
+                  <span className="text-white text-sm font-medium">
+                    Log Weight
+                  </span>
+                  <span className="text-slate-500 text-xs">
+                    Track today's weight
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleComplete();
+                    setTimeout(() => {
+                      openFoodLogModal();
+                    }, 100);
+                  }}
+                  className="flex flex-col items-center gap-2 p-4 bg-slate-700/50 hover:bg-slate-700 border border-slate-600 hover:border-green-500/50 rounded-xl transition-all"
+                >
+                  <div className="w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center">
+                    <Utensils size={20} className="text-green-400" />
+                  </div>
+                  <span className="text-white text-sm font-medium">
+                    Log Food
+                  </span>
+                  <span className="text-slate-500 text-xs">
+                    Start logging meals
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Motivational message */}
+            {aiReview?.motivationalMessage && (
+              <div className="bg-purple-500/10 border border-purple-500/20 rounded-lg p-3">
+                <p className="text-purple-300 text-sm italic text-center">
+                  "{aiReview.motivationalMessage}"
+                </p>
+              </div>
+            )}
+
+            <Button onClick={handleComplete} className="w-full">
               Done
             </Button>
           </div>

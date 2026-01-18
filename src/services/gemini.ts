@@ -423,13 +423,32 @@ const MUSCLE_GROUP_CATEGORIES = [
   'Full Body',
 ] as const;
 
-// Generate exercise details
-export async function generateExerciseDetails(
-  exerciseName: string,
-): Promise<AIExerciseResponse> {
-  if (!ai) throw new Error('Gemini API not initialized');
+function buildExerciseDetailsPrompt(exerciseNames: string[]): string {
+  const isBatch = exerciseNames.length > 1;
+  const exerciseList = exerciseNames
+    .map((name, index) => `${index + 1}. ${name}`)
+    .join('\n');
+  const intro = isBatch
+    ? `You are a certified personal trainer and exercise science expert. Generate comprehensive exercise details for the following exercises:\n\n${exerciseList}`
+    : `You are a certified personal trainer and exercise science expert. Generate comprehensive exercise details for: "${exerciseNames[0]}"`;
+  const responseShape = `[
+  {
+    "name": "standardized exercise name",
+    "description": "A comprehensive step-by-step guide on how to perform this exercise. Include: starting position, movement execution (concentric and eccentric phases), and end position. Be specific about body positioning, grip, stance, and range of motion.",
+    "muscle_groups": ["Primary category", "Secondary category"],
+    "equipment": "required equipment (or 'Bodyweight' if none)",
+    "exercise_type": "reps_weight|reps_only|duration|duration_weight",
+    "tips": [
+      "Form cue or technique tip",
+      "Common mistake to avoid",
+      "Breathing instruction (e.g., 'Exhale during the lift, inhale on the descent')",
+      "Safety consideration",
+      "Progression or variation tip"
+    ]
+  }
+]`;
 
-  const prompt = `You are a certified personal trainer and exercise science expert. Generate comprehensive exercise details for: "${exerciseName}"
+  return `${intro}
 
 Provide detailed, actionable information that helps someone perform this exercise safely and effectively.
 
@@ -446,26 +465,22 @@ IMPORTANT: For exercise_type, determine which type this exercise is:
 - "duration_weight": Exercise held for time with weight (e.g., Weighted Plank, Farmer's Carry)
 
 Return JSON format only, no markdown code blocks:
-{
-  "name": "standardized exercise name",
-  "description": "A comprehensive step-by-step guide on how to perform this exercise. Include: starting position, movement execution (concentric and eccentric phases), and end position. Be specific about body positioning, grip, stance, and range of motion.",
-  "muscle_groups": ["Primary category", "Secondary category"],
-  "equipment": "required equipment (or 'Bodyweight' if none)",
-  "exercise_type": "reps_weight|reps_only|duration|duration_weight",
-  "tips": [
-    "Form cue or technique tip",
-    "Common mistake to avoid",
-    "Breathing instruction (e.g., 'Exhale during the lift, inhale on the descent')",
-    "Safety consideration",
-    "Progression or variation tip"
-  ]
-}
+${responseShape}
 
 Guidelines:
 - Description should be 3-5 sentences covering the full movement pattern
 - Include 4-6 practical tips covering form, breathing, safety, and common errors
 - Be specific and actionable - avoid vague instructions
-- Use builtwithscience.com publicly available data as reference where applicable`;
+- Use builtwithscience.com publicly available data as reference where applicable${isBatch ? '\n- Return an array with one object per exercise, in the same order as the input list' : ''}`;
+}
+
+// Generate exercise details
+export async function generateExerciseDetails(
+  exerciseName: string,
+): Promise<AIExerciseResponse> {
+  if (!ai) throw new Error('Gemini API not initialized');
+
+  const prompt = buildExerciseDetailsPrompt([exerciseName]);
 
   const response = await ai.models.generateContent({
     model: MODEL,
@@ -489,42 +504,7 @@ export async function generateExerciseDetailsBatch(
 ): Promise<AIExerciseResponse[]> {
   if (!ai) throw new Error('Gemini API not initialized');
 
-  const prompt = `You are a certified personal trainer and exercise science expert. Generate comprehensive exercise details for the following exercises:
-
-${exerciseNames.map((name, i) => `${i + 1}. ${name}`).join('\n')}
-
-For each exercise, provide detailed, actionable information that helps someone perform it safely and effectively.
-
-IMPORTANT: For exercise_type, determine which type each exercise is:
-- "reps_weight": Exercise performed with reps and external weight (e.g., Bench Press, Squat, Bicep Curl)
-- "reps_only": Exercise performed with reps but no weight (e.g., Pull-ups, Push-ups, Air Squats)
-- "duration": Exercise held for time without weight (e.g., Plank, Dead Hang, Wall Sit)
-- "duration_weight": Exercise held for time with weight (e.g., Weighted Plank, Farmer's Carry)
-
-Return a JSON array only, no markdown code blocks:
-[
-  {
-    "name": "standardized exercise name",
-    "description": "A comprehensive step-by-step guide on how to perform this exercise. Include: starting position, movement execution (concentric and eccentric phases), and end position. Be specific about body positioning, grip, stance, and range of motion.",
-    "muscle_groups": ["primary muscle group", "secondary muscle groups..."],
-    "equipment": "required equipment (or 'Bodyweight' if none)",
-    "exercise_type": "reps_weight|reps_only|duration|duration_weight",
-    "tips": [
-      "Form cue or technique tip",
-      "Common mistake to avoid", 
-      "Breathing instruction",
-      "Safety consideration"
-    ]
-  }
-]
-
-Guidelines:
-- Return an array with one object per exercise, in the same order as the input list
-- Description should be 3-5 sentences covering the full movement pattern
-- Include 4-6 practical tips covering form, breathing, safety, and common errors
-- Muscle groups should list primary muscle first, then secondary/stabilizers
-- Be specific and actionable - avoid vague instructions
-- Use builtwithscience.com publicly available data as reference where applicable`;
+  const prompt = buildExerciseDetailsPrompt(exerciseNames);
 
   const response = await ai.models.generateContent({
     model: MODEL,

@@ -425,6 +425,7 @@ Provide detailed, actionable information that helps someone perform this exercis
 
 IMPORTANT: For muscle_groups, you MUST ONLY use values from this list: ${MUSCLE_GROUPS.join(', ')}
 - Map anatomical terms to these categories, using simple region cues to pick the best category (upper/mid/lower chest or back, front/side/rear shoulders, quads/hamstrings/calves for legs, upper/lower abs or obliques for core, upper/lower glutes). Example mappings: "Pectoralis Major" -> "Chest", "Latissimus Dorsi" -> "Back", "Quadriceps" -> "Quads", "Hamstrings" -> "Hamstrings", "Deltoids" -> "Shoulders", "Abdominals" -> "Core", "Obliques" -> "Core", "Gluteus Maximus/Med" -> "Glutes", "Calves" -> "Calves"
+- If multiple muscle groups are targeted, include both primary and secondary groups and specific region of the primary group. For example: a bench press targets "Chest" primarily and "Triceps" secondarily so the list would be ["Chest", "Mid Chest", "Triceps"]. another exampe: a deadlift targets "Back" primarily and "Hamstrings" secondarily so the list would be ["Back", "Lower Back", "Hamstrings"]
 - List primary muscle group first
 - For exercises targeting arms, also include triceps or biceps or both as applicable
 - For compound movements targeting many areas, you can include "Full Body"

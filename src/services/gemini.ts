@@ -1974,16 +1974,25 @@ export async function inferExperienceLevel(workoutHistory: {
 }): Promise<ExperienceLevelInference> {
   if (!ai) throw new Error('Gemini API not initialized');
 
+  // Safely convert values to numbers and format them
+  const totalWorkouts = Number(workoutHistory.totalWorkouts) || 0;
+  const totalWeeks = Number(workoutHistory.totalWeeks) || 0;
+  const avgExercises = Number(workoutHistory.avgExercisesPerSession) || 0;
+  const avgSets = Number(workoutHistory.avgSetsPerSession) || 0;
+  const avgProgression = workoutHistory.avgWeightProgression
+    ? Number(workoutHistory.avgWeightProgression)
+    : null;
+
   const prompt = `Analyze this workout history and determine the user's experience level (beginner, intermediate, or advanced).
 
 WORKOUT HISTORY:
-- Total workouts completed: ${workoutHistory.totalWorkouts}
-- Training span: ${workoutHistory.totalWeeks} weeks
-- Average exercises per session: ${workoutHistory.avgExercisesPerSession.toFixed(1)}
-- Average sets per session: ${workoutHistory.avgSetsPerSession.toFixed(1)}
+- Total workouts completed: ${totalWorkouts}
+- Training span: ${totalWeeks} weeks
+- Average exercises per session: ${avgExercises.toFixed(1)}
+- Average sets per session: ${avgSets.toFixed(1)}
 - Has used supersets: ${workoutHistory.hasUsedSupersets ? 'Yes' : 'No'}
-- Most used exercises: ${workoutHistory.topExercises.slice(0, 10).join(', ')}
-${workoutHistory.avgWeightProgression ? `- Average weight progression: ${workoutHistory.avgWeightProgression.toFixed(1)}% per month` : ''}
+- Most used exercises: ${(workoutHistory.topExercises || []).slice(0, 10).join(', ') || 'None recorded'}
+${avgProgression !== null ? `- Average weight progression: ${avgProgression.toFixed(1)}% per month` : ''}
 
 EXPERIENCE LEVEL CRITERIA:
 - BEGINNER (0-12 months consistent training):

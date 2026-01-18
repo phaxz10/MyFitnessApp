@@ -464,24 +464,27 @@ export function useProgramGenerator() {
       FROM workout_logs 
       WHERE status = 'completed'
     `);
-    const stats = workoutStats.rows[0] as {
-      total_workouts: number;
+    const statsRow = workoutStats.rows[0] as {
+      total_workouts: string | number | null;
       first_workout: string | null;
       last_workout: string | null;
     };
 
-    if (stats.total_workouts === 0) {
+    // Parse total_workouts as number (DB might return string or bigint)
+    const totalWorkouts = Number(statsRow.total_workouts) || 0;
+
+    if (totalWorkouts === 0) {
       return null; // No history
     }
 
     // Calculate weeks of training
     const weeks =
-      stats.first_workout && stats.last_workout
+      statsRow.first_workout && statsRow.last_workout
         ? Math.max(
             1,
             Math.ceil(
-              (new Date(stats.last_workout).getTime() -
-                new Date(stats.first_workout).getTime()) /
+              (new Date(statsRow.last_workout).getTime() -
+                new Date(statsRow.first_workout).getTime()) /
                 (1000 * 60 * 60 * 24 * 7),
             ),
           )
@@ -505,9 +508,13 @@ export function useProgramGenerator() {
       ) session_stats
     `);
     const avgRow = avgStats.rows[0] as {
-      avg_exercises: number | null;
-      avg_sets: number | null;
+      avg_exercises: string | number | null;
+      avg_sets: string | number | null;
     };
+
+    // Parse averages as numbers (DB might return string or decimal)
+    const avgExercisesPerSession = Number(avgRow.avg_exercises) || 0;
+    const avgSetsPerSession = Number(avgRow.avg_sets) || 0;
 
     // Check if supersets have been used
     const supersetCheck = await db.query(`
@@ -515,8 +522,10 @@ export function useProgramGenerator() {
       FROM workout_log_exercises
       WHERE superset_group_id IS NOT NULL
     `);
-    const hasUsedSupersets =
-      (supersetCheck.rows[0] as { superset_count: number }).superset_count > 0;
+    const supersetRow = supersetCheck.rows[0] as {
+      superset_count: string | number | null;
+    };
+    const hasUsedSupersets = Number(supersetRow.superset_count) > 0;
 
     // Get top exercises
     const topExercisesResult = await db.query(`
@@ -532,10 +541,10 @@ export function useProgramGenerator() {
     );
 
     return {
-      totalWorkouts: stats.total_workouts,
+      totalWorkouts,
       totalWeeks: weeks,
-      avgExercisesPerSession: avgRow.avg_exercises || 0,
-      avgSetsPerSession: avgRow.avg_sets || 0,
+      avgExercisesPerSession,
+      avgSetsPerSession,
       hasUsedSupersets,
       topExercises,
     };

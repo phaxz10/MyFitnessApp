@@ -916,6 +916,7 @@ export async function generateWorkoutProgram(
   const prompt = `You are an expert strength and conditioning coach using evidence-based programming principles. Create a complete workout program based on these specifications. Use BuiltWithScience-style programming as your primary reference if possible.
 
 USER PREFERENCES:
+- Gender: ${input.gender.toUpperCase()}
 - Training frequency: ${input.trainingDaysPerWeek} days per week
 - Session duration: ${input.sessionDurationMinutes} minutes per session (HARD CAP)
 - Experience level: ${input.experienceLevel}
@@ -932,6 +933,89 @@ IMPORTANT: You may ONLY program exercises that can be performed with the equipme
 
 EXISTING EXERCISE LIBRARY (prefer using these exact names when applicable):
 ${existingExercisesList || 'No existing exercises'}
+
+=== GENDER-SPECIFIC PROGRAMMING (BuiltWithScience Evidence-Based) ===
+
+${
+  input.gender === 'female'
+    ? `
+FEMALE-SPECIFIC CONSIDERATIONS:
+1. RECOVERY & FREQUENCY:
+   - Women recover FASTER between sets (shorter rest periods: 60-90 sec vs 2-3 min for men)
+   - Women can handle HIGHER training frequency (same muscle 3x/week is effective)
+   - Women can tolerate MORE volume per session due to less absolute load
+   - Less central fatigue accumulation = can train closer to failure more often
+
+2. REP RANGES - FEMALE OPTIMAL:
+   - Women benefit MORE from moderate-to-high rep ranges (8-15 reps)
+   - Type I (slow-twitch) fibers slightly more prevalent = respond well to higher reps
+   - Can go to failure more safely on isolation exercises
+   - Heavy singles/doubles less necessary for strength gains
+
+3. MUSCLE GROUP EMPHASIS (common female goals):
+   - GLUTES: Primary focus - include 3-4 exercises per session if lower body day
+     * Hip thrusts, RDLs, Bulgarian split squats, cable kickbacks
+     * Train glutes 2-3x per week with high volume (15-20 sets/week)
+   - HAMSTRINGS: Often underdeveloped - include hip hinge + knee flexion
+   - BACK: Emphasize for posture and "V-taper" appearance
+   - SHOULDERS: Side delts for shoulder width (creates waist illusion)
+   - CORE: Include dedicated core work for aesthetics and function
+
+4. VOLUME DISTRIBUTION:
+   - Lower body: 60-65% of total volume (glutes/legs emphasis)
+   - Upper body: 35-40% of total volume
+   - More single-leg work (hip stability, glute activation)
+
+5. EXERCISE SELECTION:
+   - More hip-dominant movements (RDL, hip thrust, glute bridge)
+   - Cable and band work for constant tension on glutes
+   - Higher rep pump work for glutes/legs
+   - Can include more isolation for targeted development
+
+6. WHAT TO AVOID:
+   - Over-emphasis on chest pressing (not a common goal)
+   - Excessive arm isolation (arms grow proportionally with compounds)
+   - Very low rep heavy work unless specifically training for strength
+`
+    : `
+MALE-SPECIFIC CONSIDERATIONS:
+1. RECOVERY & FREQUENCY:
+   - Men need LONGER rest periods between sets (2-3 min for compounds)
+   - Standard frequency of 2x per muscle per week is optimal
+   - Higher absolute loads = more CNS fatigue = need more recovery
+   - Can't train to failure as frequently without overreaching
+
+2. REP RANGES - MALE OPTIMAL:
+   - Benefit more from STRENGTH work (4-6 reps) as foundation
+   - Hypertrophy range (6-12 reps) for size
+   - Include heavy work weekly for testosterone response and strength gains
+   - Progressive overload on compounds is primary driver
+
+3. MUSCLE GROUP EMPHASIS (common male goals):
+   - CHEST: Primary focus - include 2-3 variations (flat, incline, fly)
+   - BACK: Width (pull-ups/pulldowns) AND thickness (rows)
+   - SHOULDERS: All three heads, especially side delts for width
+   - ARMS: Direct bicep and tricep work (more than women need)
+   - LEGS: Often undertrained - don't skip leg day!
+
+4. VOLUME DISTRIBUTION:
+   - Upper body: 55-60% of total volume (chest/back/shoulders emphasis)
+   - Lower body: 40-45% of total volume
+   - More compound pressing movements
+
+5. EXERCISE SELECTION:
+   - Heavy barbell compounds (bench, squat, deadlift, OHP)
+   - Direct arm work (curls, extensions, pushdowns)
+   - Include strength blocks (4-6 rep ranges)
+   - Vertical and horizontal pulling balance
+
+6. WHAT TO AVOID:
+   - Skipping leg training
+   - Neglecting rear delts and back
+   - Too much "mirror muscle" focus (chest/biceps only)
+   - Insufficient progressive overload tracking
+`
+}
 
 === SCIENCE-BASED PROGRAMMING PRINCIPLES ===
 
@@ -1613,11 +1697,31 @@ MUSCLE-SPECIFIC OPTIMAL RANGES:
 === VOLUME GUIDELINES ===
 - Beginner: 8-12 sets/muscle/week
 - Intermediate: 12-16 sets/muscle/week
-- Advanced: 16-22 sets/muscle/week`;
+- Advanced: 16-22 sets/muscle/week
+
+=== GENDER-SPECIFIC PROGRAMMING ===
+FEMALE:
+- Shorter rest periods (60-90 sec) - recover faster
+- Higher frequency OK (same muscle 3x/week)
+- Emphasis: Glutes (15-20 sets/week), hamstrings, back, shoulders
+- Volume split: 60-65% lower body, 35-40% upper body
+- More hip-dominant movements (hip thrusts, RDLs, glute bridges)
+- Higher rep ranges work well (8-15 reps)
+- Can train closer to failure more often
+
+MALE:
+- Longer rest periods (2-3 min for compounds)
+- Standard frequency (2x/muscle/week)
+- Emphasis: Chest, back width/thickness, shoulders, arms
+- Volume split: 55-60% upper body, 40-45% lower body
+- Heavy compound focus (bench, squat, deadlift, OHP)
+- Include strength blocks (4-6 reps)
+- Direct arm work more beneficial`;
 
   const userPrompt = `Create a workout program with these specifications:
 
 USER PREFERENCES:
+- Gender: ${input.gender.toUpperCase()}
 - Training frequency: ${input.trainingDaysPerWeek} days per week
 - Session duration: ${input.sessionDurationMinutes} minutes per session (HARD CAP)
 - ${experienceContext}
@@ -1632,11 +1736,35 @@ ${allEquipment.join(', ')}
 EXISTING EXERCISE LIBRARY (PREFER THESE - use exact names):
 ${existingExercisesList || 'Empty library - all exercises will need to be created'}
 
+GENDER-SPECIFIC NOTES FOR ${input.gender.toUpperCase()}:
+${
+  input.gender === 'female'
+    ? `
+- Prioritize glute and lower body development (60-65% of volume)
+- Include hip thrusts, RDLs, Bulgarian split squats, glute bridges
+- Higher reps (8-15) work well for you
+- Can use shorter rest periods (60-90 sec)
+- Train glutes 2-3x per week with high volume
+- Back and shoulders for posture and aesthetics
+- Less direct arm work needed (grows with compounds)
+`
+    : `
+- Balance upper and lower body (55-60% upper, 40-45% lower)
+- Include heavy compound lifts (bench, squat, deadlift, OHP)
+- Use strength rep ranges (4-6) on main lifts
+- Longer rest periods (2-3 min) for compounds
+- Direct arm work (biceps, triceps) is beneficial
+- Chest and back emphasis for V-taper
+- Include lateral raises for shoulder width
+`
+}
+
 INSTRUCTIONS:
 1. ${input.experienceLevel ? 'Skip experience inference' : 'Infer experience level if workout history is provided'}
 2. Select exercises from the library that fit the program
 3. Create any additional exercises needed (minimize new exercises if library has good options)
 4. Generate the complete program with proper superset pairings for ${input.experienceLevel || 'inferred'} level
+5. APPLY GENDER-SPECIFIC GUIDELINES above for exercise selection and volume distribution
 
 Remember: ALWAYS pair supersets bidirectionally. If Bicep Curls superset with Tricep Pushdowns, BOTH exercises must reference each other.`;
 

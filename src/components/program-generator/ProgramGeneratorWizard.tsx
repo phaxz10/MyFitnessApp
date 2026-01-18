@@ -128,6 +128,7 @@ export function ProgramGeneratorWizard({
         sessionDurationMinutes: sessionDuration,
         availableEquipment: selectedEquipment,
         goal: profile.goal,
+        gender: profile.gender, // Pass gender for gender-specific programming
         // Pass undefined to let AI infer from workout history
         experienceLevel:
           experienceLevel === 'auto' ? undefined : experienceLevel,
@@ -142,6 +143,7 @@ export function ProgramGeneratorWizard({
         sessionDurationMinutes: sessionDuration,
         availableEquipment: selectedEquipment,
         goal: profile.goal,
+        gender: profile.gender, // Pass gender for gender-specific programming
         experienceLevel:
           experienceLevel === 'auto' ? 'intermediate' : experienceLevel,
         focusAreas: focusAreas.length > 0 ? focusAreas : undefined,

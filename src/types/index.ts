@@ -383,6 +383,7 @@ export interface AIProgramGeneratorInput {
   availableEquipment: EquipmentType[];
   goal: UserProfile['goal'];
   experienceLevel: ExperienceLevel;
+  gender: UserProfile['gender']; // Male or female - affects program structure
   focusAreas?: string[]; // e.g., ["Chest", "Back"] for emphasis
   injuries?: string; // free text describing any limitations
   preferredTrainingSplit?:

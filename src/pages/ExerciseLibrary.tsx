@@ -1,36 +1,40 @@
-import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
-  Plus,
-  Search,
-  Trash2,
-  Edit,
-  Sparkles,
+  AlertTriangle,
+  Check,
   ChevronRight,
-  Video,
+  Edit,
   ListPlus,
   Loader2,
+  Plus,
+  RefreshCw,
+  Search,
+  Sparkles,
+  Trash2,
+  Video,
   X,
-  Check,
 } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { useSearchParams } from 'react-router-dom';
 import {
+  Button,
   Card,
   CardContent,
-  Button,
   Input,
   Modal,
   TextArea,
 } from '../components/ui';
 import { useExercises } from '../hooks/useExercises';
+import { type ExerciseFormData, exerciseFormSchema } from '../schemas/forms';
 import {
+  findDuplicateExercises,
   generateExerciseDetails,
   generateExerciseDetailsBatch,
   isGeminiInitialized,
-  findDuplicateExercises,
 } from '../services/gemini';
-import { exerciseFormSchema, type ExerciseFormData } from '../schemas/forms';
-import type { Exercise, AIExerciseResponse, ExerciseType } from '../types';
+import type { AIExerciseResponse, Exercise, ExerciseType } from '../types';
+
 const MUSCLE_GROUPS = [
   'All',
   'Chest',
@@ -75,6 +79,7 @@ function getYouTubeSearchUrl(exerciseName: string): string {
   return `https://www.youtube.com/results?search_query=${query}`;
 }
 export function ExerciseLibrary() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     exercises,
     fetchExercises,
@@ -106,6 +111,17 @@ export function ExerciseLibrary() {
     }[]
   >([]);
   const [isBatchGenerating, setIsBatchGenerating] = useState(false);
+
+  // Regenerate all exercises state
+  const [showRegenerateModal, setShowRegenerateModal] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [regenerateProgress, setRegenerateProgress] = useState<{
+    current: number;
+    total: number;
+    currentExercise: string;
+    errors: string[];
+    completed: string[];
+  } | null>(null);
   const {
     register,
     handleSubmit,
@@ -125,6 +141,133 @@ export function ExerciseLibrary() {
   });
   const formName = watch('name');
   const formExerciseType = watch('exerciseType');
+
+  // Regenerate all exercises - updates descriptions using current AI prompts
+  const handleRegenerateAllExercises = useCallback(async () => {
+    if (!isGeminiInitialized()) {
+      alert('Please set up your Gemini API key in Settings');
+      return;
+    }
+
+    if (exercises.length === 0) {
+      alert('No exercises to regenerate');
+      return;
+    }
+
+    setIsRegenerating(true);
+    setRegenerateProgress({
+      current: 0,
+      total: exercises.length,
+      currentExercise: '',
+      errors: [],
+      completed: [],
+    });
+
+    const errors: string[] = [];
+    const completed: string[] = [];
+
+    // Process exercises in batches of 5 for efficiency
+    const batchSize = 5;
+    for (let i = 0; i < exercises.length; i += batchSize) {
+      const batch = exercises.slice(i, i + batchSize);
+      const batchNames = batch.map((ex) => ex.name);
+
+      setRegenerateProgress((prev) =>
+        prev
+          ? {
+              ...prev,
+              current: i,
+              currentExercise: `Processing batch: ${batchNames.join(', ')}`,
+            }
+          : null,
+      );
+
+      try {
+        const details = await generateExerciseDetailsBatch(batchNames);
+
+        // Update each exercise in the batch
+        for (let j = 0; j < batch.length; j++) {
+          const exercise = batch[j];
+          const detail = details[j];
+
+          if (detail) {
+            const fullDescription = detail.tips?.length
+              ? `${detail.description}\n\nTips:\n${detail.tips.map((tip) => `• ${tip}`).join('\n')}`
+              : detail.description;
+
+            try {
+              await updateExercise(exercise.id, {
+                name: detail.name,
+                description: fullDescription,
+                muscle_groups: detail.muscle_groups.join(', '),
+                equipment: detail.equipment,
+                exercise_type: detail.exercise_type,
+              });
+              completed.push(exercise.name);
+            } catch (updateError) {
+              console.error(`Failed to update ${exercise.name}:`, updateError);
+              errors.push(`${exercise.name}: Failed to save`);
+            }
+          } else {
+            errors.push(`${exercise.name}: No details generated`);
+          }
+        }
+
+        setRegenerateProgress((prev) =>
+          prev
+            ? {
+                ...prev,
+                current: Math.min(i + batchSize, exercises.length),
+                completed: [...completed],
+                errors: [...errors],
+              }
+            : null,
+        );
+      } catch (batchError) {
+        console.error(`Batch generation failed:`, batchError);
+        for (const ex of batch) {
+          errors.push(`${ex.name}: Batch generation failed`);
+        }
+      }
+
+      // Small delay between batches to avoid rate limiting
+      if (i + batchSize < exercises.length) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+
+    setRegenerateProgress((prev) =>
+      prev
+        ? {
+            ...prev,
+            current: exercises.length,
+            currentExercise: 'Complete!',
+            completed,
+            errors,
+          }
+        : null,
+    );
+
+    setIsRegenerating(false);
+
+    // Refresh the exercises list
+    await fetchExercises();
+
+    // Clear the URL param
+    setSearchParams({});
+  }, [exercises, updateExercise, fetchExercises, setSearchParams]);
+
+  // Check for regenerate-details-all URL param
+  useEffect(() => {
+    if (
+      searchParams.get('regenerate-details-all') === 'true' &&
+      exercises.length > 0 &&
+      !isRegenerating
+    ) {
+      setShowRegenerateModal(true);
+    }
+  }, [searchParams, exercises.length, isRegenerating]);
+
   useEffect(() => {
     fetchExercises();
   }, [fetchExercises]);
@@ -918,6 +1061,144 @@ export function ExerciseLibrary() {
                   Set up your Gemini API key in Settings to use AI generation
                 </p>
               )}
+            </>
+          )}
+        </div>
+      </Modal>
+
+      {/* Regenerate All Exercises Modal */}
+      <Modal
+        isOpen={showRegenerateModal}
+        onClose={() => {
+          if (!isRegenerating) {
+            setShowRegenerateModal(false);
+            setRegenerateProgress(null);
+            setSearchParams({});
+          }
+        }}
+        title="Regenerate All Exercise Details"
+      >
+        <div className="space-y-4">
+          {!isRegenerating && !regenerateProgress?.current ? (
+            <>
+              <div className="flex items-start gap-3 p-3 bg-amber-900/30 border border-amber-700 rounded-lg">
+                <AlertTriangle
+                  size={20}
+                  className="text-amber-400 flex-shrink-0 mt-0.5"
+                />
+                <div>
+                  <p className="text-amber-300 font-medium">Warning</p>
+                  <p className="text-amber-400/80 text-sm">
+                    This will regenerate AI details for all {exercises.length}{' '}
+                    exercises in your library. Existing descriptions will be
+                    overwritten with fresh AI-generated content.
+                  </p>
+                </div>
+              </div>
+              <p className="text-slate-400 text-sm">
+                This is useful when you've updated the AI prompts and want all
+                exercises to benefit from the improvements.
+              </p>
+              <div className="flex gap-3">
+                <Button
+                  variant="secondary"
+                  className="flex-1"
+                  onClick={() => {
+                    setShowRegenerateModal(false);
+                    setSearchParams({});
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={handleRegenerateAllExercises}
+                  disabled={!isGeminiInitialized()}
+                >
+                  <RefreshCw size={18} className="mr-2" />
+                  Regenerate All
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-400">Progress</span>
+                  <span className="text-white">
+                    {regenerateProgress?.current || 0} /{' '}
+                    {regenerateProgress?.total || exercises.length}
+                  </span>
+                </div>
+                <div className="w-full bg-slate-700 rounded-full h-2">
+                  <div
+                    className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                    style={{
+                      width: `${((regenerateProgress?.current || 0) / (regenerateProgress?.total || 1)) * 100}%`,
+                    }}
+                  />
+                </div>
+                {regenerateProgress?.currentExercise && (
+                  <p className="text-slate-400 text-sm truncate">
+                    {isRegenerating ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 size={14} className="animate-spin" />
+                        {regenerateProgress.currentExercise}
+                      </span>
+                    ) : (
+                      regenerateProgress.currentExercise
+                    )}
+                  </p>
+                )}
+              </div>
+
+              {regenerateProgress &&
+                regenerateProgress.completed.length > 0 && (
+                  <div className="max-h-32 overflow-y-auto">
+                    <p className="text-green-400 text-sm font-medium mb-1">
+                      Completed ({regenerateProgress.completed.length})
+                    </p>
+                    <div className="text-slate-400 text-xs space-y-0.5">
+                      {regenerateProgress.completed.slice(-5).map((name) => (
+                        <div key={name} className="flex items-center gap-1">
+                          <Check size={12} className="text-green-400" />
+                          {name}
+                        </div>
+                      ))}
+                      {regenerateProgress.completed.length > 5 && (
+                        <div className="text-slate-500">
+                          ...and {regenerateProgress.completed.length - 5} more
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+              {regenerateProgress && regenerateProgress.errors.length > 0 && (
+                <div className="max-h-32 overflow-y-auto">
+                  <p className="text-red-400 text-sm font-medium mb-1">
+                    Errors ({regenerateProgress.errors.length})
+                  </p>
+                  <div className="text-red-400/80 text-xs space-y-0.5">
+                    {regenerateProgress.errors.map((error) => (
+                      <div key={error}>{error}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!isRegenerating &&
+                regenerateProgress?.current === regenerateProgress?.total && (
+                  <Button
+                    className="w-full"
+                    onClick={() => {
+                      setShowRegenerateModal(false);
+                      setRegenerateProgress(null);
+                    }}
+                  >
+                    Done
+                  </Button>
+                )}
             </>
           )}
         </div>

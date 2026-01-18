@@ -46,3 +46,56 @@ pnpm dev
 - `pnpm format` - Format with Biome
 - `pnpm check` - Lint + format checks
 - `pnpm preview` - Preview production build
+
+## Debug & Override URL Parameters
+
+These URL parameters allow you to trigger special features or override default behavior for testing and maintenance.
+
+### Weekly Review
+
+| URL | Description |
+|-----|-------------|
+| `/?forceReview=true` | Force the weekly AI review modal to appear (normally only shows on Mondays) |
+
+### Exercise Library
+
+| URL | Description |
+|-----|-------------|
+| `/exercises?regenerate-details-all=true` | Regenerate AI details for ALL exercises in the library. Useful after updating AI prompts to refresh descriptions, muscle groups, tips, etc. |
+
+### Calorie Log
+
+| URL | Description |
+|-----|-------------|
+| `/calories?date=YYYY-MM-DD` | View calorie log for a specific date |
+| `/calories?action=add` | Auto-open the food entry modal |
+
+### Weight Tracker
+
+| URL | Description |
+|-----|-------------|
+| `/weight?date=YYYY-MM-DD` | Select a specific date in the weight tracker |
+| `/weight?action=add` | Auto-open the weight log modal |
+
+### Workout
+
+| URL | Description |
+|-----|-------------|
+| `/workout?date=YYYY-MM-DD` | Set date override for logging missed workout sessions |
+| `/workout/session?date=YYYY-MM-DD` | Override date for the current workout session |
+
+### Examples
+
+```bash
+# Force weekly review to show (for testing)
+http://localhost:5173/?forceReview=true
+
+# Regenerate all exercise details after prompt improvements
+http://localhost:5173/exercises?regenerate-details-all=true
+
+# Log a missed workout from yesterday
+http://localhost:5173/workout?date=2025-01-17
+
+# Add food entry for a specific date
+http://localhost:5173/calories?date=2025-01-15&action=add
+```

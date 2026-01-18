@@ -9,6 +9,7 @@ import {
   Link,
   Plus,
   Save,
+  Sparkles,
   Timer,
   Trash2,
   X,
@@ -23,11 +24,34 @@ import {
   CardContent,
   Input,
   Modal,
+  Select,
   TextArea,
 } from '../components/ui';
+import {
+  ALL_EQUIPMENT,
+  EQUIPMENT_CATEGORIES,
+  EXPERIENCE_LEVELS,
+  MUSCLE_GROUPS,
+  TRAINING_SPLITS,
+} from '../constants/equipment';
+import { useAppStore } from '../hooks/useAppStore';
 import { useExercises } from '../hooks/useExercises';
+import { useProfile } from '../hooks/useProfile';
 import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
-import type { Exercise, ExerciseType } from '../types';
+import { getDB } from '../services/db';
+import {
+  initGemini,
+  isGeminiInitialized,
+  optimizeWorkoutProgram,
+} from '../services/gemini';
+import type {
+  AIProgramOptimizationInput,
+  EquipmentType,
+  Exercise,
+  ExerciseType,
+  ExperienceLevel,
+} from '../types';
+import { calculateAgeFromBirthdate, getDaysAgo } from '../utils/date';
 
 const DAY_OPTIONS = [
   { value: '', label: 'Any Day' },
@@ -117,6 +141,20 @@ export function ProgramEditor() {
     sessionIndex: number;
     exerciseIndex: number;
   } | null>(null);
+  const [showOptimizeModal, setShowOptimizeModal] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [optimizeError, setOptimizeError] = useState<string | null>(null);
+  const [experienceLevel, setExperienceLevel] =
+    useState<ExperienceLevel>('intermediate');
+  const [preferredSplit, setPreferredSplit] =
+    useState<
+      AIProgramOptimizationInput['preferences']['preferredTrainingSplit']
+    >('auto');
+  const [sessionDurationMinutes, setSessionDurationMinutes] = useState(60);
+  const [focusAreas, setFocusAreas] = useState<string[]>([]);
+  const [injuries, setInjuries] = useState('');
+  const [availableEquipment, setAvailableEquipment] =
+    useState<EquipmentType[]>(ALL_EQUIPMENT);
 
   const {
     register,

@@ -1,4 +1,11 @@
-import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import type { FunctionDeclaration } from '@google/genai';
+import {
+  createPartFromFunctionResponse,
+  FunctionCallingConfigMode,
+  GoogleGenAI,
+  ThinkingLevel,
+  Type,
+} from '@google/genai';
 import { ALWAYS_AVAILABLE_EQUIPMENT } from '../constants/equipment';
 import type {
   AIExerciseCoachingResponse,
@@ -6,16 +13,257 @@ import type {
   AIFoodAnalysisResponse,
   AIGoalReviewResponse,
   AIProgramGeneratorInput,
+  AIProgramGeneratorInputV2,
   AIProgramGeneratorResponse,
+  AIProgramOptimizationInput,
   AITargetResponse,
   AIWeeklyReviewResponse,
   Exercise,
+  ExperienceLevel,
+  ExperienceLevelInference,
   UserProfile,
   WeeklyReviewData,
   WeightLog,
   WorkoutSet,
 } from '../types';
 import { calculateAgeFromBirthdate } from '../utils/date';
+
+// ============================================================================
+// FUNCTION DECLARATIONS FOR GEMINI FUNCTION CALLING
+// ============================================================================
+
+const createExercisesFunctionDeclaration: FunctionDeclaration = {
+  name: 'create_exercises',
+  description:
+    'Create new exercises in the user exercise library. Call this when the program requires exercises that do not exist in the library.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      exercises: {
+        type: Type.ARRAY,
+        description: 'List of exercises to create',
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            name: {
+              type: Type.STRING,
+              description: 'Standard exercise name',
+            },
+            description: {
+              type: Type.STRING,
+              description:
+                'Step-by-step guide for performing the exercise (3-5 sentences)',
+            },
+            muscle_groups: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description:
+                'Primary and secondary muscle groups (e.g., ["Chest", "Triceps"])',
+            },
+            equipment: {
+              type: Type.STRING,
+              description: 'Required equipment (or "Bodyweight" if none)',
+            },
+            exercise_type: {
+              type: Type.STRING,
+              enum: ['reps_weight', 'reps_only', 'duration', 'duration_weight'],
+              description: 'Type of exercise tracking',
+            },
+            tips: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: 'Form cues, safety tips, and common mistakes (4-6)',
+            },
+          },
+          required: [
+            'name',
+            'description',
+            'muscle_groups',
+            'equipment',
+            'exercise_type',
+            'tips',
+          ],
+        },
+      },
+    },
+    required: ['exercises'],
+  },
+};
+
+const selectExercisesFunctionDeclaration: FunctionDeclaration = {
+  name: 'select_exercises',
+  description:
+    'Select exercises from the existing library to use in the program. Always prefer existing exercises over creating new ones.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      selections: {
+        type: Type.ARRAY,
+        description: 'List of exercise selections from the library',
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            exercise_name: {
+              type: Type.STRING,
+              description: 'Exact name of the exercise from the library',
+            },
+            reason: {
+              type: Type.STRING,
+              description: 'Brief reason for selecting this exercise',
+            },
+          },
+          required: ['exercise_name'],
+        },
+      },
+    },
+    required: ['selections'],
+  },
+};
+
+const generateProgramFunctionDeclaration: FunctionDeclaration = {
+  name: 'generate_program',
+  description:
+    'Generate a complete workout program with sessions and exercises. Call this after selecting/creating all needed exercises.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      programName: {
+        type: Type.STRING,
+        description: 'Descriptive name for the program',
+      },
+      programDescription: {
+        type: Type.STRING,
+        description: '2-3 sentence program overview',
+      },
+      experienceLevel: {
+        type: Type.STRING,
+        enum: ['beginner', 'intermediate', 'advanced'],
+        description: 'Inferred or confirmed experience level',
+      },
+      sessions: {
+        type: Type.ARRAY,
+        description: 'List of workout sessions',
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            name: {
+              type: Type.STRING,
+              description: 'Session name (e.g., "Push Day", "Upper Body A")',
+            },
+            dayOfWeek: {
+              type: Type.NUMBER,
+              description:
+                'Day of week (0=Sunday through 6=Saturday), or null for flexible',
+            },
+            sessionTimeMinutes: {
+              type: Type.NUMBER,
+              description: 'Estimated session duration',
+            },
+            exercises: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: {
+                    type: Type.STRING,
+                    description:
+                      'Exercise name (must match library or created)',
+                  },
+                  targetSets: {
+                    type: Type.NUMBER,
+                    description: 'Number of sets (typically 2-4)',
+                  },
+                  targetRepMin: {
+                    type: Type.NUMBER,
+                    description:
+                      'Minimum reps (can be 4-30+ depending on exercise type)',
+                  },
+                  targetRepMax: {
+                    type: Type.NUMBER,
+                    description:
+                      'Maximum reps (lateral raises: 15-25, calves: 20-30, compounds: 6-10)',
+                  },
+                  targetDurationSeconds: {
+                    type: Type.NUMBER,
+                    description: 'For duration-based exercises (planks, holds)',
+                  },
+                  notes: {
+                    type: Type.STRING,
+                    description:
+                      'Form cue, intensity technique (e.g., "Rest-pause: 12 reps + 15 sec + max reps", "Slow 3 sec eccentric", "Drop set on final set")',
+                  },
+                  supersetWith: {
+                    type: Type.STRING,
+                    description:
+                      'Name of exercise to superset with. IMPORTANT: Both exercises must reference each other.',
+                  },
+                },
+                required: [
+                  'name',
+                  'targetSets',
+                  'targetRepMin',
+                  'targetRepMax',
+                ],
+              },
+            },
+          },
+          required: ['name', 'exercises'],
+        },
+      },
+      weeklyVolumeSummary: {
+        type: Type.OBJECT,
+        properties: {
+          totalSets: { type: Type.NUMBER },
+          muscleGroupBreakdown: {
+            type: Type.OBJECT,
+            description:
+              'Sets per muscle group (e.g., {"Chest": 12, "Back": 14})',
+          },
+        },
+        required: ['totalSets', 'muscleGroupBreakdown'],
+      },
+      recommendations: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description: 'Tips for the user about progression, recovery, nutrition',
+      },
+    },
+    required: [
+      'programName',
+      'programDescription',
+      'experienceLevel',
+      'sessions',
+      'weeklyVolumeSummary',
+      'recommendations',
+    ],
+  },
+};
+
+const inferExperienceLevelFunctionDeclaration: FunctionDeclaration = {
+  name: 'infer_experience_level',
+  description:
+    'Infer the user experience level based on their workout history. Call this if experience level is not provided.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      inferredLevel: {
+        type: Type.STRING,
+        enum: ['beginner', 'intermediate', 'advanced'],
+        description: 'Inferred experience level',
+      },
+      confidence: {
+        type: Type.STRING,
+        enum: ['low', 'medium', 'high'],
+        description: 'Confidence in the inference',
+      },
+      reasoning: {
+        type: Type.STRING,
+        description: 'Explanation of why this level was inferred',
+      },
+    },
+    required: ['inferredLevel', 'confidence', 'reasoning'],
+  },
+};
 
 let ai: GoogleGenAI | null = null;
 
@@ -720,10 +968,10 @@ ${existingExercisesList || 'No existing exercises'}
    }
 
 2. WEEKLY VOLUME GUIDELINES (sets per muscle per week):
-   ${input.experienceLevel === 'beginner' ? '- Beginners: 10-12 sets per major muscle group' : ''}
+   ${input.experienceLevel === 'beginner' ? '- Beginners: 8-12 sets per major muscle group' : ''}
    ${input.experienceLevel === 'intermediate' ? '- Intermediate: 12-16 sets per major muscle group' : ''}
-   ${input.experienceLevel === 'advanced' ? '- Advanced: 16-20 sets per major muscle group' : ''}
-   - Arms (biceps, triceps): 6-10 direct sets (they get indirect work from compounds)
+   ${input.experienceLevel === 'advanced' ? '- Advanced: 16-22 sets per major muscle group (use supersets to fit time)' : ''}
+   - Arms (biceps, triceps): 6-12 direct sets (they get indirect work from compounds)
    - Rear delts: 8-12 sets (often undertrained)
    - Spread volume across 2+ sessions per week for each muscle
 
@@ -749,46 +997,97 @@ ${existingExercisesList || 'No existing exercises'}
 4. SESSION STRUCTURE:
    - Start with heavy compound movements (freshest state)
    - Progress to lighter isolation exercises
-   - Use supersets for antagonist muscles to save time (e.g., biceps/triceps, chest/back)
+   - For intermediate and advanced trainees, use 1-2 antagonist or non-competing supersets per session to save time (e.g., biceps/triceps, chest/back)
+   - For beginners, avoid supersets unless required to fit the time cap
+   - If you use supersets, set "supersetWith" on BOTH paired exercises with each other's name
    - Save abs/core for end of session
 
-5. REP RANGES BY GOAL (evidence-based):
+5. REP RANGES - EXERCISE-SPECIFIC GUIDELINES (BuiltWithScience evidence-based):
+   
+   === COMPOUND MOVEMENTS ===
+   Heavy Compounds (Squat, Deadlift, Bench Press, Overhead Press, Rows):
+   - Strength focus: 4-6 reps (heavier loads, longer rest 2-3 min)
+   - Hypertrophy focus: 6-10 reps (moderate loads, 90-120 sec rest)
+   - Never exceed 12 reps on these - use lighter variations instead
+   
+   === ISOLATION MOVEMENTS - STANDARD ===
+   Biceps (Curls): 8-12 reps (peak contraction focus)
+   Triceps (Pushdowns, Extensions): 10-15 reps (constant tension)
+   Shoulders (Lateral Raises): 12-20 reps (lighter weight, higher reps for side delts)
+   Chest Flyes: 10-15 reps (stretch emphasis, controlled eccentric)
+   
+   === HIGH REP EXERCISES (15-30+ reps) ===
+   These exercises benefit from higher rep ranges for metabolic stress and pump:
+   - Lateral Raises: 15-25 reps (side delts respond well to high reps)
+   - Rear Delt Flyes: 15-25 reps (similar to side delts)
+   - Face Pulls: 15-25 reps (postural muscles, higher reps)
+   - Calf Raises: 15-30 reps (calves are endurance-dominant)
+   - Leg Extensions (finisher): 15-25 reps (metabolic stress, joint-friendly)
+   - Leg Curls (finisher): 15-20 reps
+   - Cable Crunches / Ab work: 15-25 reps
+   - Band Pull-Aparts: 20-30 reps (prehab/warmup)
+   
+   === REST-PAUSE & INTENSITY TECHNIQUES ===
+   For advanced trainees (${input.experienceLevel === 'advanced' ? 'APPLY THESE' : 'use sparingly'}):
+   - Rest-Pause Sets: Do 8-12 reps to failure, rest 15-20 sec, continue for 3-5 more reps
+     Best for: Lateral raises, curls, tricep pushdowns, leg extensions
+     Note in exercise: "Rest-pause: 12 reps + 15 sec rest + max reps"
+   - Myo-Reps: 12-15 activation reps, then 3-5 "mini-sets" of 3-5 reps with 5 sec rest
+     Best for: Isolation exercises at end of workout
+   - Drop Sets: Only on final set of isolation exercises
+     Best for: Bicep curls, lateral raises, leg extensions
+   
+   === GOAL-SPECIFIC MODIFICATIONS ===
    ${
      input.goal === 'bulk' || input.goal === 'lean_bulk'
        ? `For ${input.goal}:
-   - Primary: 6-12 reps (optimal hypertrophy range)
-   - Compounds: 6-8 reps (heavier for strength base)
-   - Isolation: 10-15 reps (metabolic stress, safer)
-   - Focus on progressive overload`
+   - Compounds: 6-8 reps (strength base, progressive overload priority)
+   - Main accessories: 8-12 reps (hypertrophy sweet spot)
+   - Isolation finishers: 12-20 reps (metabolic stress, pump)
+   - Consider rest-pause on final sets of isolation work`
        : ''
    }
    ${
      input.goal === 'cut'
        ? `For cutting:
-   - Maintain strength: Keep some heavy work (4-6 reps) on main lifts
-   - Volume work: 8-15 reps for muscle retention
-   - Avoid excessive volume (recovery is compromised in deficit)
-   - Prioritize compound movements to preserve muscle`
+   - Compounds: 4-6 reps (MAINTAIN strength - this is priority #1)
+   - Accessories: 8-12 reps (preserve muscle)
+   - Reduce total volume by 20-30% vs building phase
+   - Skip high-rep finishers if recovery is compromised`
        : ''
    }
    ${
      input.goal === 'recomp'
        ? `For recomposition:
-   - Strength days: 4-6 reps on compounds
-   - Hypertrophy days: 8-12 reps
-   - Mix both approaches across the week
-   - Focus on progressive overload despite maintenance calories`
+   - Alternate rep ranges: Some days 4-6 (strength), some days 8-12 (hypertrophy)
+   - Full rep range spectrum across the week
+   - Include metabolic finishers (15-20 reps) for calorie burn`
        : ''
    }
    ${
      input.goal === 'maintain'
        ? `For maintenance:
-   - Moderate rep range: 6-10 reps
-   - Maintain current intensity (weight on bar)
-   - Can reduce volume by ~30% from building phase
-   - Focus on movement quality`
+   - Keep intensity (weight) same as building phase
+   - Reduce volume by 30-40%
+   - Standard rep ranges: 6-12 for compounds, 10-15 for isolation
+   - Skip intensity techniques (rest-pause, drop sets)`
        : ''
    }
+
+   === MUSCLE-SPECIFIC REP RECOMMENDATIONS ===
+   | Muscle Group    | Low (Strength) | Medium (Hypertrophy) | High (Metabolic) |
+   |-----------------|----------------|----------------------|------------------|
+   | Chest           | 5-8            | 8-12                 | 12-15            |
+   | Back            | 5-8            | 8-12                 | 12-15            |
+   | Shoulders       | 6-10 (press)   | 10-15 (raises)       | 15-25 (lateral)  |
+   | Quads           | 5-8            | 8-12                 | 15-20 (ext.)     |
+   | Hamstrings      | 6-10           | 10-12                | 12-15            |
+   | Glutes          | 6-10           | 10-15                | 15-20            |
+   | Biceps          | 6-10           | 10-12                | 12-15            |
+   | Triceps         | 8-10           | 10-12                | 12-20            |
+   | Calves          | 10-15          | 15-20                | 20-30            |
+   | Abs/Core        | 10-15          | 15-20                | 20-30            |
+   | Rear Delts      | 12-15          | 15-20                | 20-25            |
 
 6. RECOVERY & DAY SPACING:
    - Allow 48-72 hours between training the same muscle group
@@ -799,15 +1098,74 @@ ${existingExercisesList || 'No existing exercises'}
    ${input.trainingDaysPerWeek === 4 ? '- With 4 days: Mon/Tue/Thu/Fri or Mon/Wed/Fri/Sat' : ''}
    ${input.trainingDaysPerWeek >= 5 ? `- With ${input.trainingDaysPerWeek} days: Push/Pull/Legs/Push/Pull or similar rotation` : ''}
 
-7. SPECIFIC EXERCISE RECOMMENDATIONS BY MUSCLE:
-   - CHEST: Incline press (upper), flat press (mid), flyes (stretch), dips (lower)
-   - BACK: Pull-ups/pulldowns (width), rows (thickness), face pulls (rear delts)
-   - SHOULDERS: Overhead press (front), lateral raises (side), reverse flyes (rear)
-   - QUADS: Squats, lunges, leg press, leg extensions
-   - HAMSTRINGS: Romanian deadlifts (hip hinge), leg curls (knee flexion)
-   - GLUTES: Hip thrusts, Bulgarian split squats, Romanian deadlifts
-   - BICEPS: Different curl variations (barbell, dumbbell, hammer for brachialis)
-   - TRICEPS: Close-grip press (medial/lateral), overhead extension (long head)
+7. SPECIFIC EXERCISE RECOMMENDATIONS BY MUSCLE (with optimal rep ranges):
+   
+   CHEST:
+   - Incline Press: 6-10 reps (upper chest, strength focus)
+   - Flat Press (BB/DB): 6-10 reps (overall mass)
+   - Dumbbell Flyes: 10-15 reps (stretch, controlled)
+   - Cable Flyes: 12-15 reps (constant tension)
+   - Dips: 8-12 reps (lower chest, triceps)
+   
+   BACK:
+   - Pull-ups/Lat Pulldowns: 6-12 reps (width)
+   - Barbell/Dumbbell Rows: 6-10 reps (thickness)
+   - Cable Rows: 10-12 reps (squeeze focus)
+   - Face Pulls: 15-25 reps (rear delts, posture)
+   - Pullovers: 10-15 reps (stretch emphasis)
+   
+   SHOULDERS:
+   - Overhead Press: 6-10 reps (strength, front delts)
+   - Lateral Raises: 15-20 reps (side delts - HIGH REPS WORK BEST)
+   - Cable Lateral Raises: 12-20 reps (constant tension)
+   - Rear Delt Flyes: 15-25 reps (often undertrained)
+   - Upright Rows (wide grip): 10-15 reps
+   
+   QUADS:
+   - Squats (any variation): 5-10 reps (compound strength)
+   - Leg Press: 8-15 reps (volume)
+   - Lunges/Split Squats: 8-12 reps per leg
+   - Leg Extensions: 12-20 reps (finisher, metabolic)
+   - Sissy Squats: 10-15 reps (stretch emphasis)
+   
+   HAMSTRINGS:
+   - Romanian Deadlifts: 8-12 reps (hip hinge, stretch)
+   - Leg Curls (lying/seated): 10-15 reps (knee flexion)
+   - Good Mornings: 8-12 reps
+   - Nordic Curls: 5-10 reps (advanced, bodyweight)
+   
+   GLUTES:
+   - Hip Thrusts: 8-15 reps (primary glute builder)
+   - Bulgarian Split Squats: 8-12 reps per leg
+   - Cable Pull-throughs: 12-15 reps
+   - Glute Bridges: 15-20 reps (activation/finisher)
+   
+   BICEPS:
+   - Barbell Curls: 8-12 reps (mass builder)
+   - Dumbbell Curls: 10-12 reps (peak contraction)
+   - Incline Curls: 10-12 reps (stretch position)
+   - Hammer Curls: 10-12 reps (brachialis)
+   - Cable Curls: 12-15 reps (constant tension)
+   
+   TRICEPS:
+   - Close-Grip Bench: 6-10 reps (compound, medial/lateral)
+   - Overhead Extensions: 10-15 reps (long head stretch)
+   - Pushdowns: 12-15 reps (lateral head)
+   - Skull Crushers: 8-12 reps
+   - Dips: 8-12 reps (compound)
+   
+   CALVES:
+   - Standing Calf Raises: 15-25 reps (gastrocnemius)
+   - Seated Calf Raises: 15-25 reps (soleus - SLOW eccentric)
+   - Single-Leg Calf Raises: 12-20 reps per leg
+   Note: Calves need high reps AND slow eccentrics (2-3 sec lowering)
+   
+   CORE:
+   - Planks: 30-60 seconds (isometric)
+   - Cable Crunches: 15-25 reps
+   - Hanging Leg Raises: 10-15 reps
+   - Ab Wheel Rollouts: 8-12 reps
+   - Pallof Press: 10-15 reps per side
 
 8. Day of week assignment:
    - Assign each session a specific day (0=Sunday through 6=Saturday)
@@ -861,7 +1219,8 @@ Return JSON format only, no markdown code blocks:
     "Tip about progression",
     "Recovery advice",
     "Nutrition consideration"
-  ]
+  ],
+  "experienceLevel": "beginner|intermediate|advanced"
 }
 
 CRITICAL RULES:
@@ -870,7 +1229,144 @@ CRITICAL RULES:
 - For duration-based exercises (planks, holds), set targetDurationSeconds instead of reps
 - Ensure balanced muscle development unless specific focus areas requested
 - Do NOT exceed the hard session time cap of ${input.sessionDurationMinutes} minutes
-- If possible, prioritize builtwithscience.com publicly available routines to align with evidence-based practices`;
+- If possible, prioritize builtwithscience.com publicly available routines to align with evidence-based practices
+- Infer "experienceLevel" from the exercise selection, volume, and superset use; if input.experienceLevel seems mismatched, return the best-fit level`;
+
+  const response = await ai.models.generateContent({
+    model: MODEL,
+    contents: prompt,
+    config: {
+      tools: [{ googleSearch: {} }],
+      thinkingConfig: {
+        thinkingLevel: ThinkingLevel.HIGH,
+        includeThoughts: false,
+      },
+    },
+  });
+
+  const text = response.text ?? '';
+  return JSON.parse(cleanJsonResponse(text)) as AIProgramGeneratorResponse;
+}
+
+export async function optimizeWorkoutProgram(
+  input: AIProgramOptimizationInput,
+): Promise<AIProgramGeneratorResponse> {
+  if (!ai) throw new Error('Gemini API not initialized');
+
+  const formattedProgram = input.program.sessions
+    .map((session) => {
+      const exercises = session.exercises
+        .map(
+          (exercise, index) =>
+            `${index + 1}. ${exercise.name} (${exercise.exercise_type}) ` +
+            `sets ${exercise.targetSets}, reps ${exercise.targetRepMin ?? '-'}-${exercise.targetRepMax ?? '-'}, ` +
+            `duration ${exercise.targetDurationSeconds ?? '-'}s, ` +
+            `muscles: ${exercise.muscle_groups}, equipment: ${exercise.equipment}${exercise.notes ? `, notes: ${exercise.notes}` : ''}`,
+        )
+        .join('\n');
+
+      return `Session: ${session.name} (day: ${session.dayOfWeek ?? 'flex'})\n${exercises}`;
+    })
+    .join('\n\n');
+
+  const exerciseLibrary = input.exerciseLibrary
+    .slice(0, 120)
+    .map(
+      (exercise) =>
+        `- ${exercise.name} (${exercise.muscle_groups}, ${exercise.equipment}, ${exercise.exercise_type})`,
+    )
+    .join('\n');
+
+  const performanceSummary = input.performanceSummary
+    .slice(0, 80)
+    .map(
+      (summary) =>
+        `- ${summary.exerciseName}: last ${summary.lastPerformed ?? 'n/a'}, ` +
+        `avg ${summary.avgWeight ?? '-'}kg x ${summary.avgReps ?? '-'} reps, ` +
+        `max ${summary.maxWeight ?? '-'}kg x ${summary.maxReps ?? '-'} reps, ` +
+        `volume ${summary.totalVolume ?? '-'}, sessions ${summary.totalSessions}`,
+    )
+    .join('\n');
+
+  const prompt = `You are an expert strength and conditioning coach. Optimize the existing workout program below for progression, recovery, and balanced weekly volume while honoring equipment, injuries, and time constraints.
+
+PROFILE:
+- Age: ${input.profile.age}
+- Gender: ${input.profile.gender}
+- Goal: ${input.profile.goal}
+- Activity level: ${input.profile.activity_level}
+- Calorie target: ${input.profile.calorie_target}
+- Macro targets (g): protein ${input.profile.protein_target_g}, carbs ${input.profile.carbs_target_g}, fat ${input.profile.fat_target_g}
+
+PREFERENCES:
+- Experience: ${input.preferences.experienceLevel}
+- Focus areas: ${input.preferences.focusAreas.length ? input.preferences.focusAreas.join(', ') : 'none'}
+- Injuries/limitations: ${input.preferences.injuries || 'none'}
+- Preferred split: ${input.preferences.preferredTrainingSplit || 'auto'}
+- Available equipment: ${input.preferences.availableEquipment.length ? input.preferences.availableEquipment.join(', ') : 'Bodyweight + Resistance Bands'}
+- Session duration: ${input.preferences.sessionDurationMinutes ?? 'flex'} minutes
+
+CURRENT PROGRAM:
+${formattedProgram}
+
+RECENT PERFORMANCE SUMMARY:
+${performanceSummary || 'No recent workout history available'}
+
+WEEKLY VOLUME SUMMARY:
+- Total sets: ${input.weeklyVolumeSummary.totalSets}
+- By muscle group: ${Object.entries(
+    input.weeklyVolumeSummary.muscleGroupBreakdown,
+  )
+    .map(([muscle, sets]) => `${muscle}: ${sets}`)
+    .join(', ')}
+
+EXERCISE LIBRARY (prefer these names):
+${exerciseLibrary || 'No library data'}
+
+TASKS:
+1. Keep the program structure similar, but improve exercise selection, volume balance, and progression ranges.
+2. Ensure weekly volume matches the goal and experience level.
+3. Respect injuries/limitations and equipment constraints.
+4. Maintain or improve exercise ordering (compounds first, accessories later).
+5. Use supersets when it improves efficiency, but avoid overloading fatigue.
+6. Keep session duration within the preferred limit.
+
+Return JSON only (no markdown):
+{
+  "programName": "string",
+  "programDescription": "string",
+  "sessions": [
+    {
+      "name": "string",
+      "dayOfWeek": number_or_null,
+      "sessionTimeMinutes": number,
+      "exercises": [
+        {
+          "name": "string",
+          "targetSets": number,
+          "targetRepMin": number,
+          "targetRepMax": number,
+          "targetDurationSeconds": number_or_null,
+          "notes": "string_or_null",
+          "supersetWith": "exercise name or null"
+        }
+      ]
+    }
+  ],
+  "weeklyVolumeSummary": {
+    "totalSets": number,
+    "muscleGroupBreakdown": {
+      "Chest": number,
+      "Back": number,
+      "Shoulders": number,
+      "Biceps": number,
+      "Triceps": number,
+      "Legs": number,
+      "Core": number
+    }
+  },
+  "recommendations": ["string"]
+}`;
 
   const response = await ai.models.generateContent({
     model: MODEL,
@@ -977,4 +1473,436 @@ RULES:
 
   const text = response.text ?? '';
   return JSON.parse(cleanJsonResponse(text)) as AIExerciseCoachingResponse;
+}
+
+// ============================================================================
+// STREAMLINED PROGRAM GENERATION WITH FUNCTION CALLING
+// ============================================================================
+
+export interface StreamlinedProgramResult {
+  program: AIProgramGeneratorResponse;
+  exercisesToCreate: AIExerciseResponse[];
+  selectedExercises: { name: string; reason?: string }[];
+  inferredExperienceLevel?: ExperienceLevelInference;
+}
+
+/**
+ * Generates a workout program using Gemini function calling.
+ * This streamlined approach lets the AI:
+ * 1. Infer experience level from workout history (if not provided)
+ * 2. Select exercises from the existing library
+ * 3. Create new exercises as needed
+ * 4. Generate the complete program with proper supersets
+ *
+ * The AI orchestrates the entire flow in a single conversation.
+ */
+export async function generateWorkoutProgramWithFunctionCalling(
+  input: AIProgramGeneratorInputV2,
+  existingExercises: Exercise[],
+): Promise<StreamlinedProgramResult> {
+  if (!ai) throw new Error('Gemini API not initialized');
+
+  // Combine user equipment with always-available equipment
+  const allEquipment = [
+    ...ALWAYS_AVAILABLE_EQUIPMENT,
+    ...input.availableEquipment,
+  ];
+
+  // Build existing exercises reference for the AI
+  const existingExercisesList = existingExercises
+    .slice(0, 150)
+    .map(
+      (ex) =>
+        `- ${ex.name} | Muscles: ${ex.muscle_groups} | Equipment: ${ex.equipment} | Type: ${ex.exercise_type}`,
+    )
+    .join('\n');
+
+  const goalDescriptions: Record<string, string> = {
+    bulk: 'Building muscle mass (caloric surplus)',
+    lean_bulk: 'Building lean muscle with minimal fat gain',
+    recomp: 'Simultaneously building muscle and losing fat',
+    cut: 'Losing body fat while preserving muscle',
+    maintain: 'Maintaining current physique and strength',
+  };
+
+  const splitPreference =
+    input.preferredTrainingSplit === 'auto'
+      ? 'Choose the most appropriate training split based on the frequency'
+      : `Use a ${input.preferredTrainingSplit?.replace(/_/g, ' ')} split`;
+
+  // Build experience context
+  let experienceContext = '';
+  if (input.experienceLevel) {
+    experienceContext = `Experience Level: ${input.experienceLevel} (user-provided)`;
+  } else if (input.workoutHistory) {
+    experienceContext = `
+Experience Level: TO BE INFERRED from workout history
+Workout History Summary:
+- Total workouts: ${input.workoutHistory.totalWorkouts}
+- Training span: ${input.workoutHistory.totalWeeks} weeks
+- Avg exercises per session: ${input.workoutHistory.avgExercisesPerSession}
+- Avg sets per session: ${input.workoutHistory.avgSetsPerSession}
+- Has used supersets: ${input.workoutHistory.hasUsedSupersets ? 'Yes' : 'No'}
+- Top exercises: ${input.workoutHistory.topExercises.slice(0, 5).join(', ')}
+
+Use the infer_experience_level function first if needed.`;
+  } else {
+    experienceContext = `Experience Level: intermediate (default, no history available)`;
+  }
+
+  const systemPrompt = `You are an expert strength and conditioning coach creating a personalized workout program using BuiltWithScience evidence-based principles.
+
+AVAILABLE FUNCTIONS:
+1. infer_experience_level - Infer experience level from workout history
+2. select_exercises - Select exercises from the user's existing library
+3. create_exercises - Create new exercises that don't exist in the library
+4. generate_program - Generate the complete workout program
+
+WORKFLOW:
+1. If experience level is not provided, call infer_experience_level first
+2. Review the exercise library and call select_exercises for exercises you want to use
+3. If you need exercises not in the library, call create_exercises to add them
+4. Finally, call generate_program with the complete program structure
+
+=== REP RANGE GUIDELINES (CRITICAL - BuiltWithScience-based) ===
+
+COMPOUND MOVEMENTS:
+- Heavy compounds (Squat, Deadlift, Bench, OHP, Rows): 4-8 reps for strength, 6-10 for hypertrophy
+- Never exceed 12 reps on main compounds
+
+ISOLATION - STANDARD RANGES:
+- Biceps curls: 8-12 reps
+- Triceps pushdowns/extensions: 10-15 reps
+- Chest flyes: 10-15 reps
+
+HIGH REP EXERCISES (15-30 reps) - These muscles respond better to higher reps:
+- Lateral Raises: 15-25 reps (side delts need high reps!)
+- Rear Delt Flyes: 15-25 reps
+- Face Pulls: 15-25 reps
+- Calf Raises: 15-30 reps (calves are endurance-dominant)
+- Leg Extensions (finisher): 15-20 reps
+- Ab/Core work: 15-25 reps
+
+REST-PAUSE & INTENSITY TECHNIQUES (for advanced):
+- Rest-pause: 10-12 reps, rest 15 sec, 3-5 more reps
+  Best for: Lateral raises, curls, leg extensions
+  Add note: "Rest-pause set" when using
+- Drop sets: Final set only, for isolation exercises
+
+MUSCLE-SPECIFIC OPTIMAL RANGES:
+| Muscle       | Strength  | Hypertrophy | Metabolic/Pump |
+|--------------|-----------|-------------|----------------|
+| Chest        | 5-8       | 8-12        | 12-15          |
+| Back         | 5-8       | 8-12        | 12-15          |
+| Shoulders    | 6-10      | 10-15       | 15-25 (laterals)|
+| Quads        | 5-8       | 8-12        | 15-20          |
+| Hamstrings   | 6-10      | 10-12       | 12-15          |
+| Biceps       | 6-10      | 10-12       | 12-15          |
+| Triceps      | 8-10      | 10-12       | 12-20          |
+| Calves       | 10-15     | 15-20       | 20-30          |
+| Rear Delts   | 12-15     | 15-20       | 20-25          |
+
+=== SUPERSET RULES ===
+- Intermediate: 1-2 supersets per session
+- Advanced: 2-3 supersets per session
+- BOTH exercises must reference each other (A.supersetWith="B", B.supersetWith="A")
+- Good pairings: Biceps+Triceps, Chest+Back, Laterals+Rear Delts
+- Avoid: Two heavy compounds, same equipment conflicts
+- Beginners: No supersets unless time-constrained
+
+=== VOLUME GUIDELINES ===
+- Beginner: 8-12 sets/muscle/week
+- Intermediate: 12-16 sets/muscle/week
+- Advanced: 16-22 sets/muscle/week`;
+
+  const userPrompt = `Create a workout program with these specifications:
+
+USER PREFERENCES:
+- Training frequency: ${input.trainingDaysPerWeek} days per week
+- Session duration: ${input.sessionDurationMinutes} minutes per session (HARD CAP)
+- ${experienceContext}
+- Goal: ${input.goal} - ${goalDescriptions[input.goal] || input.goal}
+- Split preference: ${splitPreference}
+${input.focusAreas?.length ? `- Focus areas (prioritize): ${input.focusAreas.join(', ')}` : ''}
+${input.injuries ? `- Injuries/limitations: ${input.injuries}` : ''}
+
+AVAILABLE EQUIPMENT:
+${allEquipment.join(', ')}
+
+EXISTING EXERCISE LIBRARY (PREFER THESE - use exact names):
+${existingExercisesList || 'Empty library - all exercises will need to be created'}
+
+INSTRUCTIONS:
+1. ${input.experienceLevel ? 'Skip experience inference' : 'Infer experience level if workout history is provided'}
+2. Select exercises from the library that fit the program
+3. Create any additional exercises needed (minimize new exercises if library has good options)
+4. Generate the complete program with proper superset pairings for ${input.experienceLevel || 'inferred'} level
+
+Remember: ALWAYS pair supersets bidirectionally. If Bicep Curls superset with Tricep Pushdowns, BOTH exercises must reference each other.`;
+
+  // Define function tools
+  const tools = [
+    {
+      functionDeclarations: [
+        inferExperienceLevelFunctionDeclaration,
+        selectExercisesFunctionDeclaration,
+        createExercisesFunctionDeclaration,
+        generateProgramFunctionDeclaration,
+      ],
+    },
+  ];
+
+  // Result collectors
+  let inferredExperienceLevel: ExperienceLevelInference | undefined;
+  const selectedExercises: { name: string; reason?: string }[] = [];
+  const exercisesToCreate: AIExerciseResponse[] = [];
+  let program: AIProgramGeneratorResponse | null = null;
+
+  // Start conversation with function calling
+  const chat = ai.chats.create({
+    model: MODEL,
+    config: {
+      systemInstruction: systemPrompt,
+      tools,
+      toolConfig: {
+        functionCallingConfig: {
+          mode: FunctionCallingConfigMode.AUTO,
+        },
+      },
+      thinkingConfig: {
+        thinkingLevel: ThinkingLevel.HIGH,
+        includeThoughts: false,
+      },
+    },
+  });
+
+  let response = await chat.sendMessage({ message: userPrompt });
+
+  // Process function calls in a loop
+  const maxIterations = 10;
+  let iterations = 0;
+
+  while (iterations < maxIterations) {
+    iterations++;
+
+    // Check if we have function calls to process
+    const functionCalls = response.functionCalls;
+    if (!functionCalls || functionCalls.length === 0) {
+      // No more function calls, check if we got a final text response
+      break;
+    }
+
+    // Process each function call and build function response parts
+    const functionResponseParts: ReturnType<
+      typeof createPartFromFunctionResponse
+    >[] = [];
+
+    for (const call of functionCalls) {
+      const functionName = call.name ?? 'unknown';
+      const callId = call.id ?? `call_${iterations}_${functionName}`;
+      const args = call.args as Record<string, unknown>;
+
+      switch (functionName) {
+        case 'infer_experience_level': {
+          inferredExperienceLevel = {
+            inferredLevel: args.inferredLevel as ExperienceLevel,
+            confidence: args.confidence as 'low' | 'medium' | 'high',
+            reasoning: args.reasoning as string,
+            metrics: {
+              totalWorkouts: input.workoutHistory?.totalWorkouts || 0,
+              averageVolumePerSession:
+                input.workoutHistory?.avgSetsPerSession || 0,
+              exerciseVariety: input.workoutHistory?.topExercises.length || 0,
+              trainingConsistencyWeeks: input.workoutHistory?.totalWeeks || 0,
+              hasProgressiveOverload: false, // Would need more data
+            },
+          };
+          functionResponseParts.push(
+            createPartFromFunctionResponse(callId, functionName, {
+              result: `Experience level inferred as ${args.inferredLevel}. Proceed with program generation.`,
+            }),
+          );
+          break;
+        }
+
+        case 'select_exercises': {
+          const selections = args.selections as Array<{
+            exercise_name: string;
+            reason?: string;
+          }>;
+          for (const sel of selections) {
+            selectedExercises.push({
+              name: sel.exercise_name,
+              reason: sel.reason,
+            });
+          }
+          functionResponseParts.push(
+            createPartFromFunctionResponse(callId, functionName, {
+              result: `Selected ${selections.length} exercises from library: ${selections.map((s) => s.exercise_name).join(', ')}`,
+            }),
+          );
+          break;
+        }
+
+        case 'create_exercises': {
+          const exercises = args.exercises as AIExerciseResponse[];
+          for (const ex of exercises) {
+            exercisesToCreate.push(ex);
+          }
+          functionResponseParts.push(
+            createPartFromFunctionResponse(callId, functionName, {
+              result: `Queued ${exercises.length} new exercises for creation: ${exercises.map((e) => e.name).join(', ')}`,
+            }),
+          );
+          break;
+        }
+
+        case 'generate_program': {
+          program = {
+            programName: args.programName as string,
+            programDescription: args.programDescription as string,
+            sessions: (
+              args.sessions as Array<{
+                name: string;
+                dayOfWeek?: number;
+                sessionTimeMinutes?: number;
+                exercises: Array<{
+                  name: string;
+                  targetSets: number;
+                  targetRepMin: number;
+                  targetRepMax: number;
+                  targetDurationSeconds?: number;
+                  notes?: string;
+                  supersetWith?: string;
+                }>;
+              }>
+            ).map((s) => ({
+              name: s.name,
+              dayOfWeek: s.dayOfWeek ?? null,
+              exercises: s.exercises.map((e) => ({
+                name: e.name,
+                targetSets: e.targetSets,
+                targetRepMin: e.targetRepMin,
+                targetRepMax: e.targetRepMax,
+                targetDurationSeconds: e.targetDurationSeconds,
+                notes: e.notes,
+                supersetWith: e.supersetWith,
+              })),
+            })),
+            weeklyVolumeSummary: args.weeklyVolumeSummary as {
+              totalSets: number;
+              muscleGroupBreakdown: Record<string, number>;
+            },
+            recommendations: args.recommendations as string[],
+            experienceLevel: args.experienceLevel as ExperienceLevel,
+          };
+          functionResponseParts.push(
+            createPartFromFunctionResponse(callId, functionName, {
+              result: `Program "${args.programName}" generated successfully with ${(args.sessions as unknown[]).length} sessions.`,
+            }),
+          );
+          break;
+        }
+
+        default:
+          functionResponseParts.push(
+            createPartFromFunctionResponse(callId, functionName, {
+              result: `Unknown function: ${functionName}`,
+            }),
+          );
+      }
+    }
+
+    // Send function results back to continue the conversation
+    response = await chat.sendMessage({
+      message: functionResponseParts,
+    });
+  }
+
+  // Validate we got a program
+  if (!program) {
+    throw new Error('AI did not generate a program. Please try again.');
+  }
+
+  return {
+    program,
+    exercisesToCreate,
+    selectedExercises,
+    inferredExperienceLevel,
+  };
+}
+
+/**
+ * Infer experience level from workout history using AI analysis.
+ */
+export async function inferExperienceLevel(workoutHistory: {
+  totalWorkouts: number;
+  totalWeeks: number;
+  avgExercisesPerSession: number;
+  avgSetsPerSession: number;
+  hasUsedSupersets: boolean;
+  topExercises: string[];
+  avgWeightProgression?: number;
+}): Promise<ExperienceLevelInference> {
+  if (!ai) throw new Error('Gemini API not initialized');
+
+  const prompt = `Analyze this workout history and determine the user's experience level (beginner, intermediate, or advanced).
+
+WORKOUT HISTORY:
+- Total workouts completed: ${workoutHistory.totalWorkouts}
+- Training span: ${workoutHistory.totalWeeks} weeks
+- Average exercises per session: ${workoutHistory.avgExercisesPerSession.toFixed(1)}
+- Average sets per session: ${workoutHistory.avgSetsPerSession.toFixed(1)}
+- Has used supersets: ${workoutHistory.hasUsedSupersets ? 'Yes' : 'No'}
+- Most used exercises: ${workoutHistory.topExercises.slice(0, 10).join(', ')}
+${workoutHistory.avgWeightProgression ? `- Average weight progression: ${workoutHistory.avgWeightProgression.toFixed(1)}% per month` : ''}
+
+EXPERIENCE LEVEL CRITERIA:
+- BEGINNER (0-12 months consistent training):
+  * < 50 total workouts OR < 12 weeks training
+  * Simple exercise selection, mostly compounds
+  * Lower volume (< 15 sets per session on average)
+  * Rarely uses supersets
+  
+- INTERMEDIATE (1-3 years consistent training):
+  * 50-200 total workouts AND 12-36 weeks training
+  * Mix of compounds and isolation exercises
+  * Moderate volume (15-25 sets per session)
+  * Occasionally uses supersets
+  * Shows exercise variety
+  
+- ADVANCED (3+ years consistent training):
+  * > 200 total workouts AND > 36 weeks training
+  * Diverse exercise selection with targeted isolation work
+  * Higher volume (20+ sets per session)
+  * Regular superset usage
+  * Evidence of periodization or structured programming
+
+Return JSON only, no markdown:
+{
+  "inferredLevel": "beginner|intermediate|advanced",
+  "confidence": "low|medium|high",
+  "reasoning": "2-3 sentence explanation",
+  "metrics": {
+    "totalWorkouts": ${workoutHistory.totalWorkouts},
+    "averageVolumePerSession": ${workoutHistory.avgSetsPerSession.toFixed(1)},
+    "exerciseVariety": ${workoutHistory.topExercises.length},
+    "trainingConsistencyWeeks": ${workoutHistory.totalWeeks},
+    "hasProgressiveOverload": true/false
+  }
+}`;
+
+  const response = await ai.models.generateContent({
+    model: MODEL,
+    contents: prompt,
+    config: {
+      thinkingConfig: {
+        thinkingLevel: ThinkingLevel.LOW,
+        includeThoughts: false,
+      },
+    },
+  });
+
+  const text = response.text ?? '';
+  return JSON.parse(cleanJsonResponse(text)) as ExperienceLevelInference;
 }

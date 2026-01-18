@@ -1,19 +1,25 @@
-import { useState, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { getDB } from '../services/db';
 import {
-  generateWorkoutProgram,
-  generateExerciseDetailsBatch,
   findDuplicateExercises,
+  generateExerciseDetailsBatch,
+  generateWorkoutProgram,
+  generateWorkoutProgramWithFunctionCalling,
+  inferExperienceLevel,
+  type StreamlinedProgramResult,
 } from '../services/gemini';
 import type {
+  AIExerciseResponse,
   AIProgramGeneratorInput,
+  AIProgramGeneratorInputV2,
   AIProgramGeneratorResponse,
   Exercise,
-  AIExerciseResponse,
+  ExperienceLevelInference,
 } from '../types';
 
 export type GeneratorStep =
   | 'idle'
+  | 'inferring_experience' // New: inferring experience level
   | 'generating_program'
   | 'checking_exercises'
   | 'generating_exercise_details'
@@ -42,25 +48,30 @@ export interface GeneratorState {
   generatedProgram: AIProgramGeneratorResponse | null;
   exerciseMappings: ExerciseMapping[];
   error: string | null;
+  // New: Experience level inference
+  inferredExperience: ExperienceLevelInference | null;
+  // New: Track if this is the only program (for auto-activation)
+  isOnlyProgram: boolean;
+  // New: Streamlined result from function calling
+  streamlinedResult: StreamlinedProgramResult | null;
 }
 
+const INITIAL_STATE: GeneratorState = {
+  step: 'idle',
+  progress: '',
+  generatedProgram: null,
+  exerciseMappings: [],
+  error: null,
+  inferredExperience: null,
+  isOnlyProgram: false,
+  streamlinedResult: null,
+};
+
 export function useProgramGenerator() {
-  const [state, setState] = useState<GeneratorState>({
-    step: 'idle',
-    progress: '',
-    generatedProgram: null,
-    exerciseMappings: [],
-    error: null,
-  });
+  const [state, setState] = useState<GeneratorState>(INITIAL_STATE);
 
   const resetState = useCallback(() => {
-    setState({
-      step: 'idle',
-      progress: '',
-      generatedProgram: null,
-      exerciseMappings: [],
-      error: null,
-    });
+    setState(INITIAL_STATE);
   }, []);
 
   // Fetch all existing exercises from DB
@@ -434,11 +445,278 @@ export function useProgramGenerator() {
     }
   }, [state.generatedProgram, state.exerciseMappings]);
 
+  // ============================================================================
+  // NEW STREAMLINED GENERATION FLOW WITH FUNCTION CALLING
+  // ============================================================================
+
+  /**
+   * Fetch workout history summary for experience level inference
+   */
+  const fetchWorkoutHistorySummary = useCallback(async () => {
+    const db = await getDB();
+
+    // Get workout count and date range
+    const workoutStats = await db.query(`
+      SELECT 
+        COUNT(*) as total_workouts,
+        MIN(date) as first_workout,
+        MAX(date) as last_workout
+      FROM workout_logs 
+      WHERE status = 'completed'
+    `);
+    const stats = workoutStats.rows[0] as {
+      total_workouts: number;
+      first_workout: string | null;
+      last_workout: string | null;
+    };
+
+    if (stats.total_workouts === 0) {
+      return null; // No history
+    }
+
+    // Calculate weeks of training
+    const weeks =
+      stats.first_workout && stats.last_workout
+        ? Math.max(
+            1,
+            Math.ceil(
+              (new Date(stats.last_workout).getTime() -
+                new Date(stats.first_workout).getTime()) /
+                (1000 * 60 * 60 * 24 * 7),
+            ),
+          )
+        : 0;
+
+    // Get average exercises and sets per session
+    const avgStats = await db.query(`
+      SELECT 
+        AVG(exercise_count) as avg_exercises,
+        AVG(set_count) as avg_sets
+      FROM (
+        SELECT 
+          wl.id,
+          COUNT(DISTINCT wle.exercise_id) as exercise_count,
+          COUNT(ws.id) as set_count
+        FROM workout_logs wl
+        LEFT JOIN workout_log_exercises wle ON wle.workout_log_id = wl.id
+        LEFT JOIN workout_sets ws ON ws.workout_log_id = wl.id
+        WHERE wl.status = 'completed'
+        GROUP BY wl.id
+      ) session_stats
+    `);
+    const avgRow = avgStats.rows[0] as {
+      avg_exercises: number | null;
+      avg_sets: number | null;
+    };
+
+    // Check if supersets have been used
+    const supersetCheck = await db.query(`
+      SELECT COUNT(*) as superset_count
+      FROM workout_log_exercises
+      WHERE superset_group_id IS NOT NULL
+    `);
+    const hasUsedSupersets =
+      (supersetCheck.rows[0] as { superset_count: number }).superset_count > 0;
+
+    // Get top exercises
+    const topExercisesResult = await db.query(`
+      SELECT e.name, COUNT(*) as usage_count
+      FROM workout_sets ws
+      JOIN exercises e ON e.id = ws.exercise_id
+      GROUP BY e.id, e.name
+      ORDER BY usage_count DESC
+      LIMIT 20
+    `);
+    const topExercises = (topExercisesResult.rows as { name: string }[]).map(
+      (r) => r.name,
+    );
+
+    return {
+      totalWorkouts: stats.total_workouts,
+      totalWeeks: weeks,
+      avgExercisesPerSession: avgRow.avg_exercises || 0,
+      avgSetsPerSession: avgRow.avg_sets || 0,
+      hasUsedSupersets,
+      topExercises,
+    };
+  }, []);
+
+  /**
+   * Check how many programs exist (for auto-activation logic)
+   */
+  const checkProgramCount = useCallback(async (): Promise<number> => {
+    const db = await getDB();
+    const result = await db.query(
+      'SELECT COUNT(*) as count FROM workout_programs',
+    );
+    return (result.rows[0] as { count: number }).count;
+  }, []);
+
+  /**
+   * Streamlined program generation using Gemini function calling.
+   * This approach:
+   * 1. Optionally infers experience level from workout history
+   * 2. Lets AI select/create exercises in one pass
+   * 3. Generates the complete program with proper supersets
+   */
+  const generateProgramStreamlined = useCallback(
+    async (input: AIProgramGeneratorInputV2): Promise<void> => {
+      try {
+        // Check if this will be the only program
+        const programCount = await checkProgramCount();
+        const isOnlyProgram = programCount === 0;
+
+        setState((prev) => ({
+          ...prev,
+          step: 'generating_program',
+          progress: 'Creating your personalized workout program...',
+          error: null,
+          isOnlyProgram,
+        }));
+
+        // Fetch existing exercises
+        const existingExercises = await fetchExistingExercises();
+
+        // Optionally fetch workout history for experience inference
+        let workoutHistory = input.workoutHistory;
+        if (!input.experienceLevel && !workoutHistory) {
+          setState((prev) => ({
+            ...prev,
+            step: 'inferring_experience',
+            progress: 'Analyzing your workout history...',
+          }));
+          workoutHistory = (await fetchWorkoutHistorySummary()) || undefined;
+        }
+
+        // If we still don't have experience level and no history, infer from other signals
+        let experienceLevel = input.experienceLevel;
+        if (!experienceLevel && workoutHistory) {
+          // Use standalone inference for better experience
+          const inference = await inferExperienceLevel(workoutHistory);
+          experienceLevel = inference.inferredLevel;
+          setState((prev) => ({
+            ...prev,
+            inferredExperience: inference,
+            progress: `Experience level: ${inference.inferredLevel}. Generating program...`,
+          }));
+        }
+
+        setState((prev) => ({
+          ...prev,
+          step: 'generating_program',
+          progress:
+            'AI is creating your program with optimal exercise selection...',
+        }));
+
+        // Use function calling for streamlined generation
+        const result = await generateWorkoutProgramWithFunctionCalling(
+          {
+            ...input,
+            experienceLevel,
+            workoutHistory,
+          },
+          existingExercises,
+        );
+
+        // Process the result - build exercise mappings
+        const mappings: ExerciseMapping[] = [];
+
+        // Map selected exercises
+        for (const selected of result.selectedExercises) {
+          const existingEx = existingExercises.find(
+            (ex) => ex.name.toLowerCase() === selected.name.toLowerCase(),
+          );
+          if (existingEx) {
+            mappings.push({
+              originalName: selected.name,
+              exerciseId: existingEx.id,
+              existingExercise: existingEx,
+              duplicateOf: null,
+              aiDetails: null,
+              status: 'matched',
+            });
+          }
+        }
+
+        // Map exercises to create
+        for (const toCreate of result.exercisesToCreate) {
+          mappings.push({
+            originalName: toCreate.name,
+            exerciseId: null,
+            existingExercise: null,
+            duplicateOf: null,
+            aiDetails: toCreate,
+            status: 'needs_creation',
+          });
+        }
+
+        setState((prev) => ({
+          ...prev,
+          step: 'complete',
+          progress: 'Program ready for review!',
+          generatedProgram: result.program,
+          exerciseMappings: mappings,
+          streamlinedResult: result,
+          inferredExperience:
+            result.inferredExperienceLevel || prev.inferredExperience,
+        }));
+      } catch (err) {
+        console.error('Streamlined generation error:', err);
+        setState((prev) => ({
+          ...prev,
+          step: 'error',
+          error:
+            err instanceof Error ? err.message : 'Failed to generate program',
+        }));
+      }
+    },
+    [fetchExistingExercises, fetchWorkoutHistorySummary, checkProgramCount],
+  );
+
+  /**
+   * Save program with auto-activation logic.
+   * If this is the only program, automatically set it as active.
+   * Otherwise, return the program ID for the UI to handle.
+   */
+  const saveProgramWithAutoActivation = useCallback(
+    async (
+      autoActivate?: boolean,
+    ): Promise<{
+      programId: number | null;
+      wasAutoActivated: boolean;
+    }> => {
+      const programId = await saveProgram();
+      if (!programId) {
+        return { programId: null, wasAutoActivated: false };
+      }
+
+      const shouldAutoActivate = autoActivate ?? state.isOnlyProgram;
+
+      if (shouldAutoActivate) {
+        const db = await getDB();
+        // Deactivate all other programs
+        await db.query('UPDATE workout_programs SET is_active = false');
+        // Activate this program
+        await db.query(
+          'UPDATE workout_programs SET is_active = true WHERE id = $1',
+          [programId],
+        );
+        return { programId, wasAutoActivated: true };
+      }
+
+      return { programId, wasAutoActivated: false };
+    },
+    [saveProgram, state.isOnlyProgram],
+  );
+
   return {
     state,
     generateProgram,
+    generateProgramStreamlined,
     saveProgram,
+    saveProgramWithAutoActivation,
     overrideDuplicateMapping,
     resetState,
+    checkProgramCount,
   };
 }

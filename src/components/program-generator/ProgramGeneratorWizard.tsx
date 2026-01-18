@@ -37,7 +37,8 @@ type WizardStep =
   | 'goals'
   | 'generating'
   | 'review'
-  | 'saving';
+  | 'saving'
+  | 'activation_prompt'; // New: Ask if user wants to set as active
 
 interface ProgramGeneratorWizardProps {
   isOpen: boolean;
@@ -54,11 +55,14 @@ export function ProgramGeneratorWizard({
   const {
     state: generatorState,
     generateProgram,
-    saveProgram,
+    generateProgramStreamlined,
+    saveProgramWithAutoActivation,
     resetState,
   } = useProgramGenerator();
 
   const [wizardStep, setWizardStep] = useState<WizardStep>('frequency');
+  const [useStreamlined] = useState(true); // Default to streamlined flow
+  const [savedProgramId, setSavedProgramId] = useState<number | null>(null);
 
   // Form state
   const [trainingDays, setTrainingDays] = useState(4);
@@ -66,8 +70,9 @@ export function ProgramGeneratorWizard({
   const [selectedEquipment, setSelectedEquipment] = useState<EquipmentType[]>(
     [],
   );
-  const [experienceLevel, setExperienceLevel] =
-    useState<ExperienceLevel>('intermediate');
+  const [experienceLevel, setExperienceLevel] = useState<
+    ExperienceLevel | 'auto'
+  >('auto'); // Can be 'auto' to infer
   const [trainingSplit, setTrainingSplit] =
     useState<AIProgramGeneratorInput['preferredTrainingSplit']>('auto');
   const [focusAreas, setFocusAreas] = useState<string[]>([]);
@@ -116,18 +121,35 @@ export function ProgramGeneratorWizard({
 
     setWizardStep('generating');
 
-    const input: AIProgramGeneratorInput = {
-      trainingDaysPerWeek: trainingDays,
-      sessionDurationMinutes: sessionDuration,
-      availableEquipment: selectedEquipment,
-      goal: profile.goal,
-      experienceLevel,
-      focusAreas: focusAreas.length > 0 ? focusAreas : undefined,
-      injuries: injuries.trim() || undefined,
-      preferredTrainingSplit: trainingSplit,
-    };
-
-    await generateProgram(input);
+    // Use streamlined flow with function calling for better experience
+    if (useStreamlined) {
+      await generateProgramStreamlined({
+        trainingDaysPerWeek: trainingDays,
+        sessionDurationMinutes: sessionDuration,
+        availableEquipment: selectedEquipment,
+        goal: profile.goal,
+        // Pass undefined to let AI infer from workout history
+        experienceLevel:
+          experienceLevel === 'auto' ? undefined : experienceLevel,
+        focusAreas: focusAreas.length > 0 ? focusAreas : undefined,
+        injuries: injuries.trim() || undefined,
+        preferredTrainingSplit: trainingSplit,
+      });
+    } else {
+      // Fallback to original flow
+      const input: AIProgramGeneratorInput = {
+        trainingDaysPerWeek: trainingDays,
+        sessionDurationMinutes: sessionDuration,
+        availableEquipment: selectedEquipment,
+        goal: profile.goal,
+        experienceLevel:
+          experienceLevel === 'auto' ? 'intermediate' : experienceLevel,
+        focusAreas: focusAreas.length > 0 ? focusAreas : undefined,
+        injuries: injuries.trim() || undefined,
+        preferredTrainingSplit: trainingSplit,
+      };
+      await generateProgram(input);
+    }
   };
 
   // Watch for generation completion and transition to review step
@@ -146,12 +168,34 @@ export function ProgramGeneratorWizard({
 
   const handleSave = async () => {
     setWizardStep('saving');
-    const programId = await saveProgram();
 
-    if (programId) {
-      onClose();
-      navigate(`/workout/program/${programId}`);
+    // Use auto-activation logic
+    const result = await saveProgramWithAutoActivation();
+
+    if (result.programId) {
+      setSavedProgramId(result.programId);
+
+      if (result.wasAutoActivated) {
+        // Was automatically activated (only program), go directly to program page
+        onClose();
+        navigate(`/workout/program/${result.programId}`);
+      } else {
+        // Ask user if they want to set as active
+        setWizardStep('activation_prompt');
+      }
     }
+  };
+
+  const handleActivationChoice = async (activate: boolean) => {
+    if (!savedProgramId) return;
+
+    if (activate) {
+      // Manually activate via saveProgramWithAutoActivation
+      await saveProgramWithAutoActivation(true);
+    }
+
+    onClose();
+    navigate(`/workout/program/${savedProgramId}`);
   };
 
   const canProceedFromFrequency = trainingDays >= 2 && trainingDays <= 7;
@@ -336,6 +380,28 @@ export function ProgramGeneratorWizard({
           Experience Level
         </div>
         <div className="space-y-2">
+          {/* Auto-detect option */}
+          <button
+            type="button"
+            onClick={() => setExperienceLevel('auto')}
+            className={`w-full p-3 rounded-lg text-left transition-colors ${
+              experienceLevel === 'auto'
+                ? 'bg-purple-600 text-white'
+                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+            }`}
+          >
+            <div className="font-medium flex items-center gap-2">
+              <Sparkles size={16} />
+              Auto-Detect
+            </div>
+            <div
+              className={`text-sm ${experienceLevel === 'auto' ? 'text-purple-200' : 'text-slate-400'}`}
+            >
+              AI will analyze your workout history to determine your level
+            </div>
+          </button>
+
+          {/* Manual selection options */}
           {(
             Object.entries(EXPERIENCE_LEVELS) as [
               ExperienceLevel,
@@ -427,28 +493,48 @@ export function ProgramGeneratorWizard({
     </div>
   );
 
-  const renderGeneratingStep = () => (
-    <div className="flex flex-col items-center justify-center py-12">
-      <Loader2 size={48} className="text-blue-400 animate-spin mb-4" />
-      <h3 className="text-lg font-semibold text-white mb-2">
-        Creating Your Program
-      </h3>
-      <p className="text-slate-400 text-center">{generatorState.progress}</p>
+  const renderGeneratingStep = () => {
+    const isInferring = generatorState.step === 'inferring_experience';
 
-      {generatorState.step === 'error' && (
-        <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg">
-          <p className="text-red-300">{generatorState.error}</p>
-          <Button
-            variant="secondary"
-            className="mt-3"
-            onClick={() => setWizardStep('goals')}
-          >
-            Try Again
-          </Button>
-        </div>
-      )}
-    </div>
-  );
+    return (
+      <div className="flex flex-col items-center justify-center py-12">
+        <Loader2 size={48} className="text-blue-400 animate-spin mb-4" />
+        <h3 className="text-lg font-semibold text-white mb-2">
+          {isInferring ? 'Analyzing Your Experience' : 'Creating Your Program'}
+        </h3>
+        <p className="text-slate-400 text-center">{generatorState.progress}</p>
+
+        {/* Show inferred experience level if available */}
+        {generatorState.inferredExperience && (
+          <div className="mt-4 p-3 bg-purple-900/30 border border-purple-700 rounded-lg text-center">
+            <div className="text-purple-300 text-sm flex items-center justify-center gap-2">
+              <Sparkles size={14} />
+              Experience detected:{' '}
+              <span className="font-medium capitalize">
+                {generatorState.inferredExperience.inferredLevel}
+              </span>
+            </div>
+            <p className="text-purple-400/80 text-xs mt-1">
+              {generatorState.inferredExperience.reasoning}
+            </p>
+          </div>
+        )}
+
+        {generatorState.step === 'error' && (
+          <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg">
+            <p className="text-red-300">{generatorState.error}</p>
+            <Button
+              variant="secondary"
+              className="mt-3"
+              onClick={() => setWizardStep('goals')}
+            >
+              Try Again
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderReviewStep = () => {
     const program = generatorState.generatedProgram;
@@ -496,6 +582,10 @@ export function ProgramGeneratorWizard({
                   ? dayNames[session.dayOfWeek]
                   : 'Flexible';
 
+              // Count supersets in this session
+              const supersetCount =
+                session.exercises.filter((ex) => ex.supersetWith).length / 2; // Divide by 2 since both exercises reference each other
+
               return (
                 <div
                   key={`session-${session.name}-${session.dayOfWeek}`}
@@ -510,17 +600,30 @@ export function ProgramGeneratorWizard({
                         {dayName}
                       </span>
                     </div>
-                    <span className="text-slate-400 text-sm">
-                      {session.exercises.length} exercises
-                    </span>
+                    <div className="text-right">
+                      <span className="text-slate-400 text-sm">
+                        {session.exercises.length} exercises
+                      </span>
+                      {supersetCount > 0 && (
+                        <div className="text-purple-400 text-xs">
+                          {Math.floor(supersetCount)} superset
+                          {supersetCount >= 2 ? 's' : ''}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-1 mt-2">
                     {session.exercises.slice(0, 4).map((ex) => (
                       <span
                         key={`ex-${ex.name}`}
-                        className="text-xs bg-slate-600 text-slate-300 px-2 py-0.5 rounded"
+                        className={`text-xs px-2 py-0.5 rounded ${
+                          ex.supersetWith
+                            ? 'bg-purple-900/50 text-purple-300 border border-purple-700'
+                            : 'bg-slate-600 text-slate-300'
+                        }`}
                       >
                         {ex.name}
+                        {ex.supersetWith && ' (SS)'}
                       </span>
                     ))}
                     {session.exercises.length > 4 && (
@@ -761,7 +864,36 @@ export function ProgramGeneratorWizard({
     generating: 'Generating...',
     review: 'Review Program',
     saving: 'Saving...',
+    activation_prompt: 'Set as Active?',
   };
+
+  const renderActivationPromptStep = () => (
+    <div className="text-center py-8">
+      <Check size={48} className="text-green-400 mx-auto mb-4" />
+      <h3 className="text-lg font-semibold text-white mb-2">
+        Program Saved Successfully!
+      </h3>
+      <p className="text-slate-400 mb-6">
+        Would you like to set this as your active program?
+      </p>
+      <p className="text-slate-500 text-sm mb-6">
+        Your active program appears on the home screen for quick access to your
+        workouts.
+      </p>
+      <div className="flex gap-3 justify-center">
+        <Button
+          variant="secondary"
+          onClick={() => handleActivationChoice(false)}
+        >
+          Not Now
+        </Button>
+        <Button onClick={() => handleActivationChoice(true)}>
+          <Check size={18} className="mr-1" />
+          Set as Active
+        </Button>
+      </div>
+    </div>
+  );
 
   return (
     <Modal
@@ -778,6 +910,7 @@ export function ProgramGeneratorWizard({
       {wizardStep === 'generating' && renderGeneratingStep()}
       {wizardStep === 'review' && renderReviewStep()}
       {wizardStep === 'saving' && renderSavingStep()}
+      {wizardStep === 'activation_prompt' && renderActivationPromptStep()}
 
       {renderNavigation()}
     </Modal>

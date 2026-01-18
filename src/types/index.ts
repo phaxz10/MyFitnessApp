@@ -393,6 +393,69 @@ export interface AIProgramGeneratorInput {
     | 'auto';
 }
 
+export interface AIProgramOptimizationInput {
+  profile: {
+    age: number;
+    gender: UserProfile['gender'];
+    goal: UserProfile['goal'];
+    activity_level: UserProfile['activity_level'];
+    calorie_target: number;
+    protein_target_g: number;
+    carbs_target_g: number;
+    fat_target_g: number;
+  };
+  program: {
+    name: string;
+    description: string;
+    sessionsPerWeek: number;
+    sessions: {
+      name: string;
+      dayOfWeek: number | null;
+      exercises: {
+        name: string;
+        muscle_groups: string;
+        equipment: string;
+        exercise_type: ExerciseType;
+        targetSets: number;
+        targetRepMin: number | null;
+        targetRepMax: number | null;
+        targetDurationSeconds: number | null;
+        notes?: string | null;
+        supersetGroupId?: string | null;
+      }[];
+    }[];
+  };
+  exerciseLibrary: {
+    name: string;
+    muscle_groups: string;
+    equipment: string;
+    exercise_type: ExerciseType;
+  }[];
+
+  performanceSummary: {
+    exerciseName: string;
+    lastPerformed: string | null;
+    avgWeight: number | null;
+    avgReps: number | null;
+    maxWeight: number | null;
+    maxReps: number | null;
+    totalVolume: number | null;
+    totalSessions: number;
+  }[];
+  weeklyVolumeSummary: {
+    totalSets: number;
+    muscleGroupBreakdown: Record<string, number>;
+  };
+  preferences: {
+    injuries: string | null;
+    focusAreas: string[];
+    experienceLevel: ExperienceLevel;
+    preferredTrainingSplit: AIProgramGeneratorInput['preferredTrainingSplit'];
+    availableEquipment: EquipmentType[];
+    sessionDurationMinutes: number | null;
+  };
+}
+
 export interface AIGeneratedExercise {
   name: string;
   targetSets: number;
@@ -418,6 +481,43 @@ export interface AIProgramGeneratorResponse {
     muscleGroupBreakdown: Record<string, number>; // e.g., { "Chest": 12, "Back": 14 }
   };
   recommendations: string[]; // Tips for the user
+  experienceLevel?: ExperienceLevel; // Inferred or confirmed experience level
+}
+
+// Experience level inference based on workout history
+export interface ExperienceLevelInference {
+  inferredLevel: ExperienceLevel;
+  confidence: 'low' | 'medium' | 'high';
+  reasoning: string;
+  metrics: {
+    totalWorkouts: number;
+    averageVolumePerSession: number;
+    exerciseVariety: number;
+    trainingConsistencyWeeks: number;
+    hasProgressiveOverload: boolean;
+  };
+}
+
+// Function calling types for Gemini
+export interface AIFunctionCallResult {
+  functionName: string;
+  args: Record<string, unknown>;
+}
+
+// Streamlined program generation input (can infer experience level)
+export interface AIProgramGeneratorInputV2
+  extends Omit<AIProgramGeneratorInput, 'experienceLevel'> {
+  // Optional - if not provided, AI will infer from workout history
+  experienceLevel?: ExperienceLevel;
+  // Workout history for experience inference
+  workoutHistory?: {
+    totalWorkouts: number;
+    totalWeeks: number;
+    avgExercisesPerSession: number;
+    avgSetsPerSession: number;
+    hasUsedSupersets: boolean;
+    topExercises: string[];
+  };
 }
 
 // AI Exercise Coaching Types

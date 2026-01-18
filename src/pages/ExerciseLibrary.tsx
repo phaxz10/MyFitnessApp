@@ -139,7 +139,7 @@ export function ExerciseLibrary() {
       exerciseType: 'reps_weight',
     },
   });
-  const formName = watch('name');
+  const formName = watch('name') ?? '';
   const formExerciseType = watch('exerciseType');
 
   // Regenerate all exercises - updates descriptions using current AI prompts
@@ -340,19 +340,33 @@ export function ExerciseLibrary() {
     }
     setIsGenerating(true);
     try {
-      const details: AIExerciseResponse =
+      const details: AIExerciseResponse | AIExerciseResponse[] =
         await generateExerciseDetails(formName);
+
+      const normalizedDetails = Array.isArray(details) ? details[0] : details;
+      const safeDetails: AIExerciseResponse = {
+        name: normalizedDetails?.name ?? formName,
+        description: normalizedDetails?.description ?? '',
+        muscle_groups: Array.isArray(normalizedDetails?.muscle_groups)
+          ? normalizedDetails.muscle_groups
+          : [],
+        equipment: normalizedDetails?.equipment ?? '',
+        exercise_type: normalizedDetails?.exercise_type ?? 'reps_weight',
+        tips: Array.isArray(normalizedDetails?.tips)
+          ? normalizedDetails.tips
+          : [],
+      };
       // Combine description with tips for comprehensive instructions
-      const fullDescription = details.tips?.length
-        ? `${details.description}\n\nTips:\n${details.tips
+      const fullDescription = safeDetails.tips.length
+        ? `${safeDetails.description}\n\nTips:\n${safeDetails.tips
             .map((tip) => `• ${tip}`)
             .join('\n')}`
-        : details.description;
-      setValue('name', details.name);
+        : safeDetails.description;
+      setValue('name', safeDetails.name);
       setValue('description', fullDescription);
-      setValue('muscleGroups', details.muscle_groups.join(', '));
-      setValue('equipment', details.equipment);
-      setValue('exerciseType', details.exercise_type);
+      setValue('muscleGroups', safeDetails.muscle_groups.join(', '));
+      setValue('equipment', safeDetails.equipment);
+      setValue('exerciseType', safeDetails.exercise_type);
     } catch (err) {
       console.error('Failed to generate exercise details:', err);
       alert('Failed to generate details. Please try again.');

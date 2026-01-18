@@ -1,3 +1,4 @@
+import { MUSCLE_GROUPS } from '@/constants/musclegroups';
 import type { MuscleGroupBreakdown } from '../../hooks/useStrengthProgress';
 import { Card, CardContent } from '../ui';
 
@@ -75,20 +76,6 @@ function formatDateRange(start: string, end: string): string {
   return `${startDate.toLocaleDateString('en-US', options)} - ${endDate.toLocaleDateString('en-US', options)}`;
 }
 
-// All standard muscle groups to display
-const ALL_MUSCLE_GROUPS = [
-  'Chest',
-  'Back',
-  'Shoulders',
-  'Biceps',
-  'Triceps',
-  'Quads',
-  'Hamstrings',
-  'Glutes',
-  'Calves',
-  'Core',
-];
-
 export function MuscleHeatmap({
   breakdown,
   totalSets,
@@ -99,7 +86,7 @@ export function MuscleHeatmap({
   const breakdownMap = new Map(breakdown.map((b) => [b.muscleGroup, b]));
 
   // Merge with all muscle groups (show 0 for muscles not trained)
-  const displayData = ALL_MUSCLE_GROUPS.map((muscleGroup) => {
+  const displayData = MUSCLE_GROUPS.map((muscleGroup) => {
     const data = breakdownMap.get(muscleGroup);
     return {
       muscleGroup,
@@ -111,7 +98,7 @@ export function MuscleHeatmap({
 
   // Add any additional muscle groups from breakdown that aren't in standard list
   breakdown.forEach((b) => {
-    if (!ALL_MUSCLE_GROUPS.includes(b.muscleGroup)) {
+    if (!MUSCLE_GROUPS.includes(b.muscleGroup)) {
       displayData.push({
         muscleGroup: b.muscleGroup,
         setsCompleted: b.setsCompleted,

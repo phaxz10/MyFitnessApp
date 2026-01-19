@@ -400,6 +400,7 @@ export function CalorieLog() {
           <Input
             label="Portion (grams)"
             type="number"
+            step="5"
             {...register('portionGrams')}
             placeholder="Optional"
           />

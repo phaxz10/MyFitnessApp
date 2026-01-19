@@ -551,7 +551,7 @@ export function FoodLogModal() {
                     onClick={() =>
                       handleTextPortionChange(
                         index,
-                        Math.max(10, item.portion_grams - 10),
+                        Math.max(5, item.portion_grams - 5),
                       )
                     }
                     className="p-1 bg-slate-600 rounded hover:bg-slate-500"
@@ -559,12 +559,12 @@ export function FoodLogModal() {
                     <Minus size={14} className="text-white" />
                   </button>
                   <span className="text-white text-sm min-w-[60px] text-center">
-                    {Math.round(item.portion_grams)}g
+                    {Math.round(item.portion_grams / 5) * 5}g
                   </span>
                   <button
                     type="button"
                     onClick={() =>
-                      handleTextPortionChange(index, item.portion_grams + 10)
+                      handleTextPortionChange(index, item.portion_grams + 5)
                     }
                     className="p-1 bg-slate-600 rounded hover:bg-slate-500"
                   >
@@ -720,7 +720,7 @@ export function FoodLogModal() {
                     onClick={() =>
                       handleScannerPortionChange(
                         index,
-                        Math.max(10, item.portion_grams - 10),
+                        Math.max(5, item.portion_grams - 5),
                       )
                     }
                     className="p-1 bg-slate-600 rounded hover:bg-slate-500"
@@ -728,12 +728,12 @@ export function FoodLogModal() {
                     <Minus size={14} className="text-white" />
                   </button>
                   <span className="text-white text-sm min-w-[60px] text-center">
-                    {Math.round(item.portion_grams)}g
+                    {Math.round(item.portion_grams / 5) * 5}g
                   </span>
                   <button
                     type="button"
                     onClick={() =>
-                      handleScannerPortionChange(index, item.portion_grams + 10)
+                      handleScannerPortionChange(index, item.portion_grams + 5)
                     }
                     className="p-1 bg-slate-600 rounded hover:bg-slate-500"
                   >
@@ -882,6 +882,7 @@ export function FoodLogModal() {
         <Input
           label="Portion (g)"
           type="number"
+          step="5"
           {...register('portionGrams')}
           placeholder="100"
         />

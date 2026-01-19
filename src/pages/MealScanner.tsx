@@ -510,7 +510,7 @@ export function MealScanner() {
                           onClick={() =>
                             handlePortionChange(
                               index,
-                              Math.max(10, item.portion_grams - 10),
+                              Math.max(5, item.portion_grams - 5),
                             )
                           }
                           className="p-1 bg-slate-600 rounded hover:bg-slate-500"
@@ -519,6 +519,7 @@ export function MealScanner() {
                         </button>
                         <Input
                           type="number"
+                          step="5"
                           value={item.portion_grams}
                           onChange={(e) =>
                             handlePortionChange(
@@ -532,7 +533,7 @@ export function MealScanner() {
                         <button
                           type="button"
                           onClick={() =>
-                            handlePortionChange(index, item.portion_grams + 10)
+                            handlePortionChange(index, item.portion_grams + 5)
                           }
                           className="p-1 bg-slate-600 rounded hover:bg-slate-500"
                         >

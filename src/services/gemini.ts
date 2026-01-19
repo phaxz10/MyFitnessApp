@@ -22,6 +22,7 @@ import type {
   AITargetResponse,
   AIWeeklyReviewResponse,
   Exercise,
+  ExerciseNote,
   ExperienceLevel,
   ExperienceLevelInference,
   UserProfile,
@@ -1427,6 +1428,7 @@ export async function getExerciseCoaching(
   targetRepMin: number,
   targetRepMax: number,
   targetSets: number,
+  exerciseNotes: ExerciseNote[] = [],
 ): Promise<AIExerciseCoachingResponse> {
   if (!ai) throw new Error('Gemini API not initialized');
 
@@ -1444,11 +1446,20 @@ export async function getExerciseCoaching(
   // Get the most recent session for baseline
   const lastSession = exerciseHistory[exerciseHistory.length - 1];
   const lastSets = lastSession?.sets || [];
+  const notesSummary = exerciseNotes.length
+    ? exerciseNotes
+        .slice(-5)
+        .map((note) => `- ${note.content}`)
+        .join('\n')
+    : 'No exercise notes available';
 
   const prompt = `You are an expert strength coach analyzing exercise progression data. Based on the training history, provide recommendations for the next workout.
 
 EXERCISE: ${exerciseName}
 TARGET: ${targetSets} sets × ${targetRepMin}-${targetRepMax} reps
+
+EXERCISE NOTES (most recent last):
+${notesSummary}
 
 RECENT TRAINING HISTORY (most recent last):
 ${historyFormatted || 'No previous history'}
@@ -1488,6 +1499,7 @@ Return JSON format only, no markdown code blocks:
 }
 
 RULES:
+- Consider user notes when analyzing performance
 - Return exactly ${targetSets} sets in the response
 - suggestedWeight should be a realistic number based on history (use last weight as baseline)
 - suggestedReps should be within the target range (${targetRepMin}-${targetRepMax})

@@ -239,7 +239,10 @@ export function WorkoutSession() {
       setCoachingLoading((prev) => new Set(prev).add(exerciseId));
 
       try {
-        const history = await getRecentExerciseHistoryBySession(exerciseId, 5);
+        const [history, notes] = await Promise.all([
+          getRecentExerciseHistoryBySession(exerciseId, 5),
+          getExerciseNotes(exerciseId),
+        ]);
 
         if (history.length === 0) {
           setCoachingLoading((prev) => {
@@ -256,6 +259,7 @@ export function WorkoutSession() {
           targetRepMin,
           targetRepMax,
           targetSets,
+          notes,
         );
         coaching.exerciseId = exerciseId;
         setExerciseCoaching((prev) => new Map(prev).set(exerciseId, coaching));
@@ -269,7 +273,12 @@ export function WorkoutSession() {
         });
       }
     },
-    [coachingLoading, exerciseCoaching, getRecentExerciseHistoryBySession],
+    [
+      coachingLoading,
+      exerciseCoaching,
+      getExerciseNotes,
+      getRecentExerciseHistoryBySession,
+    ],
   );
 
   // Fetch coaching when exercises load

@@ -1,6 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useCallback, useState } from 'react';
+import { triggerAutoBackup } from '../services/autoBackup';
 import { getDB } from '../services/db';
-import type { FoodEntry, MealType, DailyCalorieSummary } from '../types';
+import type { DailyCalorieSummary, FoodEntry, MealType } from '../types';
 import { formatDate, getPreviousDay } from '../utils/date';
 
 export function useCalories() {
@@ -71,6 +72,7 @@ export function useCalories() {
           ],
         );
         await fetchEntriesByDate(entry.date);
+        triggerAutoBackup();
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to add entry');
         throw err;
@@ -108,8 +110,9 @@ export function useCalories() {
             ],
           );
         }
-        // Refresh entries for the target date
+
         await fetchEntriesByDate(entriesToAdd[0].date);
+        triggerAutoBackup();
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to add entries');
         throw err;
@@ -157,6 +160,7 @@ export function useCalories() {
         }
 
         await fetchEntriesByDate(targetDate);
+        triggerAutoBackup();
         return sourceEntries.length;
       } catch (err) {
         const errorMessage =
@@ -203,6 +207,7 @@ export function useCalories() {
             `UPDATE food_entries SET ${fields.join(', ')} WHERE id = $${paramIndex}`,
             values,
           );
+          triggerAutoBackup();
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to update entry');
@@ -222,6 +227,7 @@ export function useCalories() {
         const db = await getDB();
         await db.query('DELETE FROM food_entries WHERE id = $1', [id]);
         await fetchEntriesByDate(date);
+        triggerAutoBackup();
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to delete entry');
         throw err;
@@ -300,8 +306,6 @@ export function useCalories() {
         if (loggedDates.has(dateStr)) {
           streak++;
         } else if (i === 0) {
-          // If today has no entries, check if yesterday does (streak still valid)
-          continue;
         } else {
           break;
         }

@@ -309,3 +309,37 @@ export async function performAutoBackup(): Promise<{
 export function isAutoBackupEnabled(): boolean {
   return !!getGithubToken();
 }
+
+/**
+ * Debounce timer for auto-backup triggers
+ */
+let backupTimeout: NodeJS.Timeout | null = null;
+const BACKUP_DEBOUNCE_MS = 60000; // 1 minute debounce
+
+/**
+ * Trigger an auto-backup if enabled.
+ * Uses debouncing to prevent excessive API calls.
+ */
+export function triggerAutoBackup(): void {
+  if (!isAutoBackupEnabled()) return;
+
+  if (backupTimeout) {
+    clearTimeout(backupTimeout);
+  }
+
+  backupTimeout = setTimeout(async () => {
+    console.log('Auto-backup triggered by change...');
+    try {
+      const result = await performAutoBackup();
+      if (result.success) {
+        console.log('Auto-backup successful:', result.gistUrl);
+      } else {
+        console.warn('Auto-backup failed:', result.error);
+      }
+    } catch (err) {
+      console.error('Auto-backup error:', err);
+    } finally {
+      backupTimeout = null;
+    }
+  }, BACKUP_DEBOUNCE_MS);
+}

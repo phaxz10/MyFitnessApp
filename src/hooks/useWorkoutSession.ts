@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { triggerAutoBackup } from '../services/autoBackup';
 import type {
   Exercise,
   ExerciseType,
@@ -1117,6 +1118,7 @@ export function useWorkoutSession(dateOverride?: string) {
     async (notes?: string) => {
       if (!activeWorkout) return;
       await endWorkout(activeWorkout.id, notes);
+      triggerAutoBackup();
     },
     [activeWorkout, endWorkout],
   );

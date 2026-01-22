@@ -28,6 +28,7 @@ import { WeightTracker } from './pages/WeightTracker';
 import { Workout } from './pages/Workout';
 import { WorkoutDetail } from './pages/WorkoutDetail';
 import { WorkoutSession } from './pages/WorkoutSession';
+import { isAutoBackupEnabled, performAutoBackup } from './services/autoBackup';
 import { getDB, isOnboardingComplete } from './services/db';
 import { initGemini } from './services/gemini';
 
@@ -78,6 +79,21 @@ function AppRoutes() {
         if (complete) {
           // Process any stale in_progress workouts from previous days
           await processStaleWorkouts();
+
+          // Perform auto backup to GitHub Gist if configured
+          if (isAutoBackupEnabled()) {
+            performAutoBackup()
+              .then((result) => {
+                if (result.success) {
+                  console.log('Auto backup successful:', result.gistUrl);
+                } else {
+                  console.warn('Auto backup failed:', result.error);
+                }
+              })
+              .catch((err) => {
+                console.error('Auto backup error:', err);
+              });
+          }
         }
       } catch (err) {
         console.error('Failed to initialize app:', err);

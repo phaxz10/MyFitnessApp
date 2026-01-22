@@ -2,8 +2,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
+  Check,
   ChevronRight,
+  Cloud,
+  CloudOff,
   Download,
+  ExternalLink,
+  HelpCircle,
   Key,
   RefreshCw,
   Target,
@@ -33,6 +38,16 @@ import {
   type ProfileFormData,
   profileFormSchema,
 } from '../schemas/forms';
+import {
+  fetchBackupFromGist,
+  findExistingBackupGist,
+  getBackupStatus,
+  performAutoBackup,
+  removeGithubToken,
+  saveGistId,
+  saveGithubToken,
+  validateGithubToken,
+} from '../services/autoBackup';
 import {
   downloadBackup,
   type ExportOptions,
@@ -75,6 +90,14 @@ export function Settings() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [showClearDataModal, setShowClearDataModal] = useState(false);
   const [clearDataConfirmText, setClearDataConfirmText] = useState('');
+
+  // Auto-backup state
+  const [githubToken, setGithubToken] = useState('');
+  const [backupStatus, setBackupStatus] = useState(getBackupStatus());
+  const [isBackupLoading, setIsBackupLoading] = useState(false);
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [showBackupHelpModal, setShowBackupHelpModal] = useState(false);
+  const [foundGistId, setFoundGistId] = useState<string | null>(null);
 
   // Profile form
   const profileForm = useForm<ProfileFormData>({
@@ -272,6 +295,152 @@ export function Settings() {
       setIsLoading(false);
       setShowClearDataModal(false);
       setClearDataConfirmText('');
+    }
+  };
+
+  // Auto-backup handlers
+  const handleSaveGithubToken = async () => {
+    if (!githubToken.trim()) {
+      setError('Please enter a GitHub token');
+      return;
+    }
+
+    setIsBackupLoading(true);
+    setError(null);
+
+    try {
+      const isValid = await validateGithubToken(githubToken);
+      if (!isValid) {
+        setError('Invalid GitHub token. Please check and try again.');
+        setIsBackupLoading(false);
+        return;
+      }
+
+      // Check for existing backup BEFORE saving token completely or creating new backup
+      const existingGistId = await findExistingBackupGist(githubToken);
+
+      if (existingGistId) {
+        setFoundGistId(existingGistId);
+        setShowRestoreModal(true);
+        setIsBackupLoading(false);
+        return;
+      }
+
+      // No existing backup, proceed as new
+      saveGithubToken(githubToken);
+      await performInitialBackup();
+    } catch (_err) {
+      setError('Failed to configure backup');
+      setIsBackupLoading(false);
+    }
+  };
+
+  const performInitialBackup = async () => {
+    try {
+      const result = await performAutoBackup();
+      if (result.success) {
+        setBackupStatus(getBackupStatus());
+        setSuccess('GitHub backup configured! Initial backup created.');
+        setGithubToken('');
+        setActiveSection(null);
+      } else {
+        setError(`Backup failed: ${result.error}`);
+      }
+    } catch (_err) {
+      setError('Failed to create initial backup');
+    } finally {
+      setIsBackupLoading(false);
+    }
+  };
+
+  const handleRestoreFoundBackup = async () => {
+    if (!foundGistId) return;
+
+    setIsBackupLoading(true);
+    setShowRestoreModal(false);
+
+    try {
+      saveGithubToken(githubToken);
+      saveGistId(foundGistId);
+
+      const backupData = await fetchBackupFromGist(githubToken, foundGistId);
+      if (backupData) {
+        await importData(backupData);
+        await queryClient.invalidateQueries({ queryKey: ['profile'] });
+        setSuccess('Backup found and restored successfully!');
+        setBackupStatus(getBackupStatus());
+        setGithubToken('');
+        setActiveSection(null);
+      } else {
+        setError('Failed to fetch backup data');
+      }
+    } catch (_err) {
+      setError('Failed to restore backup');
+    } finally {
+      setIsBackupLoading(false);
+      setFoundGistId(null);
+    }
+  };
+
+  const handleSkipRestore = async () => {
+    setShowRestoreModal(false);
+    setFoundGistId(null);
+    setIsBackupLoading(true);
+
+    try {
+      saveGithubToken(githubToken);
+      // This will create a NEW gist since we didn't save the found Gist ID
+      await performInitialBackup();
+    } catch (_err) {
+      setError('Failed to configure backup');
+      setIsBackupLoading(false);
+    }
+  };
+
+  const handleRemoveGithubToken = () => {
+    removeGithubToken();
+    setBackupStatus(getBackupStatus());
+    setSuccess('Auto-backup disabled');
+  };
+
+  const handleManualBackup = async () => {
+    setIsBackupLoading(true);
+    setError(null);
+
+    try {
+      const result = await performAutoBackup();
+      if (result.success) {
+        setBackupStatus(getBackupStatus());
+        setSuccess('Backup completed successfully!');
+      } else {
+        setError(`Backup failed: ${result.error}`);
+      }
+    } catch (_err) {
+      setError('Failed to backup');
+    } finally {
+      setIsBackupLoading(false);
+    }
+  };
+
+  const handleRestoreFromGist = async () => {
+    setIsBackupLoading(true);
+    setError(null);
+
+    try {
+      const backupData = await fetchBackupFromGist();
+      if (!backupData) {
+        setError('No backup found or failed to fetch');
+        setIsBackupLoading(false);
+        return;
+      }
+
+      await importData(backupData);
+      await queryClient.invalidateQueries({ queryKey: ['profile'] });
+      setSuccess('Data restored from backup!');
+    } catch (_err) {
+      setError('Failed to restore from backup');
+    } finally {
+      setIsBackupLoading(false);
     }
   };
 
@@ -480,6 +649,147 @@ export function Settings() {
         </CardContent>
       </Card>
 
+      {/* Auto Backup Section */}
+      <Card className="mb-3">
+        <CardContent className="p-0">
+          <button
+            type="button"
+            onClick={() =>
+              setActiveSection(activeSection === 'backup' ? null : 'backup')
+            }
+            className="w-full p-4 flex items-center justify-between text-left"
+          >
+            <div className="flex items-center gap-3">
+              {backupStatus.isConfigured ? (
+                <Cloud size={20} className="text-green-400" />
+              ) : (
+                <CloudOff size={20} className="text-slate-400" />
+              )}
+              <div>
+                <p className="text-white font-medium">Auto Backup</p>
+                <p className="text-slate-400 text-sm">
+                  {backupStatus.isConfigured
+                    ? 'Backing up to GitHub Gist'
+                    : 'Not configured'}
+                </p>
+              </div>
+            </div>
+            <ChevronRight
+              size={20}
+              className={`text-slate-400 transition-transform ${activeSection === 'backup' ? 'rotate-90' : ''}`}
+            />
+          </button>
+
+          {activeSection === 'backup' && (
+            <div className="px-4 pb-4 space-y-4 border-t border-slate-700 pt-4">
+              {backupStatus.isConfigured ? (
+                <>
+                  {/* Backup Status */}
+                  <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Check size={16} className="text-green-400" />
+                      <span className="text-green-400 font-medium">
+                        Auto-backup enabled
+                      </span>
+                    </div>
+                    {backupStatus.lastBackup && (
+                      <p className="text-slate-400 text-sm">
+                        Last backup:{' '}
+                        {new Date(backupStatus.lastBackup).toLocaleString()}
+                      </p>
+                    )}
+                    {backupStatus.gistUrl && (
+                      <a
+                        href={backupStatus.gistUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 text-sm hover:underline flex items-center gap-1 mt-1"
+                      >
+                        View Gist <ExternalLink size={12} />
+                      </a>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="space-y-2">
+                    <Button
+                      variant="secondary"
+                      onClick={handleManualBackup}
+                      isLoading={isBackupLoading}
+                      className="w-full justify-center"
+                    >
+                      <RefreshCw size={16} className="mr-2" />
+                      Backup Now
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={handleRestoreFromGist}
+                      isLoading={isBackupLoading}
+                      className="w-full justify-center"
+                    >
+                      <Download size={16} className="mr-2" />
+                      Restore from Backup
+                    </Button>
+                    <Button
+                      variant="danger"
+                      onClick={handleRemoveGithubToken}
+                      className="w-full justify-center"
+                    >
+                      Disable Auto-backup
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Setup Instructions */}
+                  <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
+                    <div className="flex justify-between items-start mb-2">
+                      <p className="text-blue-400 text-sm">
+                        Enable auto-backup to save your data to a private GitHub
+                        Gist every time you open the app.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setShowBackupHelpModal(true)}
+                        className="text-blue-400 p-1 hover:bg-blue-400/10 rounded-full transition-colors"
+                        title="Help"
+                      >
+                        <HelpCircle size={18} />
+                      </button>
+                    </div>
+                    <a
+                      href="https://github.com/settings/tokens/new?scopes=gist&description=MyPersonalFitness%20Backup"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-400 text-sm hover:underline flex items-center gap-1"
+                    >
+                      Create a GitHub token with 'gist' scope{' '}
+                      <ExternalLink size={12} />
+                    </a>
+                  </div>
+
+                  <Input
+                    label="GitHub Personal Access Token"
+                    type="password"
+                    value={githubToken}
+                    onChange={(e) => setGithubToken(e.target.value)}
+                    placeholder="ghp_xxxxxxxxxxxx"
+                  />
+
+                  <Button
+                    onClick={handleSaveGithubToken}
+                    isLoading={isBackupLoading}
+                    className="w-full"
+                  >
+                    Enable Auto-backup
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Data Management */}
       <Card className="mb-3">
         <CardContent className="p-4 space-y-3">
@@ -515,6 +825,17 @@ export function Settings() {
             <Trash2 size={18} className="mr-2" />
             Clear All Data
           </Button>
+
+          <div className="pt-4 border-t border-slate-700">
+            <h4 className="text-white font-medium mb-2 flex items-center gap-2">
+              <RefreshCw size={16} className="text-blue-400" />
+              Data Recovery
+            </h4>
+            <p className="text-slate-400 text-sm mb-3">
+              Lost your data? If you had Auto Backup enabled, you can recover it
+              by re-entering your GitHub token in the Auto Backup section above.
+            </p>
+          </div>
         </CardContent>
       </Card>
 
@@ -586,6 +907,119 @@ export function Settings() {
               className="flex-1"
             >
               Clear All Data
+            </Button>
+          </div>
+        </div>
+      </Modal>
+      {/* Backup Help Modal */}
+      <Modal
+        isOpen={showBackupHelpModal}
+        onClose={() => setShowBackupHelpModal(false)}
+        title="How to Create a Token"
+      >
+        <div className="space-y-4 text-slate-300 text-sm">
+          <p>
+            To back up to Gists, you need a <strong>Classic</strong> Personal
+            Access Token.
+          </p>
+
+          <div className="bg-slate-800 p-3 rounded-lg border border-slate-700">
+            <h4 className="text-white font-medium mb-2">
+              Option 1: The Easy Way
+            </h4>
+            <ol className="list-decimal pl-4 space-y-1">
+              <li>
+                Click the{' '}
+                <span className="text-blue-400">
+                  "Create a GitHub token with 'gist' scope"
+                </span>{' '}
+                link below.
+              </li>
+              <li>It will open GitHub with all settings pre-filled.</li>
+              <li>
+                Scroll to the bottom and click <strong>Generate token</strong>.
+              </li>
+            </ol>
+          </div>
+
+          <div className="bg-slate-800 p-3 rounded-lg border border-slate-700">
+            <h4 className="text-white font-medium mb-2">
+              Option 2: The Manual Way
+            </h4>
+            <ol className="list-decimal pl-4 space-y-1">
+              <li>
+                Go to GitHub Settings &gt; Developer settings &gt; Personal
+                access tokens &gt; <strong>Tokens (classic)</strong>.
+              </li>
+              <li>
+                Click <strong>Generate new token (classic)</strong>.
+              </li>
+              <li>
+                Select the <strong>gist</strong> checkbox scope.
+              </li>
+              <li>
+                Click <strong>Generate token</strong>.
+              </li>
+            </ol>
+          </div>
+
+          <div className="bg-yellow-500/10 border border-yellow-500/30 p-3 rounded-lg">
+            <p className="text-yellow-400 text-xs">
+              <strong>Note:</strong> Copy the token immediately (it starts with{' '}
+              <code className="bg-black/20 px-1 rounded">ghp_</code>). You won't
+              be able to see it again!
+            </p>
+          </div>
+
+          <Button
+            onClick={() => setShowBackupHelpModal(false)}
+            className="w-full"
+          >
+            Got it
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Restore Found Backup Modal */}
+      <Modal
+        isOpen={showRestoreModal}
+        onClose={() => setShowRestoreModal(false)}
+        title="Found Existing Backup"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+            <Cloud className="text-blue-400 mt-0.5 flex-shrink-0" size={20} />
+            <div>
+              <p className="text-blue-400 font-medium">Backup Found!</p>
+              <p className="text-slate-400 text-sm mt-1">
+                We found an existing MyPersonalFitness backup associated with
+                this GitHub token. Would you like to restore this data?
+              </p>
+            </div>
+          </div>
+
+          <p className="text-slate-300 text-sm">
+            <strong className="text-white">Restore:</strong> Overwrites current
+            app data with backup data.
+            <br />
+            <strong className="text-white">Start Fresh:</strong> Creates a new
+            backup file (keeps old backup safe).
+          </p>
+
+          <div className="flex gap-3 pt-2">
+            <Button
+              variant="secondary"
+              onClick={handleSkipRestore}
+              className="flex-1"
+            >
+              Start Fresh
+            </Button>
+            <Button
+              onClick={handleRestoreFoundBackup}
+              isLoading={isLoading}
+              className="flex-1"
+            >
+              Restore Data
             </Button>
           </div>
         </div>

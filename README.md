@@ -16,6 +16,33 @@ Personal fitness tracker with AI-powered coaching, nutrition scanning, and offli
 - **Offline-first PWA** using local PGlite storage + service worker caching.
 - **Backup/export** for profile, workouts, nutrition logs, progress photos, and AI reviews.
 
+## Auto Backup & Data Recovery
+
+This app is offline-first, meaning your data lives in your browser. Clearing your browser data will delete your progress unless you have Auto Backup enabled.
+
+### How to Enable Auto Backup
+
+1.  Go to **Settings** > **Auto Backup**.
+2.  You need a GitHub Personal Access Token (Classic).
+3.  **The Easiest Way**: Click the link in the app that says **"Create a GitHub token with 'gist' scope"**.
+    *   It will take you to GitHub with the correct settings pre-filled.
+    *   Scroll down and click "Generate token".
+    *   Copy the token (starts with `ghp_`) and paste it into the app.
+4.  **The Manual Way**:
+    *   Go to [GitHub Settings](https://github.com/settings/profile) > **Developer settings** > **Personal access tokens** > **Tokens (classic)**.
+    *   Click **Generate new token (classic)**.
+    *   Check the **`gist`** scope box.
+    *   Generate and copy the token.
+
+### How to Recover Lost Data
+
+If you accidentally cleared your browser data but had Auto Backup enabled:
+
+1.  Go to **Settings** > **Auto Backup**.
+2.  Enter the **same GitHub token** you used before.
+3.  The app will detect your existing backup and prompt you: **"Found Existing Backup"**.
+4.  Click **Restore Data**.
+
 ## Big-Win Ideas to Consider Next
 
 - **Cloud sync + multi-device sign-in** so progress follows users everywhere.

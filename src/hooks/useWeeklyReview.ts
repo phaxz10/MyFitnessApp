@@ -1,16 +1,16 @@
-import { useState, useCallback } from 'react';
+import { isMonday, subDays } from 'date-fns';
+import { useCallback, useState } from 'react';
 import { getDB } from '../services/db';
-import { formatDate, getWeekRange } from '../utils/date';
-import { subDays, isMonday } from 'date-fns';
 import type {
+  FoodEntry,
+  UserProfile,
+  WeeklyReview,
   WeeklyReviewData,
   WeeklyReviewSufficiency,
-  WeeklyReview,
   WeightLog,
-  FoodEntry,
   WorkoutLog,
-  UserProfile,
 } from '../types';
+import { formatDate, getWeekRange } from '../utils/date';
 
 // Minimum requirements for a meaningful weekly review
 const MIN_LOGGED_DAYS = 5; // At least 5 days with any logged data for assessment
@@ -39,11 +39,24 @@ export function useWeeklyReview() {
   /**
    * Get the date range for the past week (Monday to Sunday)
    * If called on Monday, returns the previous week (Mon-Sun)
+   * forceReview=true will also force looking at the previous week
    */
   const getPastWeekRange = useCallback((): { start: string; end: string } => {
     const today = new Date();
-    // On Monday, look back to get the completed week
-    const referenceDate = isMonday(today) ? subDays(today, 1) : today;
+    let usePreviousWeek = isMonday(today);
+
+    // Check for forceReview to allow reviewing previous week on other days
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('forceReview') === 'true') {
+        usePreviousWeek = true;
+      }
+    }
+
+    // If reviewing previous week, go back 7 days to ensure we're in that week
+    // (using 7 days works for both Monday and other days)
+    // If not, use today for current week
+    const referenceDate = usePreviousWeek ? subDays(today, 7) : today;
     const range = getWeekRange(referenceDate);
     return {
       start: formatDate(range.start),

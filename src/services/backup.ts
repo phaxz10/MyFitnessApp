@@ -75,6 +75,13 @@ const stripSensitiveFields = (
   return sanitized;
 };
 
+const sanitizeRows = (rows: unknown[]): unknown[] =>
+  rows.map((row) =>
+    row && typeof row === 'object'
+      ? stripSensitiveFields(row as Record<string, unknown>)
+      : row,
+  );
+
 export async function exportData(
   options: ExportOptions = DEFAULT_EXPORT_OPTIONS,
 ): Promise<string> {
@@ -151,30 +158,39 @@ export async function exportData(
       : Promise.resolve({ rows: [] }),
   ]);
 
-  const sanitizedUserProfile = userProfile.rows.map((row) =>
-    row && typeof row === 'object'
-      ? stripSensitiveFields(row as Record<string, unknown>)
-      : row,
-  );
+  const sanitizedUserProfile = sanitizeRows(userProfile.rows);
+  const sanitizedWeightLogs = sanitizeRows(weightLogs.rows);
+  const sanitizedFoodEntries = sanitizeRows(foodEntries.rows);
+  const sanitizedExercises = sanitizeRows(exercises.rows);
+  const sanitizedWorkoutPrograms = sanitizeRows(workoutPrograms.rows);
+  const sanitizedProgramSessions = sanitizeRows(programSessions.rows);
+  const sanitizedProgramExercises = sanitizeRows(programExercises.rows);
+  const sanitizedWorkoutLogs = sanitizeRows(workoutLogs.rows);
+  const sanitizedWorkoutLogExercises = sanitizeRows(workoutLogExercises.rows);
+  const sanitizedWorkoutSets = sanitizeRows(workoutSets.rows);
+  const sanitizedExerciseNotes = sanitizeRows(exerciseNotes.rows);
+  const sanitizedAiGoalReviews = sanitizeRows(aiGoalReviews.rows);
+  const sanitizedWeeklyReviews = sanitizeRows(weeklyReviews.rows);
+  const sanitizedProgressPhotos = sanitizeRows(progressPhotos.rows);
 
   const backup: BackupData = {
     version: '1.7', // Bumped version for birthdate field migration
     exported_at: new Date().toISOString(),
     data: {
       user_profile: sanitizedUserProfile,
-      weight_logs: weightLogs.rows,
-      food_entries: foodEntries.rows,
-      exercises: exercises.rows,
-      workout_programs: workoutPrograms.rows,
-      program_sessions: programSessions.rows,
-      program_exercises: programExercises.rows,
-      workout_logs: workoutLogs.rows,
-      workout_log_exercises: workoutLogExercises.rows,
-      workout_sets: workoutSets.rows,
-      exercise_notes: exerciseNotes.rows,
-      ai_goal_reviews: aiGoalReviews.rows,
-      weekly_reviews: weeklyReviews.rows,
-      progress_photos: progressPhotos.rows,
+      weight_logs: sanitizedWeightLogs,
+      food_entries: sanitizedFoodEntries,
+      exercises: sanitizedExercises,
+      workout_programs: sanitizedWorkoutPrograms,
+      program_sessions: sanitizedProgramSessions,
+      program_exercises: sanitizedProgramExercises,
+      workout_logs: sanitizedWorkoutLogs,
+      workout_log_exercises: sanitizedWorkoutLogExercises,
+      workout_sets: sanitizedWorkoutSets,
+      exercise_notes: sanitizedExerciseNotes,
+      ai_goal_reviews: sanitizedAiGoalReviews,
+      weekly_reviews: sanitizedWeeklyReviews,
+      progress_photos: sanitizedProgressPhotos,
     },
   };
 

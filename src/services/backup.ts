@@ -58,6 +58,23 @@ export const EXPORT_OPTION_LABELS: Record<keyof ExportOptions, string> = {
   progressPhotos: 'Progress Photos',
 };
 
+const SENSITIVE_FIELD_REGEX = /api_key/i;
+
+const stripSensitiveFields = (
+  row: Record<string, unknown>,
+): Record<string, unknown> => {
+  const sanitized: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(row)) {
+    if (SENSITIVE_FIELD_REGEX.test(key)) {
+      continue;
+    }
+    sanitized[key] = value;
+  }
+
+  return sanitized;
+};
+
 export async function exportData(
   options: ExportOptions = DEFAULT_EXPORT_OPTIONS,
 ): Promise<string> {
@@ -134,11 +151,17 @@ export async function exportData(
       : Promise.resolve({ rows: [] }),
   ]);
 
+  const sanitizedUserProfile = userProfile.rows.map((row) =>
+    row && typeof row === 'object'
+      ? stripSensitiveFields(row as Record<string, unknown>)
+      : row,
+  );
+
   const backup: BackupData = {
     version: '1.7', // Bumped version for birthdate field migration
     exported_at: new Date().toISOString(),
     data: {
-      user_profile: userProfile.rows,
+      user_profile: sanitizedUserProfile,
       weight_logs: weightLogs.rows,
       food_entries: foodEntries.rows,
       exercises: exercises.rows,
@@ -210,8 +233,8 @@ export async function importData(jsonString: string): Promise<void> {
   if (hasData(data.user_profile)) {
     for (const row of data.user_profile as Record<string, unknown>[]) {
       await db.query(
-        `INSERT INTO user_profile (id, birthdate, gender, height_cm, activity_level, goal, calorie_target, protein_target_g, carbs_target_g, fat_target_g, gemini_api_key, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        `INSERT INTO user_profile (id, birthdate, gender, height_cm, activity_level, goal, calorie_target, protein_target_g, carbs_target_g, fat_target_g, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
           row.id,
           row.birthdate ?? getLocalDateString(),
@@ -223,7 +246,6 @@ export async function importData(jsonString: string): Promise<void> {
           row.protein_target_g,
           row.carbs_target_g,
           row.fat_target_g,
-          row.gemini_api_key,
           row.created_at,
           row.updated_at,
         ],

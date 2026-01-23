@@ -7,11 +7,16 @@ export type TimeRange = '7d' | '30d' | '90d' | 'all';
 
 export const TIME_RANGE_OPTIONS: TimeRange[] = ['7d', '30d', '90d', 'all'];
 
+const TIME_RANGE_LABELS: Record<TimeRange, string> = {
+  '7d': 'this week',
+  '30d': '30 days',
+  '90d': '90 days',
+  all: 'all time',
+};
+
 interface TimeRangeSelectorProps {
   value: TimeRange;
   onChange: (range: TimeRange) => void;
-  /** Label to show for 'all' option. Defaults to 'All Time' */
-  allLabel?: string;
   /** Additional CSS classes for the container */
   className?: string;
   /** Use compact styling (smaller padding). Defaults to false */
@@ -21,7 +26,6 @@ interface TimeRangeSelectorProps {
 export function TimeRangeSelector({
   value,
   onChange,
-  allLabel = 'All Time',
   className = '',
   compact = false,
 }: TimeRangeSelectorProps) {
@@ -38,7 +42,7 @@ export function TimeRangeSelector({
               : 'bg-slate-700 text-slate-400 hover:text-white'
           }`}
         >
-          {range === 'all' ? allLabel : range}
+          {TIME_RANGE_LABELS[range]}
         </button>
       ))}
     </div>

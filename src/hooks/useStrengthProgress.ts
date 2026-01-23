@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { startOfWeek } from 'date-fns';
 import { getDB } from '../services/db';
 import type {
   ExercisePR,
@@ -10,7 +11,7 @@ import type {
   ProgressTrend,
   VolumeChartData,
 } from '../types';
-import { getLocalDateString } from '../utils/date';
+import { formatDate, getLocalDateString } from '../utils/date';
 
 // Type for TimeRange
 export type TimeRange = '7d' | '30d' | '90d' | 'all';
@@ -76,10 +77,15 @@ function getDateRange(range: TimeRange): {
     return { startDate: null, endDate };
   }
 
-  const days = range === '7d' ? 7 : range === '30d' ? 30 : 90;
+  if (range === '7d') {
+    const weekStart = startOfWeek(new Date(), { weekStartsOn: 0 });
+    return { startDate: formatDate(weekStart), endDate };
+  }
+
+  const days = range === '30d' ? 30 : 90;
   const start = new Date();
   start.setDate(start.getDate() - days);
-  const startDate = start.toISOString().split('T')[0];
+  const startDate = formatDate(start);
 
   return { startDate, endDate };
 }

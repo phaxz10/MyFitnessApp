@@ -15,7 +15,7 @@ export function Progress() {
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<Tab>('overview');
-  const [timeRange, setTimeRange] = useState<TimeRange>('30d');
+  const [timeRange, setTimeRange] = useState<TimeRange>('7d');
   const [selectedExerciseId, setSelectedExerciseId] = useState<number | null>(
     null,
   );

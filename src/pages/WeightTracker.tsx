@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
+import { startOfWeek } from 'date-fns';
 import {
   Camera,
   ChevronLeft,
@@ -143,7 +144,14 @@ export function WeightTracker() {
   const getFilteredLogs = () => {
     if (timeRange === 'all') return [...logs].reverse();
 
-    const daysMap = { '7d': 7, '30d': 30, '90d': 90 };
+    if (timeRange === '7d') {
+      const startDate = formatDate(
+        startOfWeek(new Date(), { weekStartsOn: 0 }),
+      );
+      return logs.filter((log) => formatDate(log.date) >= startDate).reverse();
+    }
+
+    const daysMap = { '30d': 30, '90d': 90 };
     const cutoffDate = getDaysAgo(daysMap[timeRange]);
 
     return logs.filter((log) => formatDate(log.date) >= cutoffDate).reverse();
@@ -458,7 +466,6 @@ export function WeightTracker() {
             <TimeRangeSelector
               value={timeRange}
               onChange={setTimeRange}
-              allLabel="All"
               compact
             />
           </div>

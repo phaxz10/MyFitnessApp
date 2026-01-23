@@ -1,16 +1,17 @@
-import { useState, useCallback } from 'react';
+import { startOfWeek } from 'date-fns';
+import { useCallback, useState } from 'react';
 import { getDB } from '../services/db';
-import { getLocalDateString } from '../utils/date';
 import type {
+  ExercisePR,
   ExerciseProgressSummary,
+  ExerciseSessionData,
+  ExerciseType,
   OverallProgressMetrics,
   PersonalRecord,
-  ExerciseSessionData,
-  VolumeChartData,
-  ExercisePR,
   ProgressTrend,
-  ExerciseType,
+  VolumeChartData,
 } from '../types';
+import { formatDate, getLocalDateString } from '../utils/date';
 
 // Calculate estimated 1RM using Epley formula
 export function calculateEstimated1RM(
@@ -33,10 +34,15 @@ function getDateRange(range: '7d' | '30d' | '90d' | 'all'): {
     return { startDate: null, endDate };
   }
 
-  const days = range === '7d' ? 7 : range === '30d' ? 30 : 90;
+  if (range === '7d') {
+    const weekStart = startOfWeek(new Date(), { weekStartsOn: 0 });
+    return { startDate: formatDate(weekStart), endDate };
+  }
+
+  const days = range === '30d' ? 30 : 90;
   const start = new Date();
   start.setDate(start.getDate() - days);
-  const startDate = start.toISOString().split('T')[0];
+  const startDate = formatDate(start);
 
   return { startDate, endDate };
 }

@@ -1,3 +1,4 @@
+import type { SyncMetadata } from './backup';
 import { DEFAULT_EXPORT_OPTIONS, exportData } from './backup';
 
 const GITHUB_GIST_API = 'https://api.github.com/gists';
@@ -9,6 +10,8 @@ const STORAGE_KEYS = {
   GITHUB_TOKEN: 'mpf-github-token',
   GIST_ID: 'mpf-gist-id',
   LAST_BACKUP: 'mpf-last-backup',
+  SYNC_VERSION: 'mpf-sync-version',
+  DEVICE_ID: 'mpf-device-id',
 } as const;
 
 export interface AutoBackupConfig {
@@ -21,6 +24,8 @@ export interface BackupStatus {
   gistId: string | null;
   gistUrl: string | null;
   isConfigured: boolean;
+  syncVersion: number;
+  deviceId: string;
 }
 
 /**
@@ -44,6 +49,7 @@ export function removeGithubToken(): void {
   localStorage.removeItem(STORAGE_KEYS.GITHUB_TOKEN);
   localStorage.removeItem(STORAGE_KEYS.GIST_ID);
   localStorage.removeItem(STORAGE_KEYS.LAST_BACKUP);
+  // Note: We keep SYNC_VERSION and DEVICE_ID as they may be useful for future re-connection
 }
 
 /**
@@ -58,6 +64,119 @@ export function getGistId(): string | null {
  */
 export function saveGistId(gistId: string): void {
   localStorage.setItem(STORAGE_KEYS.GIST_ID, gistId);
+}
+
+/**
+ * Generate a unique device ID (8-char hex string)
+ */
+function generateDeviceId(): string {
+  const array = new Uint8Array(4);
+  crypto.getRandomValues(array);
+  return Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Get or create device ID for this device
+ */
+export function getDeviceId(): string {
+  let deviceId = localStorage.getItem(STORAGE_KEYS.DEVICE_ID);
+  if (!deviceId) {
+    deviceId = generateDeviceId();
+    localStorage.setItem(STORAGE_KEYS.DEVICE_ID, deviceId);
+  }
+  return deviceId;
+}
+
+/**
+ * Get current sync version (local)
+ */
+export function getSyncVersion(): number {
+  const stored = localStorage.getItem(STORAGE_KEYS.SYNC_VERSION);
+  return stored ? parseInt(stored, 10) : 0;
+}
+
+/**
+ * Save sync version to localStorage
+ */
+export function saveSyncVersion(version: number): void {
+  localStorage.setItem(STORAGE_KEYS.SYNC_VERSION, version.toString());
+}
+
+/**
+ * Increment and return the new sync version
+ */
+export function incrementSyncVersion(): number {
+  const current = getSyncVersion();
+  const next = current + 1;
+  saveSyncVersion(next);
+  return next;
+}
+
+/**
+ * Metadata extracted from a remote backup for sync comparison
+ */
+export interface RemoteBackupMetadata {
+  syncVersion: number;
+  deviceId: string | null;
+  exportedAt: string;
+}
+
+/**
+ * Parse backup metadata from JSON string (without parsing full data)
+ * This is efficient for conflict detection without loading entire backup
+ */
+export function parseBackupMetadata(
+  backupJson: string,
+): RemoteBackupMetadata | null {
+  try {
+    const backup = JSON.parse(backupJson);
+    return {
+      syncVersion: backup.syncVersion ?? 0,
+      deviceId: backup.deviceId ?? null,
+      exportedAt: backup.exported_at ?? '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Sync conflict detection result
+ */
+export interface SyncConflictResult {
+  hasConflict: boolean;
+  localVersion: number;
+  remoteVersion: number;
+  remoteDeviceId: string | null;
+  remoteExportedAt: string;
+}
+
+/**
+ * Check if there's a sync conflict (remote is newer than local)
+ */
+export async function checkSyncConflict(): Promise<SyncConflictResult | null> {
+  const remoteBackup = await fetchBackupFromGist();
+  if (!remoteBackup) {
+    // No remote backup exists, no conflict
+    return null;
+  }
+
+  const remoteMeta = parseBackupMetadata(remoteBackup);
+  if (!remoteMeta) {
+    // Couldn't parse remote backup, treat as no conflict (will overwrite)
+    return null;
+  }
+
+  const localVersion = getSyncVersion();
+  const hasConflict = remoteMeta.syncVersion > localVersion;
+
+  return {
+    hasConflict,
+    localVersion,
+    remoteVersion: remoteMeta.syncVersion,
+    remoteDeviceId: remoteMeta.deviceId,
+    remoteExportedAt: remoteMeta.exportedAt,
+  };
 }
 
 /**
@@ -115,6 +234,8 @@ export function getBackupStatus(): BackupStatus {
     gistId,
     gistUrl: gistId ? `https://gist.github.com/${gistId}` : null,
     isConfigured: !!githubToken,
+    syncVersion: getSyncVersion(),
+    deviceId: getDeviceId(),
   };
 }
 
@@ -248,15 +369,24 @@ export async function validateGithubToken(token: string): Promise<boolean> {
   }
 }
 
-/**
- * Perform auto backup to GitHub Gist
- * Creates a new Gist if none exists, otherwise updates existing one
- */
-export async function performAutoBackup(): Promise<{
+export interface AutoBackupResult {
   success: boolean;
   error?: string;
   gistUrl?: string;
-}> {
+  syncVersion?: number;
+  conflict?: SyncConflictResult;
+}
+
+/**
+ * Perform auto backup to GitHub Gist
+ * Creates a new Gist if none exists, otherwise updates existing one
+ * Includes sync version for cross-device conflict detection
+ *
+ * @param forceOverwrite - If true, skip conflict detection and overwrite remote
+ */
+export async function performAutoBackup(
+  forceOverwrite = false,
+): Promise<AutoBackupResult> {
   const token = getGithubToken();
 
   if (!token) {
@@ -264,10 +394,31 @@ export async function performAutoBackup(): Promise<{
   }
 
   try {
-    // Export all data
-    const backupData = await exportData(DEFAULT_EXPORT_OPTIONS);
-
     let gistId = getGistId();
+
+    // Check for sync conflicts if gist exists and not forcing overwrite
+    if (gistId && !forceOverwrite) {
+      const conflictResult = await checkSyncConflict();
+      if (conflictResult?.hasConflict) {
+        return {
+          success: false,
+          error: `Remote backup is newer (v${conflictResult.remoteVersion} vs local v${conflictResult.localVersion}). Sync or force overwrite required.`,
+          conflict: conflictResult,
+        };
+      }
+    }
+
+    // Increment sync version and get metadata
+    const newSyncVersion = incrementSyncVersion();
+    const deviceId = getDeviceId();
+
+    const syncMetadata: SyncMetadata = {
+      syncVersion: newSyncVersion,
+      deviceId,
+    };
+
+    // Export all data with sync metadata
+    const backupData = await exportData(DEFAULT_EXPORT_OPTIONS, syncMetadata);
 
     if (gistId) {
       // Try to update existing Gist
@@ -293,6 +444,7 @@ export async function performAutoBackup(): Promise<{
     return {
       success: true,
       gistUrl: `https://gist.github.com/${gistId}`,
+      syncVersion: newSyncVersion,
     };
   } catch (error) {
     console.error('Auto backup failed:', error);
@@ -301,6 +453,31 @@ export async function performAutoBackup(): Promise<{
       error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
+}
+
+/**
+ * Adopt the sync version from imported backup data.
+ * Call this after successfully importing/restoring from a backup
+ * to ensure local sync version matches the imported data.
+ */
+export function adoptSyncVersion(backupJson: string): void {
+  const metadata = parseBackupMetadata(backupJson);
+  if (metadata && metadata.syncVersion > 0) {
+    saveSyncVersion(metadata.syncVersion);
+    console.log(
+      `Adopted sync version ${metadata.syncVersion} from imported backup`,
+    );
+  }
+}
+
+/**
+ * Get the sync metadata from a backup JSON string.
+ * Useful for displaying info about a backup before importing.
+ */
+export function getBackupSyncInfo(
+  backupJson: string,
+): RemoteBackupMetadata | null {
+  return parseBackupMetadata(backupJson);
 }
 
 /**
@@ -332,7 +509,16 @@ export function triggerAutoBackup(): void {
     try {
       const result = await performAutoBackup();
       if (result.success) {
-        console.log('Auto-backup successful:', result.gistUrl);
+        console.log(
+          `Auto-backup successful (v${result.syncVersion}):`,
+          result.gistUrl,
+        );
+      } else if (result.conflict) {
+        console.warn(
+          `Auto-backup skipped: sync conflict detected. ` +
+            `Remote v${result.conflict.remoteVersion} > local v${result.conflict.localVersion}. ` +
+            `Import remote data or force backup to resolve.`,
+        );
       } else {
         console.warn('Auto-backup failed:', result.error);
       }

@@ -3,6 +3,8 @@ import { getDB } from './db';
 
 interface BackupData {
   version: string;
+  syncVersion?: number; // Auto-incrementing version for cross-device sync
+  deviceId?: string; // Identifies which device created this backup
   exported_at: string;
   data: {
     user_profile: unknown[];
@@ -82,8 +84,14 @@ const sanitizeRows = (rows: unknown[]): unknown[] =>
       : row,
   );
 
+export interface SyncMetadata {
+  syncVersion?: number;
+  deviceId?: string;
+}
+
 export async function exportData(
   options: ExportOptions = DEFAULT_EXPORT_OPTIONS,
+  syncMetadata?: SyncMetadata,
 ): Promise<string> {
   const db = await getDB();
 
@@ -175,6 +183,10 @@ export async function exportData(
 
   const backup: BackupData = {
     version: '1.7', // Bumped version for birthdate field migration
+    ...(syncMetadata?.syncVersion !== undefined && {
+      syncVersion: syncMetadata.syncVersion,
+    }),
+    ...(syncMetadata?.deviceId && { deviceId: syncMetadata.deviceId }),
     exported_at: new Date().toISOString(),
     data: {
       user_profile: sanitizedUserProfile,

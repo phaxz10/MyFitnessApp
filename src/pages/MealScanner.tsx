@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Camera, ImageIcon, Minus, Plus, X } from 'lucide-react';
+import { Camera, ImageIcon, Minus, Plus, Upload, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
@@ -24,6 +24,8 @@ interface EditableFoodItem extends AIFoodItem {
   originalPortion: number;
 }
 
+type CameraPermission = 'pending' | 'granted' | 'denied';
+
 export function MealScanner() {
   const navigate = useNavigate();
   const { addEntry } = useCalories();
@@ -33,14 +35,16 @@ export function MealScanner() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   // State
   const [step, setStep] = useState<'capture' | 'analyzing' | 'results'>(
     'capture',
   );
+  const [cameraPermission, setCameraPermission] =
+    useState<CameraPermission>('pending');
   const [cameraActive, setCameraActive] = useState(false);
-  const [cameraError, setCameraError] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageData, setImageData] = useState<{
     base64: string;
@@ -62,10 +66,9 @@ export function MealScanner() {
   const mealType = watch('mealType');
   const description = watch('description');
 
-  // Start camera
-  const startCamera = useCallback(async () => {
+  // Request camera permission
+  const requestCameraPermission = useCallback(async () => {
     try {
-      setCameraError(null);
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: 'environment',
@@ -81,11 +84,11 @@ export function MealScanner() {
         await videoRef.current.play();
         setCameraActive(true);
       }
+
+      setCameraPermission('granted');
     } catch (err) {
-      console.error('Camera error:', err);
-      setCameraError(
-        'Unable to access camera. Please use the upload button instead.',
-      );
+      console.error('Camera permission error:', err);
+      setCameraPermission('denied');
       setCameraActive(false);
     }
   }, []);
@@ -103,6 +106,33 @@ export function MealScanner() {
     }
     setCameraActive(false);
   }, []);
+
+  // Restart camera (after clearing image)
+  const restartCamera = useCallback(async () => {
+    if (cameraPermission === 'granted') {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        });
+
+        streamRef.current = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+          setCameraActive(true);
+        }
+      } catch (err) {
+        console.error('Camera restart error:', err);
+        setCameraPermission('denied');
+        setCameraActive(false);
+      }
+    }
+  }, [cameraPermission]);
 
   // Capture frame from video
   const captureFrame = useCallback(() => {
@@ -130,7 +160,7 @@ export function MealScanner() {
     stopCamera();
   }, [stopCamera]);
 
-  // Handle file upload
+  // Handle file upload (gallery or camera via input)
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -153,6 +183,11 @@ export function MealScanner() {
 
     // Reset input so same file can be selected again
     e.target.value = '';
+  };
+
+  // Skip camera and use upload mode
+  const skipCamera = () => {
+    setCameraPermission('denied');
   };
 
   // Analyze image
@@ -279,26 +314,26 @@ export function MealScanner() {
     setImageData(null);
     setResults([]);
     setError(null);
-    startCamera();
+    if (cameraPermission === 'granted') {
+      restartCamera();
+    }
   };
 
-  // Clear uploaded image and restart camera
+  // Clear uploaded image
   const handleClearImage = () => {
     setImagePreview(null);
     setImageData(null);
-    startCamera();
+    if (cameraPermission === 'granted') {
+      restartCamera();
+    }
   };
 
-  // Start camera on mount
+  // Cleanup on unmount
   useEffect(() => {
-    if (step === 'capture' && !imagePreview) {
-      startCamera();
-    }
-
     return () => {
       stopCamera();
     };
-  }, [step, imagePreview, startCamera, stopCamera]);
+  }, [stopCamera]);
 
   const totalCalories = results.reduce((sum, item) => sum + item.calories, 0);
   const totalProtein = results.reduce((sum, item) => sum + item.protein_g, 0);
@@ -353,10 +388,20 @@ export function MealScanner() {
 
       {/* Hidden elements */}
       <canvas ref={canvasRef} className="hidden" />
+      {/* Gallery upload input - no capture attribute to allow gallery selection */}
       <input
         ref={fileInputRef}
         type="file"
+        accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+        onChange={handleFileSelect}
+        className="hidden"
+      />
+      {/* Camera capture input for mobile - has capture attribute */}
+      <input
+        ref={cameraInputRef}
+        type="file"
         accept="image/*"
+        capture="environment"
         onChange={handleFileSelect}
         className="hidden"
       />
@@ -370,64 +415,154 @@ export function MealScanner() {
             options={mealTypes}
           />
 
-          {/* Camera / Image Preview */}
-          <Card>
-            <CardContent className="p-0 overflow-hidden">
-              <div className="relative aspect-[4/3] bg-black">
-                {imagePreview ? (
-                  // Uploaded/Captured image preview
-                  <>
-                    <img
-                      src={imagePreview}
-                      alt="Food preview"
-                      className="w-full h-full object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleClearImage}
-                      className="absolute top-2 right-2 p-2 bg-black/50 rounded-full text-white hover:bg-black/70"
+          {/* Camera Permission Request */}
+          {cameraPermission === 'pending' && !imagePreview && (
+            <Card>
+              <CardContent className="p-6">
+                <div className="text-center">
+                  <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Camera size={32} className="text-blue-400" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-white mb-2">
+                    Camera Access
+                  </h3>
+                  <p className="text-slate-400 text-sm mb-6">
+                    Allow camera access to scan your meals in real-time, or
+                    upload photos from your gallery.
+                  </p>
+                  <div className="space-y-3">
+                    <Button
+                      onClick={requestCameraPermission}
+                      className="w-full"
                     >
-                      <X size={20} />
-                    </button>
-                  </>
-                ) : cameraError ? (
-                  // Camera error state
-                  <div className="w-full h-full flex flex-col items-center justify-center text-center p-4">
-                    <Camera size={48} className="text-slate-500 mb-4" />
-                    <p className="text-slate-400 text-sm">{cameraError}</p>
+                      <Camera size={18} className="mr-2" />
+                      Enable Camera
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={skipCamera}
+                      className="w-full"
+                    >
+                      <Upload size={18} className="mr-2" />
+                      Upload Instead
+                    </Button>
                   </div>
-                ) : (
-                  // Live camera feed
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-cover"
-                  />
-                )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
-                {/* Camera loading indicator */}
-                {!cameraActive && !cameraError && !imagePreview && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
-                    <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                  </div>
-                )}
-              </div>
+          {/* Camera Granted - Show Live Feed */}
+          {cameraPermission === 'granted' && (
+            <Card>
+              <CardContent className="p-0 overflow-hidden">
+                <div className="relative aspect-[4/3] bg-black">
+                  {imagePreview ? (
+                    // Captured image preview
+                    <>
+                      <img
+                        src={imagePreview}
+                        alt="Food preview"
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleClearImage}
+                        className="absolute top-2 right-2 p-2 bg-black/50 rounded-full text-white hover:bg-black/70"
+                      >
+                        <X size={20} />
+                      </button>
+                    </>
+                  ) : (
+                    // Live camera feed
+                    <>
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-full object-cover"
+                      />
+                      {/* Camera loading indicator */}
+                      {!cameraActive && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
+                          <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
 
-              {/* Action buttons */}
-              <div className="p-4">
-                <Button
-                  variant="secondary"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full"
-                >
-                  <ImageIcon size={18} className="mr-2" />
-                  Upload from Gallery
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                {/* Action buttons for camera mode */}
+                <div className="p-4">
+                  <Button
+                    variant="secondary"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full"
+                  >
+                    <ImageIcon size={18} className="mr-2" />
+                    Upload from Gallery
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Camera Denied - Show Upload Interface */}
+          {cameraPermission === 'denied' && (
+            <Card>
+              <CardContent className="p-0 overflow-hidden">
+                <div className="relative aspect-[4/3] bg-slate-800">
+                  {imagePreview ? (
+                    // Uploaded image preview
+                    <>
+                      <img
+                        src={imagePreview}
+                        alt="Food preview"
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleClearImage}
+                        className="absolute top-2 right-2 p-2 bg-black/50 rounded-full text-white hover:bg-black/70"
+                      >
+                        <X size={20} />
+                      </button>
+                    </>
+                  ) : (
+                    // Upload placeholder
+                    <div className="w-full h-full flex flex-col items-center justify-center text-center p-4">
+                      <div className="w-16 h-16 bg-slate-700 rounded-full flex items-center justify-center mb-4">
+                        <ImageIcon size={32} className="text-slate-400" />
+                      </div>
+                      <p className="text-slate-400 text-sm">
+                        Take a photo or select from gallery
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Action buttons for upload mode */}
+                <div className="p-4 space-y-3">
+                  <Button
+                    onClick={() => cameraInputRef.current?.click()}
+                    className="w-full"
+                  >
+                    <Camera size={18} className="mr-2" />
+                    Take Photo
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full"
+                  >
+                    <ImageIcon size={18} className="mr-2" />
+                    Choose from Gallery
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <TextArea
             label="Description (optional)"
@@ -439,7 +574,11 @@ export function MealScanner() {
 
           <Button
             onClick={handleAnalyze}
-            disabled={!cameraActive && !imageData}
+            disabled={
+              (cameraPermission === 'granted' && !cameraActive && !imageData) ||
+              (cameraPermission === 'denied' && !imageData) ||
+              cameraPermission === 'pending'
+            }
             className="w-full"
           >
             <Camera size={18} className="mr-2" />

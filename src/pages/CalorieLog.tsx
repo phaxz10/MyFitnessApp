@@ -7,7 +7,7 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -38,6 +38,7 @@ export function CalorieLog() {
     deleteEntry,
     getDailySummary,
     copyMealsFromPreviousDay,
+    copyEntryToMeal,
     loading: caloriesLoading,
   } = useCalories();
   const { openFoodLogModal } = useAppStore();
@@ -53,6 +54,8 @@ export function CalorieLog() {
   const [error, setError] = useState<string | null>(null);
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [copyMenuEntryId, setCopyMenuEntryId] = useState<number | null>(null);
+  const copyMenuRef = useRef<HTMLDivElement>(null);
 
   // React Hook Form for edit modal
   const {
@@ -208,6 +211,43 @@ export function CalorieLog() {
     }
   };
 
+  const handleCopyEntryToMeal = async (
+    entry: FoodEntry,
+    targetMealType: MealType,
+  ) => {
+    try {
+      setCopySuccess(null);
+      setError(null);
+      setCopyMenuEntryId(null);
+      await copyEntryToMeal(entry, targetMealType);
+      const targetLabel =
+        mealTypes.find((m) => m.value === targetMealType)?.label ||
+        targetMealType;
+      setCopySuccess(`Copied "${entry.food_description}" to ${targetLabel}`);
+      setTimeout(() => setCopySuccess(null), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to copy entry');
+    }
+  };
+
+  // Close copy menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        copyMenuRef.current &&
+        !copyMenuRef.current.contains(event.target as Node)
+      ) {
+        setCopyMenuEntryId(null);
+      }
+    };
+
+    if (copyMenuEntryId !== null) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () =>
+        document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [copyMenuEntryId]);
+
   if (initialLoading) {
     return <CalorieLogSkeleton />;
   }
@@ -341,6 +381,44 @@ export function CalorieLog() {
                         </p>
                       </div>
                       <div className="flex gap-1">
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setCopyMenuEntryId(
+                                copyMenuEntryId === entry.id ? null : entry.id,
+                              )
+                            }
+                            className="p-2 text-slate-400 hover:text-green-400"
+                            title="Copy to another meal"
+                          >
+                            <Copy size={16} />
+                          </button>
+                          {copyMenuEntryId === entry.id && (
+                            <div
+                              ref={copyMenuRef}
+                              className="absolute right-0 top-full mt-1 z-10 bg-slate-800 border border-slate-600 rounded-lg shadow-lg py-1 min-w-[140px]"
+                            >
+                              <p className="px-3 py-1 text-xs text-slate-400 border-b border-slate-700">
+                                Copy to:
+                              </p>
+                              {mealTypes
+                                .filter((m) => m.value !== entry.meal_type)
+                                .map((meal) => (
+                                  <button
+                                    key={meal.value}
+                                    type="button"
+                                    onClick={() =>
+                                      handleCopyEntryToMeal(entry, meal.value)
+                                    }
+                                    className="w-full px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-700 transition-colors"
+                                  >
+                                    {meal.label}
+                                  </button>
+                                ))}
+                            </div>
+                          )}
+                        </div>
                         <button
                           type="button"
                           onClick={() => openEditModal(entry)}

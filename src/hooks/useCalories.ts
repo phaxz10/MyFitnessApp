@@ -182,6 +182,42 @@ export function useCalories() {
     [copyMealsFromDate],
   );
 
+  const copyEntryToMeal = useCallback(
+    async (entry: FoodEntry, targetMealType: MealType) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const db = await getDB();
+        await db.query(
+          `INSERT INTO food_entries (date, meal_type, food_description, portion_grams, calories, protein_g, carbs_g, fat_g, is_ai_generated)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            entry.date,
+            targetMealType,
+            entry.food_description,
+            entry.portion_grams,
+            entry.calories,
+            entry.protein_g,
+            entry.carbs_g,
+            entry.fat_g,
+            false, // Mark as not AI generated since it's a copy
+          ],
+        );
+
+        await fetchEntriesByDate(entry.date);
+        triggerAutoBackup();
+      } catch (err) {
+        const errorMessage =
+          err instanceof Error ? err.message : 'Failed to copy entry';
+        setError(errorMessage);
+        throw new Error(errorMessage);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [fetchEntriesByDate],
+  );
+
   const updateEntry = useCallback(
     async (id: number, data: Partial<FoodEntry>) => {
       setLoading(true);
@@ -393,5 +429,6 @@ export function useCalories() {
     getRecentFoods,
     copyMealsFromDate,
     copyMealsFromPreviousDay,
+    copyEntryToMeal,
   };
 }

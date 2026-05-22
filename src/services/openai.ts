@@ -277,7 +277,7 @@ const inferExperienceLevelFunctionTool: FunctionTool = {
 
 let client: OpenAI | null = null;
 
-const MODEL = 'gpt-4o-mini';
+const MODEL = 'gpt-4o';
 const WEB_SEARCH_TOOL: Tool = { type: 'web_search' };
 
 export function initOpenAI(apiKey: string): void {
@@ -960,7 +960,7 @@ MALE-SPECIFIC CONSIDERATIONS:
    - Allows each muscle to be trained 2-3x per week
    - Best for beginners and time-constrained lifters`
        : ''
-   }
+}
    ${
      input.trainingDaysPerWeek === 4
        ? `With 4 days: Use UPPER/LOWER split
@@ -969,7 +969,7 @@ MALE-SPECIFIC CONSIDERATIONS:
    - More volume per session than full body
    - Good balance of frequency and volume`
        : ''
-   }
+}
    ${
      input.trainingDaysPerWeek >= 5
        ? `With ${input.trainingDaysPerWeek} days: Use PUSH/PULL/LEGS split
@@ -979,7 +979,7 @@ MALE-SPECIFIC CONSIDERATIONS:
    - Each muscle trained 1.5-2x per week with high volume
    - Best for advanced lifters seeking maximum volume`
        : ''
-   }
+}
 
 2. WEEKLY VOLUME GUIDELINES (sets per muscle per week):
    ${input.experienceLevel === 'beginner' ? '- Beginners: 8-12 sets per major muscle group' : ''}
@@ -1060,7 +1060,7 @@ MALE-SPECIFIC CONSIDERATIONS:
    - Isolation finishers: 12-20 reps (metabolic stress, pump)
    - Consider rest-pause on final sets of isolation work`
        : ''
-   }
+}
    ${
      input.goal === 'cut'
        ? `For cutting:
@@ -1069,7 +1069,7 @@ MALE-SPECIFIC CONSIDERATIONS:
    - Reduce total volume by 20-30% vs building phase
    - Skip high-rep finishers if recovery is compromised`
        : ''
-   }
+}
    ${
      input.goal === 'recomp'
        ? `For recomposition:
@@ -1077,7 +1077,7 @@ MALE-SPECIFIC CONSIDERATIONS:
    - Full rep range spectrum across the week
    - Include metabolic finishers (15-20 reps) for calorie burn`
        : ''
-   }
+}
    ${
      input.goal === 'maintain'
        ? `For maintenance:
@@ -1086,7 +1086,7 @@ MALE-SPECIFIC CONSIDERATIONS:
    - Standard rep ranges: 6-12 for compounds, 10-15 for isolation
    - Skip intensity techniques (rest-pause, drop sets)`
        : ''
-   }
+}
 
    === MUSCLE-SPECIFIC REP RECOMMENDATIONS ===
    | Muscle Group    | Low (Strength) | Medium (Hypertrophy) | High (Metabolic) |

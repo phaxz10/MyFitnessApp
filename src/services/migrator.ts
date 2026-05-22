@@ -207,6 +207,10 @@ const migrations: Migration[] = [
         CREATE INDEX idx_progress_photos_date ON progress_photos(date);
         CREATE INDEX idx_exercise_notes_exercise ON exercise_notes(exercise_id);
         CREATE INDEX idx_workout_log_exercises_log ON workout_log_exercises(workout_log_id);
+        CREATE INDEX idx_workout_sets_exercise ON workout_sets(exercise_id);
+        CREATE INDEX idx_workout_sets_wle ON workout_sets(workout_log_exercise_id);
+        CREATE INDEX idx_workout_logs_completed ON workout_logs(status) WHERE status = 'completed';
+        CREATE INDEX idx_workout_sets_completed_at ON workout_sets(completed_at);
       `);
     },
   },

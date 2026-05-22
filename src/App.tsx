@@ -30,7 +30,7 @@ import { WorkoutDetail } from './pages/WorkoutDetail';
 import { WorkoutSession } from './pages/WorkoutSession';
 import { isAutoBackupEnabled, performAutoBackup } from './services/autoBackup';
 import { getDB, isOnboardingComplete } from './services/db';
-import { initGemini } from './services/gemini';
+import { initOpenAI } from './services/openai';
 
 function MainLayout() {
   return (
@@ -105,10 +105,10 @@ function AppRoutes() {
     init();
   }, [setOnboardingComplete, processStaleWorkouts]);
 
-  // Initialize Gemini when profile is loaded
+  // Initialize OpenAI when profile is loaded
   useEffect(() => {
-    if (profile?.gemini_api_key) {
-      initGemini(profile.gemini_api_key);
+    if (profile?.openai_api_key) {
+      initOpenAI(profile.openai_api_key);
       setUserProfile(profile);
     }
   }, [profile, setUserProfile]);

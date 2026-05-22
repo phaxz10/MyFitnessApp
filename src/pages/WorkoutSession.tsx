@@ -35,7 +35,7 @@ import {
   type WorkoutNotesFormData,
   workoutNotesSchema,
 } from '../schemas/forms';
-import { getExerciseCoaching, isGeminiInitialized } from '../services/gemini';
+import { getExerciseCoaching, isOpenAIInitialized } from '../services/openai';
 import type { AIExerciseCoachingResponse, Exercise } from '../types';
 import { parseLocalTimestamp } from '../utils/date';
 import { formatElapsedTime } from '../utils/formatters';
@@ -232,7 +232,7 @@ export function WorkoutSession() {
       targetRepMax: number,
       targetSets: number,
     ) => {
-      if (!isGeminiInitialized()) return;
+      if (!isOpenAIInitialized()) return;
       if (coachingLoading.has(exerciseId)) return;
       if (exerciseCoaching.has(exerciseId)) return;
 
@@ -283,7 +283,7 @@ export function WorkoutSession() {
 
   // Fetch coaching when exercises load
   useEffect(() => {
-    if (!isGeminiInitialized() || exercisesWithSets.length === 0) return;
+    if (!isOpenAIInitialized() || exercisesWithSets.length === 0) return;
 
     exercisesWithSets.forEach((ex) => {
       const exerciseId = getExerciseId(ex);

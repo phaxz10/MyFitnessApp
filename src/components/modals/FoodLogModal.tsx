@@ -19,8 +19,8 @@ import { type FoodEntryFormData, foodEntrySchema } from '../../schemas/forms';
 import {
   analyzeFoodImage,
   analyzeFoodText,
-  isGeminiInitialized,
-} from '../../services/gemini';
+  isOpenAIInitialized,
+} from '../../services/openai';
 import type { AIFoodItem, MealType } from '../../types';
 import { recalculateMacros } from '../../utils/calculations';
 import { formatDisplayDate } from '../../utils/date';
@@ -218,8 +218,8 @@ export function FoodLogModal() {
       return;
     }
 
-    if (!isGeminiInitialized()) {
-      setError('Please add your Gemini API key in Settings');
+    if (!isOpenAIInitialized()) {
+      setError('Please add your OpenAI API key in Settings');
       return;
     }
 
@@ -333,8 +333,8 @@ export function FoodLogModal() {
       return;
     }
 
-    if (!isGeminiInitialized()) {
-      setError('Please add your Gemini API key in Settings');
+    if (!isOpenAIInitialized()) {
+      setError('Please add your OpenAI API key in Settings');
       return;
     }
 

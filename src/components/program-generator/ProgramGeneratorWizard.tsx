@@ -23,7 +23,7 @@ import {
 import { useAppStore } from '../../hooks/useAppStore';
 import { useProfile } from '../../hooks/useProfile';
 import { useProgramGenerator } from '../../hooks/useProgramGenerator';
-import { initGemini, isGeminiInitialized } from '../../services/gemini';
+import { initOpenAI, isOpenAIInitialized } from '../../services/openai';
 import type {
   AIProgramGeneratorInput,
   EquipmentType,
@@ -78,10 +78,10 @@ export function ProgramGeneratorWizard({
   const [focusAreas, setFocusAreas] = useState<string[]>([]);
   const [injuries, setInjuries] = useState('');
 
-  // Initialize Gemini when profile loads
+  // Initialize OpenAI when profile loads
   useEffect(() => {
-    if (profile?.gemini_api_key && !isGeminiInitialized()) {
-      initGemini(profile.gemini_api_key);
+    if (profile?.openai_api_key && !isOpenAIInitialized()) {
+      initOpenAI(profile.openai_api_key);
     }
   }, [profile]);
 
@@ -751,7 +751,7 @@ export function ProgramGeneratorWizard({
           <Button
             onClick={handleGenerate}
             disabled={
-              !canProceedFromGoals || !isOnline || !isGeminiInitialized()
+              !canProceedFromGoals || !isOnline || !isOpenAIInitialized()
             }
           >
             <Sparkles size={18} className="mr-1" />
@@ -837,7 +837,7 @@ export function ProgramGeneratorWizard({
     );
   }
 
-  if (profile && !profile.gemini_api_key) {
+  if (profile && !profile.openai_api_key) {
     return (
       <Modal
         isOpen={isOpen}
@@ -851,7 +851,7 @@ export function ProgramGeneratorWizard({
             API Key Required
           </h3>
           <p className="text-slate-400 mb-4">
-            Please set up your Gemini API key in Settings to use AI features.
+            Please set up your OpenAI API key in Settings to use AI features.
           </p>
           <Button onClick={() => navigate('/settings')}>Go to Settings</Button>
         </div>

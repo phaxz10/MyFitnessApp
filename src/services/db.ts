@@ -26,7 +26,7 @@ async function initSchema(): Promise<void> {
       protein_target_g INTEGER NOT NULL,
       carbs_target_g INTEGER NOT NULL,
       fat_target_g INTEGER NOT NULL,
-      gemini_api_key TEXT,
+      openai_api_key TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -372,6 +372,15 @@ async function initSchema(): Promise<void> {
     `);
   } catch {
     // Column may already be nullable, ignore
+  }
+
+  // Migration: rename gemini_api_key -> openai_api_key after switching AI provider
+  try {
+    await db.exec(`
+      ALTER TABLE user_profile RENAME COLUMN gemini_api_key TO openai_api_key;
+    `);
+  } catch {
+    // Already renamed or column never existed, ignore
   }
 }
 

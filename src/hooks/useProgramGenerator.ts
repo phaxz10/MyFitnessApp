@@ -7,7 +7,7 @@ import {
   generateWorkoutProgramWithFunctionCalling,
   inferExperienceLevel,
   type StreamlinedProgramResult,
-} from '../services/gemini';
+} from '../services/openai';
 import type {
   AIExerciseResponse,
   AIProgramGeneratorInput,
@@ -562,7 +562,7 @@ export function useProgramGenerator() {
   }, []);
 
   /**
-   * Streamlined program generation using Gemini function calling.
+   * Streamlined program generation using OpenAI function calling.
    * This approach:
    * 1. Optionally infers experience level from workout history
    * 2. Lets AI select/create exercises in one pass

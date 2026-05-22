@@ -21,7 +21,7 @@ import { useAppStore } from '../../hooks/useAppStore';
 import { useProfile } from '../../hooks/useProfile';
 import { useWeeklyReview } from '../../hooks/useWeeklyReview';
 import { useWeight } from '../../hooks/useWeight';
-import { initGemini, reviewWeeklyProgress } from '../../services/gemini';
+import { initOpenAI, reviewWeeklyProgress } from '../../services/openai';
 import type {
   AIWeeklyReviewResponse,
   UserProfile,
@@ -105,8 +105,8 @@ export function WeeklyReviewModal({
         setWeeklyData(data);
 
         // Get AI review if online and has API key
-        if (isOnline && profile.gemini_api_key) {
-          initGemini(profile.gemini_api_key);
+        if (isOnline && profile.openai_api_key) {
+          initOpenAI(profile.openai_api_key);
           const review = await reviewWeeklyProgress(profile, data);
           setAiReview(review);
 

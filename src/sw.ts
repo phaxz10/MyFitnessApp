@@ -12,10 +12,9 @@ declare const self: ServiceWorkerGlobalScope & {
 precacheAndRoute(self.__WB_MANIFEST || []);
 
 registerRoute(
-  ({ url }: { url: URL }) =>
-    url.origin === 'https://generativelanguage.googleapis.com',
+  ({ url }: { url: URL }) => url.origin === 'https://api.openai.com',
   new NetworkFirst({
-    cacheName: 'gemini-api-cache',
+    cacheName: 'openai-api-cache',
     plugins: [
       new CacheableResponsePlugin({ statuses: [0, 200] }),
       new ExpirationPlugin({ maxEntries: 10, maxAgeSeconds: 60 * 60 }),

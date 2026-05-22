@@ -56,7 +56,7 @@ import {
   readBackupFile,
 } from '../services/backup';
 import { resetDatabase } from '../services/db';
-import { calculateTargets, initGemini } from '../services/gemini';
+import { calculateTargets, initOpenAI } from '../services/openai';
 import { calculateAgeFromBirthdate, formatDate } from '../utils/date';
 
 const activityOptions = [
@@ -146,7 +146,7 @@ export function Settings() {
         fat: profile.fat_target_g.toString(),
       });
       apiKeyForm.reset({
-        apiKey: profile.gemini_api_key || '',
+        apiKey: profile.openai_api_key || '',
       });
     }
   }, [profile, profileForm, goalsForm, apiKeyForm]);
@@ -194,7 +194,7 @@ export function Settings() {
   };
 
   const handleRecalculateTargets = async () => {
-    if (!profile || !isOnline || !profile.gemini_api_key) {
+    if (!profile || !isOnline || !profile.openai_api_key) {
       setError('Requires internet connection and API key');
       return;
     }
@@ -202,7 +202,7 @@ export function Settings() {
     setIsLoading(true);
     setError(null);
     try {
-      initGemini(profile.gemini_api_key);
+      initOpenAI(profile.openai_api_key);
       const values = goalsForm.getValues();
       const result = await calculateTargets({
         age: calculateAgeFromBirthdate(profileForm.getValues().birthdate),
@@ -238,9 +238,9 @@ export function Settings() {
     setIsLoading(true);
     setError(null);
     try {
-      await updateProfile({ gemini_api_key: data.apiKey || null });
+      await updateProfile({ openai_api_key: data.apiKey || null });
       if (data.apiKey) {
-        initGemini(data.apiKey);
+        initOpenAI(data.apiKey);
       }
       setSuccess('API key updated');
       setActiveSection(null);
@@ -589,7 +589,7 @@ export function Settings() {
                   variant="secondary"
                   onClick={handleRecalculateTargets}
                   isLoading={isLoading}
-                  disabled={!isOnline || !profile?.gemini_api_key}
+                  disabled={!isOnline || !profile?.openai_api_key}
                 >
                   <RefreshCw size={16} />
                 </Button>
@@ -613,7 +613,7 @@ export function Settings() {
               <Key size={20} className="text-purple-400" />
               <div>
                 <p className="text-white font-medium">AI Settings</p>
-                <p className="text-slate-400 text-sm">Gemini API key</p>
+                <p className="text-slate-400 text-sm">OpenAI API key</p>
               </div>
             </div>
             <ChevronRight
@@ -628,18 +628,18 @@ export function Settings() {
               className="px-4 pb-4 space-y-3 border-t border-slate-700 pt-4"
             >
               <Input
-                label="Gemini API Key"
+                label="OpenAI API Key"
                 type="password"
                 {...apiKeyForm.register('apiKey')}
                 placeholder="Enter your API key"
               />
               <a
-                href="https://makersuite.google.com/app/apikey"
+                href="https://platform.openai.com/api-keys"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-blue-400 text-sm hover:underline"
               >
-                Get your free API key
+                Get your API key
               </a>
               <Button type="submit" isLoading={isLoading} className="w-full">
                 Save API Key

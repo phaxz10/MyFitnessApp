@@ -31,8 +31,8 @@ import {
   findDuplicateExercises,
   generateExerciseDetails,
   generateExerciseDetailsBatch,
-  isGeminiInitialized,
-} from '../services/gemini';
+  isOpenAIInitialized,
+} from '../services/openai';
 import type { AIExerciseResponse, Exercise, ExerciseType } from '../types';
 
 const MUSCLE_GROUPS = [
@@ -144,8 +144,8 @@ export function ExerciseLibrary() {
 
   // Regenerate all exercises - updates descriptions using current AI prompts
   const handleRegenerateAllExercises = useCallback(async () => {
-    if (!isGeminiInitialized()) {
-      alert('Please set up your Gemini API key in Settings');
+    if (!isOpenAIInitialized()) {
+      alert('Please set up your OpenAI API key in Settings');
       return;
     }
 
@@ -312,8 +312,8 @@ export function ExerciseLibrary() {
       alert('Please enter an exercise name first');
       return;
     }
-    if (!isGeminiInitialized()) {
-      alert('Please set up your Gemini API key in Settings');
+    if (!isOpenAIInitialized()) {
+      alert('Please set up your OpenAI API key in Settings');
       return;
     }
     // Single-generate duplicate check
@@ -435,8 +435,8 @@ export function ExerciseLibrary() {
     setBatchExercises((prev) => prev.filter((_, i) => i !== index));
   };
   const handleGenerateBatchDetails = async () => {
-    if (!isGeminiInitialized()) {
-      alert('Please set up your Gemini API key in Settings');
+    if (!isOpenAIInitialized()) {
+      alert('Please set up your OpenAI API key in Settings');
       return;
     }
     const pendingExercises = batchExercises.filter(
@@ -697,7 +697,7 @@ export function ExerciseLibrary() {
                 className="flex-1"
                 error={errors.name?.message}
               />
-              {isGeminiInitialized() && (
+              {isOpenAIInitialized() && (
                 <Button
                   type="button"
                   variant="secondary"
@@ -1039,7 +1039,7 @@ export function ExerciseLibrary() {
                     type="button"
                     className="flex-1"
                     onClick={handleGenerateBatchDetails}
-                    disabled={isBatchGenerating || !isGeminiInitialized()}
+                    disabled={isBatchGenerating || !isOpenAIInitialized()}
                   >
                     {isBatchGenerating ? (
                       <>
@@ -1070,9 +1070,9 @@ export function ExerciseLibrary() {
                   </Button>
                 )}
               </div>
-              {!isGeminiInitialized() && (
+              {!isOpenAIInitialized() && (
                 <p className="text-amber-400 text-sm text-center">
-                  Set up your Gemini API key in Settings to use AI generation
+                  Set up your OpenAI API key in Settings to use AI generation
                 </p>
               )}
             </>
@@ -1127,7 +1127,7 @@ export function ExerciseLibrary() {
                 <Button
                   className="flex-1"
                   onClick={handleRegenerateAllExercises}
-                  disabled={!isGeminiInitialized()}
+                  disabled={!isOpenAIInitialized()}
                 >
                   <RefreshCw size={18} className="mr-2" />
                   Regenerate All

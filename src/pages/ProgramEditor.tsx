@@ -38,10 +38,10 @@ import { useExercises } from '../hooks/useExercises';
 import { useProfile } from '../hooks/useProfile';
 import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
 import {
-  initGemini,
-  isGeminiInitialized,
+  initOpenAI,
+  isOpenAIInitialized,
   optimizeWorkoutProgram,
-} from '../services/gemini';
+} from '../services/openai';
 import type {
   AIProgramOptimizationInput,
   EquipmentType,
@@ -606,15 +606,15 @@ export function ProgramEditor() {
       return;
     }
 
-    // Initialize Gemini if needed
-    if (!isGeminiInitialized()) {
-      if (!profile.gemini_api_key) {
+    // Initialize OpenAI if needed
+    if (!isOpenAIInitialized()) {
+      if (!profile.openai_api_key) {
         setOptimizeError(
-          'Please add your Gemini API key in Settings to use AI features.',
+          'Please add your OpenAI API key in Settings to use AI features.',
         );
         return;
       }
-      initGemini(profile.gemini_api_key);
+      initOpenAI(profile.openai_api_key);
     }
 
     setIsOptimizing(true);
@@ -716,7 +716,7 @@ export function ProgramEditor() {
         },
       };
 
-      // Call the Gemini optimization
+      // Call the OpenAI optimization
       const result = await optimizeWorkoutProgram(optimizationInput);
 
       // Generate superset group IDs for paired exercises

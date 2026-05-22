@@ -10,7 +10,7 @@ export interface UserProfile {
   protein_target_g: number;
   carbs_target_g: number;
   fat_target_g: number;
-  gemini_api_key: string | null;
+  openai_api_key: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -499,7 +499,7 @@ export interface ExperienceLevelInference {
   };
 }
 
-// Function calling types for Gemini
+// Function calling types for OpenAI
 export interface AIFunctionCallResult {
   functionName: string;
   args: Record<string, unknown>;

@@ -1,11 +1,9 @@
-import type { FunctionDeclaration } from '@google/genai';
-import {
-  createPartFromFunctionResponse,
-  FunctionCallingConfigMode,
-  GoogleGenAI,
-  ThinkingLevel,
-  Type,
-} from '@google/genai';
+import OpenAI from 'openai';
+import type {
+  FunctionTool,
+  ResponseInputItem,
+  Tool,
+} from 'openai/resources/responses/responses';
 import {
   ALWAYS_AVAILABLE_EQUIPMENT,
   MUSCLE_GROUPS,
@@ -33,49 +31,51 @@ import type {
 import { calculateAgeFromBirthdate } from '../utils/date';
 
 // ============================================================================
-// FUNCTION DECLARATIONS FOR GEMINI FUNCTION CALLING
+// FUNCTION DECLARATIONS FOR OPENAI FUNCTION CALLING
 // ============================================================================
 
-const createExercisesFunctionDeclaration: FunctionDeclaration = {
+const createExercisesFunctionTool: FunctionTool = {
+  type: 'function',
   name: 'create_exercises',
   description:
     'Create new exercises in the user exercise library. Call this when the program requires exercises that do not exist in the library.',
+  strict: false,
   parameters: {
-    type: Type.OBJECT,
+    type: 'object',
     properties: {
       exercises: {
-        type: Type.ARRAY,
+        type: 'array',
         description: 'List of exercises to create',
         items: {
-          type: Type.OBJECT,
+          type: 'object',
           properties: {
             name: {
-              type: Type.STRING,
+              type: 'string',
               description: 'Standard exercise name',
             },
             description: {
-              type: Type.STRING,
+              type: 'string',
               description:
                 'Step-by-step guide for performing the exercise (3-5 sentences)',
             },
             muscle_groups: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
+              type: 'array',
+              items: { type: 'string' },
               description:
                 'Primary and secondary muscle groups (e.g., ["Chest", "Triceps"])',
             },
             equipment: {
-              type: Type.STRING,
+              type: 'string',
               description: 'Required equipment (or "Bodyweight" if none)',
             },
             exercise_type: {
-              type: Type.STRING,
+              type: 'string',
               enum: ['reps_weight', 'reps_only', 'duration', 'duration_weight'],
               description: 'Type of exercise tracking',
             },
             tips: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
+              type: 'array',
+              items: { type: 'string' },
               description: 'Form cues, safety tips, and common mistakes (4-6)',
             },
           },
@@ -94,25 +94,27 @@ const createExercisesFunctionDeclaration: FunctionDeclaration = {
   },
 };
 
-const selectExercisesFunctionDeclaration: FunctionDeclaration = {
+const selectExercisesFunctionTool: FunctionTool = {
+  type: 'function',
   name: 'select_exercises',
   description:
     'Select exercises from the existing library to use in the program. Always prefer existing exercises over creating new ones.',
+  strict: false,
   parameters: {
-    type: Type.OBJECT,
+    type: 'object',
     properties: {
       selections: {
-        type: Type.ARRAY,
+        type: 'array',
         description: 'List of exercise selections from the library',
         items: {
-          type: Type.OBJECT,
+          type: 'object',
           properties: {
             exercise_name: {
-              type: Type.STRING,
+              type: 'string',
               description: 'Exact name of the exercise from the library',
             },
             reason: {
-              type: Type.STRING,
+              type: 'string',
               description: 'Brief reason for selecting this exercise',
             },
           },
@@ -124,80 +126,82 @@ const selectExercisesFunctionDeclaration: FunctionDeclaration = {
   },
 };
 
-const generateProgramFunctionDeclaration: FunctionDeclaration = {
+const generateProgramFunctionTool: FunctionTool = {
+  type: 'function',
   name: 'generate_program',
   description:
     'Generate a complete workout program with sessions and exercises. Call this after selecting/creating all needed exercises.',
+  strict: false,
   parameters: {
-    type: Type.OBJECT,
+    type: 'object',
     properties: {
       programName: {
-        type: Type.STRING,
+        type: 'string',
         description: 'Descriptive name for the program',
       },
       programDescription: {
-        type: Type.STRING,
+        type: 'string',
         description: '2-3 sentence program overview',
       },
       experienceLevel: {
-        type: Type.STRING,
+        type: 'string',
         enum: ['beginner', 'intermediate', 'advanced'],
         description: 'Inferred or confirmed experience level',
       },
       sessions: {
-        type: Type.ARRAY,
+        type: 'array',
         description: 'List of workout sessions',
         items: {
-          type: Type.OBJECT,
+          type: 'object',
           properties: {
             name: {
-              type: Type.STRING,
+              type: 'string',
               description: 'Session name (e.g., "Push Day", "Upper Body A")',
             },
             dayOfWeek: {
-              type: Type.NUMBER,
+              type: 'number',
               description:
                 'Day of week (0=Sunday through 6=Saturday), or null for flexible',
             },
             sessionTimeMinutes: {
-              type: Type.NUMBER,
+              type: 'number',
               description: 'Estimated session duration',
             },
             exercises: {
-              type: Type.ARRAY,
+              type: 'array',
               items: {
-                type: Type.OBJECT,
+                type: 'object',
                 properties: {
                   name: {
-                    type: Type.STRING,
+                    type: 'string',
                     description:
                       'Exercise name (must match library or created)',
                   },
                   targetSets: {
-                    type: Type.NUMBER,
+                    type: 'number',
                     description: 'Number of sets (typically 2-4)',
                   },
                   targetRepMin: {
-                    type: Type.NUMBER,
+                    type: 'number',
                     description:
                       'Minimum reps (can be 4-30+ depending on exercise type)',
                   },
                   targetRepMax: {
-                    type: Type.NUMBER,
+                    type: 'number',
                     description:
                       'Maximum reps (lateral raises: 15-25, calves: 20-30, compounds: 6-10)',
                   },
                   targetDurationSeconds: {
-                    type: Type.NUMBER,
+                    type: 'number',
                     description: 'For duration-based exercises (planks, holds)',
                   },
                   notes: {
-                    type: Type.STRING,
+                    type: 'string',
                     description:
                       'Form cue, intensity technique (e.g., "Rest-pause: 12 reps + 15 sec + max reps", "Slow 3 sec eccentric", "Drop set on final set")',
                   },
                   supersetWith: {
-                    type: Type.STRING,
+                    type: 'string',
                     description:
                       'Name of exercise to superset with. IMPORTANT: Both exercises must reference each other.',
                   },
@@ -215,11 +219,11 @@ const generateProgramFunctionDeclaration: FunctionDeclaration = {
         },
       },
       weeklyVolumeSummary: {
-        type: Type.OBJECT,
+        type: 'object',
         properties: {
-          totalSets: { type: Type.NUMBER },
+          totalSets: { type: 'number' },
           muscleGroupBreakdown: {
-            type: Type.OBJECT,
+            type: 'object',
             description:
               'Sets per muscle group (e.g., {"Chest": 12, "Back": 14})',
           },
@@ -227,8 +231,8 @@ const generateProgramFunctionDeclaration: FunctionDeclaration = {
         required: ['totalSets', 'muscleGroupBreakdown'],
       },
       recommendations: {
-        type: Type.ARRAY,
-        items: { type: Type.STRING },
+        type: 'array',
+        items: { type: 'string' },
         description: 'Tips for the user about progression, recovery, nutrition',
       },
     },
@@ -243,25 +247,27 @@ const generateProgramFunctionDeclaration: FunctionDeclaration = {
   },
 };
 
-const inferExperienceLevelFunctionDeclaration: FunctionDeclaration = {
+const inferExperienceLevelFunctionTool: FunctionTool = {
+  type: 'function',
   name: 'infer_experience_level',
   description:
     'Infer the user experience level based on their workout history. Call this if experience level is not provided.',
+  strict: false,
   parameters: {
-    type: Type.OBJECT,
+    type: 'object',
     properties: {
       inferredLevel: {
-        type: Type.STRING,
+        type: 'string',
         enum: ['beginner', 'intermediate', 'advanced'],
         description: 'Inferred experience level',
       },
       confidence: {
-        type: Type.STRING,
+        type: 'string',
         enum: ['low', 'medium', 'high'],
         description: 'Confidence in the inference',
       },
       reasoning: {
-        type: Type.STRING,
+        type: 'string',
         description: 'Explanation of why this level was inferred',
       },
     },
@@ -269,19 +275,25 @@ const inferExperienceLevelFunctionDeclaration: FunctionDeclaration = {
   },
 };
 
-let ai: GoogleGenAI | null = null;
+let client: OpenAI | null = null;
 
-const MODEL = 'gemini-3-flash-preview';
+const MODEL = 'gpt-4o-mini';
+const WEB_SEARCH_TOOL: Tool = { type: 'web_search' };
 
-export function initGemini(apiKey: string): void {
-  ai = new GoogleGenAI({ apiKey });
+export function initOpenAI(apiKey: string): void {
+  client = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
 }
 
-export function isGeminiInitialized(): boolean {
-  return ai !== null;
+export function isOpenAIInitialized(): boolean {
+  return client !== null;
 }
 
-// Helper to clean JSON response from AI
+function requireClient(): OpenAI {
+  if (!client) throw new Error('OpenAI API not initialized');
+  return client;
+}
+
+// Strip code fences if the model wraps JSON in markdown despite instructions
 function cleanJsonResponse(text: string): string {
   return text
     .replace(/```json\n?/g, '')
@@ -293,7 +305,7 @@ function cleanJsonResponse(text: string): string {
 export async function analyzeFoodText(
   foodDescription: string,
 ): Promise<AIFoodAnalysisResponse> {
-  if (!ai) throw new Error('Gemini API not initialized');
+  const openai = requireClient();
 
   const prompt = `Analyze the following food description and look up on the internet for nutritional information.
 Return JSON format only, no markdown code blocks.
@@ -320,21 +332,16 @@ Return format:
   }
 }`;
 
-  const response = await ai.models.generateContent({
+  const response = await openai.responses.create({
     model: MODEL,
-    contents: prompt,
-    config: {
-      temperature: 1,
-      tools: [{ googleSearch: {} }],
-      thinkingConfig: {
-        thinkingLevel: ThinkingLevel.LOW,
-        includeThoughts: false,
-      },
-    },
+    input: prompt,
+    tools: [WEB_SEARCH_TOOL],
+    temperature: 1,
   });
 
-  const text = response.text ?? '';
-  return JSON.parse(cleanJsonResponse(text)) as AIFoodAnalysisResponse;
+  return JSON.parse(
+    cleanJsonResponse(response.output_text ?? ''),
+  ) as AIFoodAnalysisResponse;
 }
 
 // Analyze food from image with optional text description
@@ -343,9 +350,9 @@ export async function analyzeFoodImage(
   mimeType: string,
   textDescription?: string,
 ): Promise<AIFoodAnalysisResponse> {
-  if (!ai) throw new Error('Gemini API not initialized');
+  const openai = requireClient();
 
-  const prompt = `Analyze this food image and use the internet to search for the nutrient values, if not found the exact values estimate nutritional information. please throw error if the image is not food.
+  const prompt = `Analyze this food image and estimate nutritional information. please throw error if the image is not food.
 ${textDescription ? `Additional context from user: ${textDescription}` : ''}
 
 All portions should be estimated in grams.
@@ -370,29 +377,27 @@ Return JSON format only, no markdown code blocks:
   }
 }`;
 
-  const response = await ai.models.generateContent({
+  const response = await openai.responses.create({
     model: MODEL,
-    contents: [
-      { text: prompt },
+    input: [
       {
-        inlineData: {
-          mimeType,
-          data: imageBase64,
-        },
+        role: 'user',
+        content: [
+          { type: 'input_text', text: prompt },
+          {
+            type: 'input_image',
+            image_url: `data:${mimeType};base64,${imageBase64}`,
+            detail: 'auto',
+          },
+        ],
       },
     ],
-    config: {
-      temperature: 1,
-      tools: [{ googleSearch: {} }],
-      thinkingConfig: {
-        thinkingLevel: ThinkingLevel.LOW,
-        includeThoughts: false,
-      },
-    },
+    temperature: 1,
   });
 
-  const text = response.text ?? '';
-  return JSON.parse(cleanJsonResponse(text)) as AIFoodAnalysisResponse;
+  return JSON.parse(
+    cleanJsonResponse(response.output_text ?? ''),
+  ) as AIFoodAnalysisResponse;
 }
 
 function buildExerciseDetailsPrompt(exerciseNames: string[]): string {
@@ -451,48 +456,38 @@ Guidelines:
 export async function generateExerciseDetails(
   exerciseName: string,
 ): Promise<AIExerciseResponse> {
-  if (!ai) throw new Error('Gemini API not initialized');
+  const openai = requireClient();
 
   const prompt = buildExerciseDetailsPrompt([exerciseName]);
 
-  const response = await ai.models.generateContent({
+  const response = await openai.responses.create({
     model: MODEL,
-    contents: prompt,
-    config: {
-      tools: [{ googleSearch: {} }],
-      thinkingConfig: {
-        thinkingLevel: ThinkingLevel.HIGH,
-        includeThoughts: false,
-      },
-    },
+    input: prompt,
+    tools: [WEB_SEARCH_TOOL],
   });
 
-  const text = response.text ?? '';
-  return JSON.parse(cleanJsonResponse(text)) as AIExerciseResponse;
+  return JSON.parse(
+    cleanJsonResponse(response.output_text ?? ''),
+  ) as AIExerciseResponse;
 }
 
 // Generate details for multiple exercises at once
 export async function generateExerciseDetailsBatch(
   exerciseNames: string[],
 ): Promise<AIExerciseResponse[]> {
-  if (!ai) throw new Error('Gemini API not initialized');
+  const openai = requireClient();
 
   const prompt = buildExerciseDetailsPrompt(exerciseNames);
 
-  const response = await ai.models.generateContent({
+  const response = await openai.responses.create({
     model: MODEL,
-    contents: prompt,
-    config: {
-      tools: [{ googleSearch: {} }],
-      thinkingConfig: {
-        thinkingLevel: ThinkingLevel.HIGH,
-        includeThoughts: false,
-      },
-    },
+    input: prompt,
+    tools: [WEB_SEARCH_TOOL],
   });
 
-  const text = response.text ?? '';
-  return JSON.parse(cleanJsonResponse(text)) as AIExerciseResponse[];
+  return JSON.parse(
+    cleanJsonResponse(response.output_text ?? ''),
+  ) as AIExerciseResponse[];
 }
 
 // Check for potential duplicate exercises using AI
@@ -500,7 +495,7 @@ export async function findDuplicateExercises(
   candidateName: string,
   existingExercises: Exercise[],
 ): Promise<Exercise[]> {
-  if (!ai) throw new Error('Gemini API not initialized');
+  const openai = requireClient();
 
   if (existingExercises.length === 0) return [];
 
@@ -529,12 +524,12 @@ Return JSON ONLY (no markdown) in this format:
   ]
 }`;
 
-  const response = await ai.models.generateContent({
+  const response = await openai.responses.create({
     model: MODEL,
-    contents: prompt,
+    input: prompt,
   });
 
-  const text = response.text ?? '';
+  const text = response.output_text ?? '';
 
   try {
     const parsed = JSON.parse(cleanJsonResponse(text)) as {
@@ -564,7 +559,7 @@ export async function calculateTargets(profile: {
   activity_level: 'sedentary' | 'light' | 'moderate' | 'active';
   goal: 'bulk' | 'lean_bulk' | 'recomp' | 'cut' | 'maintain';
 }): Promise<AITargetResponse> {
-  if (!ai) throw new Error('Gemini API not initialized');
+  const openai = requireClient();
 
   const prompt = `Calculate daily calorie and macro targets for:
 
@@ -590,20 +585,15 @@ Return JSON format only, no markdown code blocks:
   "reasoning": "brief explanation of calculation"
 }`;
 
-  const response = await ai.models.generateContent({
+  const response = await openai.responses.create({
     model: MODEL,
-    contents: prompt,
-    config: {
-      tools: [{ googleSearch: {} }],
-      thinkingConfig: {
-        thinkingLevel: ThinkingLevel.MEDIUM,
-        includeThoughts: false,
-      },
-    },
+    input: prompt,
+    tools: [WEB_SEARCH_TOOL],
   });
 
-  const text = response.text ?? '';
-  return JSON.parse(cleanJsonResponse(text)) as AITargetResponse;
+  return JSON.parse(
+    cleanJsonResponse(response.output_text ?? ''),
+  ) as AITargetResponse;
 }
 
 // Review goals and progress
@@ -614,7 +604,7 @@ export async function reviewGoals(
   daysLogged: number,
   adherencePct: number,
 ): Promise<AIGoalReviewResponse> {
-  if (!ai) throw new Error('Gemini API not initialized');
+  const openai = requireClient();
 
   const startWeight = weightHistory.length > 0 ? weightHistory[0].weight_kg : 0;
   const currentWeight =
@@ -679,20 +669,15 @@ Return JSON format only, no markdown code blocks:
   "program_suggestions": "any workout program advice"
 }`;
 
-  const response = await ai.models.generateContent({
+  const response = await openai.responses.create({
     model: MODEL,
-    contents: prompt,
-    config: {
-      tools: [{ googleSearch: {} }],
-      thinkingConfig: {
-        thinkingLevel: ThinkingLevel.HIGH,
-        includeThoughts: false,
-      },
-    },
+    input: prompt,
+    tools: [WEB_SEARCH_TOOL],
   });
 
-  const text = response.text ?? '';
-  return JSON.parse(cleanJsonResponse(text)) as AIGoalReviewResponse;
+  return JSON.parse(
+    cleanJsonResponse(response.output_text ?? ''),
+  ) as AIGoalReviewResponse;
 }
 
 // Weekly progress review for Monday check-in
@@ -700,7 +685,7 @@ export async function reviewWeeklyProgress(
   profile: UserProfile,
   weeklyData: WeeklyReviewData,
 ): Promise<AIWeeklyReviewResponse> {
-  if (!ai) throw new Error('Gemini API not initialized');
+  const openai = requireClient();
 
   const weightDataSummary = weeklyData.weightLogs
     .map(
@@ -709,11 +694,10 @@ export async function reviewWeeklyProgress(
     )
     .join('\n');
 
-  // Calculate expected vs actual weight change for metabolic response analysis
+  // 7700 kcal ≈ 1kg of body weight — used to estimate expected vs actual change
   const dailyDeficitOrSurplus =
     weeklyData.avgDailyCalories - profile.calorie_target;
   const weeklyCalorieDifference = dailyDeficitOrSurplus * 7;
-  // 7700 kcal ≈ 1kg of body weight
   const expectedWeeklyWeightChange = weeklyCalorieDifference / 7700;
 
   const prompt = `You are a fitness coach conducting a weekly check-in review. Analyze the user's past week of progress and provide actionable recommendations.
@@ -818,20 +802,15 @@ Guidelines:
 - If data is limited, acknowledge uncertainty but note that consistent logging helps identify metabolic patterns
 - Use builtwithscience.com publicly available data as reference where applicable`;
 
-  const response = await ai.models.generateContent({
+  const response = await openai.responses.create({
     model: MODEL,
-    contents: prompt,
-    config: {
-      tools: [{ googleSearch: {} }],
-      thinkingConfig: {
-        thinkingLevel: ThinkingLevel.HIGH,
-        includeThoughts: false,
-      },
-    },
+    input: prompt,
+    tools: [WEB_SEARCH_TOOL],
   });
 
-  const text = response.text ?? '';
-  return JSON.parse(cleanJsonResponse(text)) as AIWeeklyReviewResponse;
+  return JSON.parse(
+    cleanJsonResponse(response.output_text ?? ''),
+  ) as AIWeeklyReviewResponse;
 }
 
 // Generate a complete workout program based on user preferences
@@ -839,15 +818,13 @@ export async function generateWorkoutProgram(
   input: AIProgramGeneratorInput,
   existingExercises: Exercise[],
 ): Promise<AIProgramGeneratorResponse> {
-  if (!ai) throw new Error('Gemini API not initialized');
+  const openai = requireClient();
 
-  // Combine user equipment with always-available equipment
   const allEquipment = [
     ...ALWAYS_AVAILABLE_EQUIPMENT,
     ...input.availableEquipment,
   ];
 
-  // Build existing exercises reference for the AI
   const existingExercisesList = existingExercises
     .slice(0, 100)
     .map((ex) => `- ${ex.name} (${ex.muscle_groups}, ${ex.equipment})`)
@@ -974,7 +951,7 @@ MALE-SPECIFIC CONSIDERATIONS:
 
 1. TRAINING SPLIT SELECTION (based on frequency):
    Research shows training each muscle 2x/week produces 38% more growth than 1x/week.
-   
+
    ${
      input.trainingDaysPerWeek <= 3
        ? `With ${input.trainingDaysPerWeek} days: Use FULL BODY split
@@ -1040,19 +1017,19 @@ MALE-SPECIFIC CONSIDERATIONS:
    - Save abs/core for end of session
 
 5. REP RANGES - EXERCISE-SPECIFIC GUIDELINES (BuiltWithScience evidence-based):
-   
+
    === COMPOUND MOVEMENTS ===
    Heavy Compounds (Squat, Deadlift, Bench Press, Overhead Press, Rows):
    - Strength focus: 4-6 reps (heavier loads, longer rest 2-3 min)
    - Hypertrophy focus: 6-10 reps (moderate loads, 90-120 sec rest)
    - Never exceed 12 reps on these - use lighter variations instead
-   
+
    === ISOLATION MOVEMENTS - STANDARD ===
    Biceps (Curls): 8-12 reps (peak contraction focus)
    Triceps (Pushdowns, Extensions): 10-15 reps (constant tension)
    Shoulders (Lateral Raises): 12-20 reps (lighter weight, higher reps for side delts)
    Chest Flyes: 10-15 reps (stretch emphasis, controlled eccentric)
-   
+
    === HIGH REP EXERCISES (15-30+ reps) ===
    These exercises benefit from higher rep ranges for metabolic stress and pump:
    - Lateral Raises: 15-25 reps (side delts respond well to high reps)
@@ -1063,7 +1040,7 @@ MALE-SPECIFIC CONSIDERATIONS:
    - Leg Curls (finisher): 15-20 reps
    - Cable Crunches / Ab work: 15-25 reps
    - Band Pull-Aparts: 20-30 reps (prehab/warmup)
-   
+
    === REST-PAUSE & INTENSITY TECHNIQUES ===
    For advanced trainees (${input.experienceLevel === 'advanced' ? 'APPLY THESE' : 'use sparingly'}):
    - Rest-Pause Sets: Do 8-12 reps to failure, rest 15-20 sec, continue for 3-5 more reps
@@ -1073,7 +1050,7 @@ MALE-SPECIFIC CONSIDERATIONS:
      Best for: Isolation exercises at end of workout
    - Drop Sets: Only on final set of isolation exercises
      Best for: Bicep curls, lateral raises, leg extensions
-   
+
    === GOAL-SPECIFIC MODIFICATIONS ===
    ${
      input.goal === 'bulk' || input.goal === 'lean_bulk'
@@ -1136,67 +1113,67 @@ MALE-SPECIFIC CONSIDERATIONS:
    ${input.trainingDaysPerWeek >= 5 ? `- With ${input.trainingDaysPerWeek} days: Push/Pull/Legs/Push/Pull or similar rotation` : ''}
 
 7. SPECIFIC EXERCISE RECOMMENDATIONS BY MUSCLE (with optimal rep ranges):
-   
+
    CHEST:
    - Incline Press: 6-10 reps (upper chest, strength focus)
    - Flat Press (BB/DB): 6-10 reps (overall mass)
    - Dumbbell Flyes: 10-15 reps (stretch, controlled)
    - Cable Flyes: 12-15 reps (constant tension)
    - Dips: 8-12 reps (lower chest, triceps)
-   
+
    BACK:
    - Pull-ups/Lat Pulldowns: 6-12 reps (width)
    - Barbell/Dumbbell Rows: 6-10 reps (thickness)
    - Cable Rows: 10-12 reps (squeeze focus)
    - Face Pulls: 15-25 reps (rear delts, posture)
    - Pullovers: 10-15 reps (stretch emphasis)
-   
+
    SHOULDERS:
    - Overhead Press: 6-10 reps (strength, front delts)
    - Lateral Raises: 15-20 reps (side delts - HIGH REPS WORK BEST)
    - Cable Lateral Raises: 12-20 reps (constant tension)
    - Rear Delt Flyes: 15-25 reps (often undertrained)
    - Upright Rows (wide grip): 10-15 reps
-   
+
    QUADS:
    - Squats (any variation): 5-10 reps (compound strength)
    - Leg Press: 8-15 reps (volume)
    - Lunges/Split Squats: 8-12 reps per leg
    - Leg Extensions: 12-20 reps (finisher, metabolic)
    - Sissy Squats: 10-15 reps (stretch emphasis)
-   
+
    HAMSTRINGS:
    - Romanian Deadlifts: 8-12 reps (hip hinge, stretch)
    - Leg Curls (lying/seated): 10-15 reps (knee flexion)
    - Good Mornings: 8-12 reps
    - Nordic Curls: 5-10 reps (advanced, bodyweight)
-   
+
    GLUTES:
    - Hip Thrusts: 8-15 reps (primary glute builder)
    - Bulgarian Split Squats: 8-12 reps per leg
    - Cable Pull-throughs: 12-15 reps
    - Glute Bridges: 15-20 reps (activation/finisher)
-   
+
    BICEPS:
    - Barbell Curls: 8-12 reps (mass builder)
    - Dumbbell Curls: 10-12 reps (peak contraction)
    - Incline Curls: 10-12 reps (stretch position)
    - Hammer Curls: 10-12 reps (brachialis)
    - Cable Curls: 12-15 reps (constant tension)
-   
+
    TRICEPS:
    - Close-Grip Bench: 6-10 reps (compound, medial/lateral)
    - Overhead Extensions: 10-15 reps (long head stretch)
    - Pushdowns: 12-15 reps (lateral head)
    - Skull Crushers: 8-12 reps
    - Dips: 8-12 reps (compound)
-   
+
    CALVES:
    - Standing Calf Raises: 15-25 reps (gastrocnemius)
    - Seated Calf Raises: 15-25 reps (soleus - SLOW eccentric)
    - Single-Leg Calf Raises: 12-20 reps per leg
    Note: Calves need high reps AND slow eccentrics (2-3 sec lowering)
-   
+
    CORE:
    - Planks: 30-60 seconds (isometric)
    - Cable Crunches: 15-25 reps
@@ -1269,26 +1246,21 @@ CRITICAL RULES:
 - If possible, prioritize builtwithscience.com publicly available routines to align with evidence-based practices
 - Infer "experienceLevel" from the exercise selection, volume, and superset use; if input.experienceLevel seems mismatched, return the best-fit level`;
 
-  const response = await ai.models.generateContent({
+  const response = await openai.responses.create({
     model: MODEL,
-    contents: prompt,
-    config: {
-      tools: [{ googleSearch: {} }],
-      thinkingConfig: {
-        thinkingLevel: ThinkingLevel.HIGH,
-        includeThoughts: false,
-      },
-    },
+    input: prompt,
+    tools: [WEB_SEARCH_TOOL],
   });
 
-  const text = response.text ?? '';
-  return JSON.parse(cleanJsonResponse(text)) as AIProgramGeneratorResponse;
+  return JSON.parse(
+    cleanJsonResponse(response.output_text ?? ''),
+  ) as AIProgramGeneratorResponse;
 }
 
 export async function optimizeWorkoutProgram(
   input: AIProgramOptimizationInput,
 ): Promise<AIProgramGeneratorResponse> {
-  if (!ai) throw new Error('Gemini API not initialized');
+  const openai = requireClient();
 
   const formattedProgram = input.program.sessions
     .map((session) => {
@@ -1405,20 +1377,15 @@ Return JSON only (no markdown):
   "recommendations": ["string"]
 }`;
 
-  const response = await ai.models.generateContent({
+  const response = await openai.responses.create({
     model: MODEL,
-    contents: prompt,
-    config: {
-      tools: [{ googleSearch: {} }],
-      thinkingConfig: {
-        thinkingLevel: ThinkingLevel.HIGH,
-        includeThoughts: false,
-      },
-    },
+    input: prompt,
+    tools: [WEB_SEARCH_TOOL],
   });
 
-  const text = response.text ?? '';
-  return JSON.parse(cleanJsonResponse(text)) as AIProgramGeneratorResponse;
+  return JSON.parse(
+    cleanJsonResponse(response.output_text ?? ''),
+  ) as AIProgramGeneratorResponse;
 }
 
 // Get AI coaching recommendations for exercise progression
@@ -1430,11 +1397,10 @@ export async function getExerciseCoaching(
   targetSets: number,
   exerciseNotes: ExerciseNote[] = [],
 ): Promise<AIExerciseCoachingResponse> {
-  if (!ai) throw new Error('Gemini API not initialized');
+  const openai = requireClient();
 
-  // Format history for the prompt (weights stored in kg but user uses lbs for display)
   const historyFormatted = exerciseHistory
-    .slice(-5) // Last 5 sessions
+    .slice(-5)
     .map((session) => {
       const setsStr = session.sets
         .map((s, i) => `Set ${i + 1}: ${s.weight_kg ?? 0}lbs × ${s.reps ?? 0}`)
@@ -1443,7 +1409,6 @@ export async function getExerciseCoaching(
     })
     .join('\n');
 
-  // Get the most recent session for baseline
   const lastSession = exerciseHistory[exerciseHistory.length - 1];
   const lastSets = lastSession?.sets || [];
   const notesSummary = exerciseNotes.length
@@ -1478,7 +1443,7 @@ ANALYSIS REQUIRED:
 1. Assess the overall trend: Is the athlete progressing, plateauing, or regressing?
 2. For EACH set (up to ${targetSets} sets), recommend:
    - Weight direction: increase, maintain, or decrease
-   - Rep direction: increase, maintain, or decrease  
+   - Rep direction: increase, maintain, or decrease
    - Suggested weight (in lbs)
    - Suggested reps
 
@@ -1507,20 +1472,15 @@ RULES:
 - Weight increments should be practical: 5lb for upper body, 5-10lb for lower body
 - Use builtwithscience.com publicly available data as reference where applicable`;
 
-  const response = await ai.models.generateContent({
+  const response = await openai.responses.create({
     model: MODEL,
-    contents: prompt,
-    config: {
-      tools: [{ googleSearch: {} }],
-      thinkingConfig: {
-        thinkingLevel: ThinkingLevel.LOW,
-        includeThoughts: false,
-      },
-    },
+    input: prompt,
+    tools: [WEB_SEARCH_TOOL],
   });
 
-  const text = response.text ?? '';
-  return JSON.parse(cleanJsonResponse(text)) as AIExerciseCoachingResponse;
+  return JSON.parse(
+    cleanJsonResponse(response.output_text ?? ''),
+  ) as AIExerciseCoachingResponse;
 }
 
 // ============================================================================
@@ -1535,28 +1495,22 @@ export interface StreamlinedProgramResult {
 }
 
 /**
- * Generates a workout program using Gemini function calling.
- * This streamlined approach lets the AI:
- * 1. Infer experience level from workout history (if not provided)
- * 2. Select exercises from the existing library
- * 3. Create new exercises as needed
- * 4. Generate the complete program with proper supersets
- *
- * The AI orchestrates the entire flow in a single conversation.
+ * Generates a workout program using OpenAI function calling.
+ * The AI orchestrates: experience inference (if needed), exercise selection
+ * from the library, creation of any missing exercises, and final program
+ * assembly — all in a single Responses API conversation.
  */
 export async function generateWorkoutProgramWithFunctionCalling(
   input: AIProgramGeneratorInputV2,
   existingExercises: Exercise[],
 ): Promise<StreamlinedProgramResult> {
-  if (!ai) throw new Error('Gemini API not initialized');
+  const openai = requireClient();
 
-  // Combine user equipment with always-available equipment
   const allEquipment = [
     ...ALWAYS_AVAILABLE_EQUIPMENT,
     ...input.availableEquipment,
   ];
 
-  // Build existing exercises reference for the AI
   const existingExercisesList = existingExercises
     .slice(0, 150)
     .map(
@@ -1578,7 +1532,6 @@ export async function generateWorkoutProgramWithFunctionCalling(
       ? 'Choose the most appropriate training split based on the frequency'
       : `Use a ${input.preferredTrainingSplit?.replace(/_/g, ' ')} split`;
 
-  // Build experience context
   let experienceContext = '';
   if (input.experienceLevel) {
     experienceContext = `Experience Level: ${input.experienceLevel} (user-provided)`;
@@ -1732,67 +1685,54 @@ INSTRUCTIONS:
 
 Remember: ALWAYS pair supersets bidirectionally. If Bicep Curls superset with Tricep Pushdowns, BOTH exercises must reference each other.`;
 
-  // Define function tools
-  const tools = [
-    {
-      functionDeclarations: [
-        inferExperienceLevelFunctionDeclaration,
-        selectExercisesFunctionDeclaration,
-        createExercisesFunctionDeclaration,
-        generateProgramFunctionDeclaration,
-      ],
-    },
+  const tools: Tool[] = [
+    inferExperienceLevelFunctionTool,
+    selectExercisesFunctionTool,
+    createExercisesFunctionTool,
+    generateProgramFunctionTool,
   ];
 
-  // Result collectors
   let inferredExperienceLevel: ExperienceLevelInference | undefined;
   const selectedExercises: { name: string; reason?: string }[] = [];
   const exercisesToCreate: AIExerciseResponse[] = [];
   let program: AIProgramGeneratorResponse | null = null;
 
-  // Start conversation with function calling
-  const chat = ai.chats.create({
-    model: MODEL,
-    config: {
-      systemInstruction: systemPrompt,
-      tools,
-      toolConfig: {
-        functionCallingConfig: {
-          mode: FunctionCallingConfigMode.AUTO,
-        },
-      },
-      thinkingConfig: {
-        thinkingLevel: ThinkingLevel.HIGH,
-        includeThoughts: false,
-      },
-    },
-  });
+  const conversation: ResponseInputItem[] = [
+    { role: 'user', content: userPrompt },
+  ];
 
-  let response = await chat.sendMessage({ message: userPrompt });
-
-  // Process function calls in a loop
   const maxIterations = 10;
-  let iterations = 0;
 
-  while (iterations < maxIterations) {
-    iterations++;
+  for (let i = 0; i < maxIterations; i++) {
+    const response = await openai.responses.create({
+      model: MODEL,
+      instructions: systemPrompt,
+      input: conversation,
+      tools,
+      tool_choice: 'auto',
+    });
 
-    // Check if we have function calls to process
-    const functionCalls = response.functionCalls;
-    if (!functionCalls || functionCalls.length === 0) {
-      // No more function calls, check if we got a final text response
+    const functionCalls = response.output.filter(
+      (item): item is Extract<typeof item, { type: 'function_call' }> =>
+        item.type === 'function_call',
+    );
+
+    if (functionCalls.length === 0) {
       break;
     }
 
-    // Process each function call and build function response parts
-    const functionResponseParts: ReturnType<
-      typeof createPartFromFunctionResponse
-    >[] = [];
+    // Echo the model's function calls into the conversation, then provide outputs
+    for (const call of functionCalls) {
+      conversation.push(call);
+    }
 
     for (const call of functionCalls) {
-      const functionName = call.name ?? 'unknown';
-      const callId = call.id ?? `call_${iterations}_${functionName}`;
-      const args = call.args as Record<string, unknown>;
+      const functionName = call.name;
+      const args = JSON.parse(call.arguments || '{}') as Record<
+        string,
+        unknown
+      >;
+      let resultText = '';
 
       switch (functionName) {
         case 'infer_experience_level': {
@@ -1806,14 +1746,10 @@ Remember: ALWAYS pair supersets bidirectionally. If Bicep Curls superset with Tr
                 input.workoutHistory?.avgSetsPerSession || 0,
               exerciseVariety: input.workoutHistory?.topExercises.length || 0,
               trainingConsistencyWeeks: input.workoutHistory?.totalWeeks || 0,
-              hasProgressiveOverload: false, // Would need more data
+              hasProgressiveOverload: false,
             },
           };
-          functionResponseParts.push(
-            createPartFromFunctionResponse(callId, functionName, {
-              result: `Experience level inferred as ${args.inferredLevel}. Proceed with program generation.`,
-            }),
-          );
+          resultText = `Experience level inferred as ${args.inferredLevel}. Proceed with program generation.`;
           break;
         }
 
@@ -1828,11 +1764,7 @@ Remember: ALWAYS pair supersets bidirectionally. If Bicep Curls superset with Tr
               reason: sel.reason,
             });
           }
-          functionResponseParts.push(
-            createPartFromFunctionResponse(callId, functionName, {
-              result: `Selected ${selections.length} exercises from library: ${selections.map((s) => s.exercise_name).join(', ')}`,
-            }),
-          );
+          resultText = `Selected ${selections.length} exercises from library: ${selections.map((s) => s.exercise_name).join(', ')}`;
           break;
         }
 
@@ -1841,11 +1773,7 @@ Remember: ALWAYS pair supersets bidirectionally. If Bicep Curls superset with Tr
           for (const ex of exercises) {
             exercisesToCreate.push(ex);
           }
-          functionResponseParts.push(
-            createPartFromFunctionResponse(callId, functionName, {
-              result: `Queued ${exercises.length} new exercises for creation: ${exercises.map((e) => e.name).join(', ')}`,
-            }),
-          );
+          resultText = `Queued ${exercises.length} new exercises for creation: ${exercises.map((e) => e.name).join(', ')}`;
           break;
         }
 
@@ -1888,30 +1816,28 @@ Remember: ALWAYS pair supersets bidirectionally. If Bicep Curls superset with Tr
             recommendations: args.recommendations as string[],
             experienceLevel: args.experienceLevel as ExperienceLevel,
           };
-          functionResponseParts.push(
-            createPartFromFunctionResponse(callId, functionName, {
-              result: `Program "${args.programName}" generated successfully with ${(args.sessions as unknown[]).length} sessions.`,
-            }),
-          );
+          resultText = `Program "${args.programName}" generated successfully with ${(args.sessions as unknown[]).length} sessions.`;
           break;
         }
 
         default:
-          functionResponseParts.push(
-            createPartFromFunctionResponse(callId, functionName, {
-              result: `Unknown function: ${functionName}`,
-            }),
-          );
+          resultText = `Unknown function: ${functionName}`;
       }
+
+      conversation.push({
+        type: 'function_call_output',
+        call_id: call.call_id,
+        output: JSON.stringify({ result: resultText }),
+      });
     }
 
-    // Send function results back to continue the conversation
-    response = await chat.sendMessage({
-      message: functionResponseParts,
-    });
+    // If the model already produced the final program, we can stop now —
+    // no need to round-trip another turn just to hear "done."
+    if (program) {
+      break;
+    }
   }
 
-  // Validate we got a program
   if (!program) {
     throw new Error('AI did not generate a program. Please try again.');
   }
@@ -1936,9 +1862,8 @@ export async function inferExperienceLevel(workoutHistory: {
   topExercises: string[];
   avgWeightProgression?: number;
 }): Promise<ExperienceLevelInference> {
-  if (!ai) throw new Error('Gemini API not initialized');
+  const openai = requireClient();
 
-  // Safely convert values to numbers and format them
   const totalWorkouts = Number(workoutHistory.totalWorkouts) || 0;
   const totalWeeks = Number(workoutHistory.totalWeeks) || 0;
   const avgExercises = Number(workoutHistory.avgExercisesPerSession) || 0;
@@ -1964,14 +1889,14 @@ EXPERIENCE LEVEL CRITERIA:
   * Simple exercise selection, mostly compounds
   * Lower volume (< 15 sets per session on average)
   * Rarely uses supersets
-  
+
 - INTERMEDIATE (1-3 years consistent training):
   * 50-200 total workouts AND 12-36 weeks training
   * Mix of compounds and isolation exercises
   * Moderate volume (15-25 sets per session)
   * Occasionally uses supersets
   * Shows exercise variety
-  
+
 - ADVANCED (3+ years consistent training):
   * > 200 total workouts AND > 36 weeks training
   * Diverse exercise selection with targeted isolation work
@@ -1993,17 +1918,12 @@ Return JSON only, no markdown:
   }
 }`;
 
-  const response = await ai.models.generateContent({
+  const response = await openai.responses.create({
     model: MODEL,
-    contents: prompt,
-    config: {
-      thinkingConfig: {
-        thinkingLevel: ThinkingLevel.LOW,
-        includeThoughts: false,
-      },
-    },
+    input: prompt,
   });
 
-  const text = response.text ?? '';
-  return JSON.parse(cleanJsonResponse(text)) as ExperienceLevelInference;
+  return JSON.parse(
+    cleanJsonResponse(response.output_text ?? ''),
+  ) as ExperienceLevelInference;
 }

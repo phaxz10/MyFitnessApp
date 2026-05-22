@@ -10,7 +10,7 @@ import { useProfile } from '../hooks/useProfile';
 import { useWeight } from '../hooks/useWeight';
 import { type OnboardingFormData, onboardingSchema } from '../schemas/forms';
 import { importData, readBackupFile } from '../services/backup';
-import { calculateTargets, initGemini } from '../services/gemini';
+import { calculateTargets, initOpenAI } from '../services/openai';
 import { calculateAgeFromBirthdate, formatDate } from '../utils/date';
 
 type Step =
@@ -129,7 +129,7 @@ export function Onboarding() {
     const values = getValues();
     try {
       if (values.apiKey) {
-        initGemini(values.apiKey);
+        initOpenAI(values.apiKey);
         const result = await calculateTargets({
           age: calculateAgeFromBirthdate(values.birthdate),
           gender: values.gender,
@@ -204,7 +204,7 @@ export function Onboarding() {
         protein_target_g: values.targets.protein,
         carbs_target_g: values.targets.carbs,
         fat_target_g: values.targets.fat,
-        gemini_api_key: values.apiKey || null,
+        openai_api_key: values.apiKey || null,
       });
 
       // Add initial weight log
@@ -462,22 +462,22 @@ export function Onboarding() {
           <div>
             <h2 className="text-2xl font-bold text-white mb-6">AI Setup</h2>
             <p className="text-slate-400 mb-4">
-              Enter your Gemini API key to enable AI features like food analysis
+              Enter your OpenAI API key to enable AI features like food analysis
               and smart recommendations.
             </p>
             <Input
-              label="Gemini API Key"
+              label="OpenAI API Key"
               type="password"
               {...register('apiKey')}
               placeholder="Enter your API key"
             />
             <a
-              href="https://makersuite.google.com/app/apikey"
+              href="https://platform.openai.com/api-keys"
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-400 text-sm hover:underline mt-2 inline-block"
             >
-              Get your free API key
+              Get your API key
             </a>
             <p className="text-slate-500 text-sm mt-4">
               You can skip this and add it later in Settings.

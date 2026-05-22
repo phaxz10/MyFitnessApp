@@ -15,7 +15,7 @@ import { mealTypes } from '../constants/options';
 import { useAppStore } from '../hooks/useAppStore';
 import { useCalories } from '../hooks/useCalories';
 import { type MealScannerFormData, mealScannerSchema } from '../schemas/forms';
-import { analyzeFoodImage, isGeminiInitialized } from '../services/gemini';
+import { analyzeFoodImage, isOpenAIInitialized } from '../services/openai';
 import type { AIFoodItem } from '../types';
 import { recalculateMacros } from '../utils/calculations';
 import { formatDate } from '../utils/date';
@@ -208,8 +208,8 @@ export function MealScanner() {
       return;
     }
 
-    if (!isGeminiInitialized()) {
-      setError('Please add your Gemini API key in Settings');
+    if (!isOpenAIInitialized()) {
+      setError('Please add your OpenAI API key in Settings');
       return;
     }
 

@@ -74,6 +74,14 @@ A domain-specific module that owns prompts and response shapes for one area of t
 
 Coaching modules depend on the AI Client; the AI Client does not depend on them.
 
+## Workout History
+
+The list of past workout logs joined with their sets and exercise names. Produced by [src/services/queries/workoutHistory.ts](src/services/queries/workoutHistory.ts) — `recent(db, limit)` for the most recent N, `inRange(db, since, until)` for date-bounded queries. Returns `WorkoutLogWithSets[]`. Each log includes its sets nested inline via a single SQL query using `json_agg`, replacing the previous N+1 pattern that issued one query per log.
+
+## Exercise History
+
+The list of past sessions that included a specific exercise. Produced by [src/services/queries/exerciseHistory.ts](src/services/queries/exerciseHistory.ts) — `sessions(db, exerciseId, opts)`. Returns `ExerciseSession[]` (unified shape) regardless of caller. Call-site adapters extract what each consumer needs (last performance, coaching history, full history).
+
 ## Program Origin Adapter
 
 A way to *produce* a draft Workout Program. Three envisioned:

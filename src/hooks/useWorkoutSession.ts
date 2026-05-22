@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { triggerAutoBackup } from '../services/autoBackup';
+import { getDB } from '../services/db';
+import { sessions as exerciseSessions } from '../services/queries/exerciseHistory';
 import type {
   Exercise,
   ExerciseType,
@@ -79,7 +81,6 @@ export function useWorkoutSession(dateOverride?: string) {
     removeSetFromExercise,
     addRoundToSuperset,
     getWorkoutSets,
-    getLastPerformance,
     getWorkoutLogExercises,
     addWorkoutLogExercise,
     deleteWorkoutLogExercise,
@@ -180,10 +181,17 @@ export function useWorkoutSession(dateOverride?: string) {
               return null;
             }
 
-            const lastPerf = await getLastPerformance(
+            const db = await getDB();
+            const lastPerfSessions = await exerciseSessions(
+              db,
               wle.exercise_id,
-              activeWorkout.id,
+              {
+                completedSetsOnly: true,
+                limit: 1,
+                excludeWorkoutLogId: activeWorkout.id,
+              },
             );
+            const lastPerf = lastPerfSessions[0]?.sets ?? null;
             const exerciseType = wle.exercise_type || 'reps_weight';
             const isDuration =
               exerciseType === 'duration' || exerciseType === 'duration_weight';
@@ -262,10 +270,13 @@ export function useWorkoutSession(dateOverride?: string) {
 
             const dbSets =
               setsByWorkoutLogExercise[`exercise-${exerciseId}`] || [];
-            const lastPerf = await getLastPerformance(
-              exerciseId,
-              activeWorkout.id,
-            );
+            const db = await getDB();
+            const lastPerfSessions = await exerciseSessions(db, exerciseId, {
+              completedSetsOnly: true,
+              limit: 1,
+              excludeWorkoutLogId: activeWorkout.id,
+            });
+            const lastPerf = lastPerfSessions[0]?.sets ?? null;
             const exerciseType = exercise.exercise_type || 'reps_weight';
 
             const mockWorkoutLogExercise: WorkoutLogExerciseWithDetails = {
@@ -336,7 +347,6 @@ export function useWorkoutSession(dateOverride?: string) {
   }, [
     activeWorkout,
     allExercises,
-    getLastPerformance,
     getWorkoutLogExercises,
     getWorkoutSets,
     isInitialized,
@@ -962,7 +972,13 @@ export function useWorkoutSession(dateOverride?: string) {
     async (exercise: Exercise, supersetGroupId?: string) => {
       if (!activeWorkout) return;
 
-      const lastPerf = await getLastPerformance(exercise.id, activeWorkout.id);
+      const db = await getDB();
+      const lastPerfSessions = await exerciseSessions(db, exercise.id, {
+        completedSetsOnly: true,
+        limit: 1,
+        excludeWorkoutLogId: activeWorkout.id,
+      });
+      const lastPerf = lastPerfSessions[0]?.sets ?? null;
       const exerciseType = exercise.exercise_type || 'reps_weight';
       const isDuration =
         exerciseType === 'duration' || exerciseType === 'duration_weight';
@@ -1040,7 +1056,7 @@ export function useWorkoutSession(dateOverride?: string) {
         console.error('Failed to add exercise:', err);
       }
     },
-    [activeWorkout, getLastPerformance, addWorkoutLogExercise, getWorkoutSets],
+    [activeWorkout, addWorkoutLogExercise, getWorkoutSets],
   );
 
   // Toggle exercise expansion

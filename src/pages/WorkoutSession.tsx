@@ -37,6 +37,8 @@ import {
 } from '../schemas/forms';
 import { getAICapability } from '../services/ai/useAICapability';
 import { getExerciseCoaching } from '../services/coaching/workoutCoach';
+import { getDB } from '../services/db';
+import { sessions as exerciseSessions } from '../services/queries/exerciseHistory';
 import type { AIExerciseCoachingResponse, Exercise } from '../types';
 import { parseLocalTimestamp } from '../utils/date';
 import { formatElapsedTime } from '../utils/formatters';
@@ -90,7 +92,6 @@ export function WorkoutSession() {
     addExerciseNote,
     getExerciseNotes,
     deleteExerciseNote,
-    getRecentExerciseHistoryBySession,
     getWorkoutLogExercises,
   } = useWorkoutLogs();
 
@@ -240,10 +241,18 @@ export function WorkoutSession() {
       setCoachingLoading((prev) => new Set(prev).add(exerciseId));
 
       try {
-        const [history, notes] = await Promise.all([
-          getRecentExerciseHistoryBySession(exerciseId, 5),
+        const db = await getDB();
+        const [recentSessions, notes] = await Promise.all([
+          exerciseSessions(db, exerciseId, {
+            completedWorkoutsOnly: true,
+            limit: 5,
+          }),
           getExerciseNotes(exerciseId),
         ]);
+        // Adapter: convert to chronological {date, sets}[] for the coaching API
+        const history = recentSessions
+          .map(({ date, sets }) => ({ date, sets }))
+          .reverse();
 
         if (history.length === 0) {
           setCoachingLoading((prev) => {
@@ -274,12 +283,7 @@ export function WorkoutSession() {
         });
       }
     },
-    [
-      coachingLoading,
-      exerciseCoaching,
-      getExerciseNotes,
-      getRecentExerciseHistoryBySession,
-    ],
+    [coachingLoading, exerciseCoaching, getExerciseNotes],
   );
 
   // Fetch coaching when exercises load

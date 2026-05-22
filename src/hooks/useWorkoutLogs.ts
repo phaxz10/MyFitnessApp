@@ -1,5 +1,9 @@
 import { useCallback, useState } from 'react';
 import { getDB } from '../services/db';
+// WorkoutLogWithSets now lives in the shared query types module.
+// Import for local use and re-export so existing consumers don't change imports.
+import type { WorkoutLogWithSets } from '../services/queries/types';
+import * as workoutHistory from '../services/queries/workoutHistory';
 import type {
   ExerciseNote,
   WorkoutLog,
@@ -11,18 +15,7 @@ import type {
 } from '../types';
 import { getLocalDateString, getLocalTimestamp } from '../utils/date';
 
-export interface WorkoutLogWithSets extends WorkoutLog {
-  sets: WorkoutSetWithExercise[];
-  session_name?: string;
-  program_name?: string;
-}
-
-export interface ExerciseHistory {
-  exercise_id: number;
-  exercise_name: string;
-  last_workout_date: string;
-  sets: WorkoutSet[];
-}
+export type { WorkoutLogWithSets } from '../services/queries/types';
 
 export function useWorkoutLogs() {
   const [logs, setLogs] = useState<WorkoutLogWithSets[]>([]);
@@ -33,103 +26,23 @@ export function useWorkoutLogs() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchLogs = useCallback(
-    async (limit = 20): Promise<WorkoutLogWithSets[]> => {
-      setLoading(true);
-      setError(null);
-      try {
-        const db = await getDB();
-        const result = await db.query(
-          `SELECT wl.*, ps.name as session_name, wp.name as program_name
-         FROM workout_logs wl
-         LEFT JOIN program_sessions ps ON wl.session_id = ps.id
-         LEFT JOIN workout_programs wp ON wl.program_id = wp.id
-         ORDER BY wl.date DESC, wl.started_at DESC
-         LIMIT $1`,
-          [limit],
-        );
-        const workoutLogs = result.rows as (WorkoutLog & {
-          session_name?: string;
-          program_name?: string;
-        })[];
-
-        // Fetch sets for each log
-        const logsWithSets: WorkoutLogWithSets[] = await Promise.all(
-          workoutLogs.map(async (log) => {
-            const setsResult = await db.query(
-              `SELECT ws.*, e.name as exercise_name
-             FROM workout_sets ws
-             JOIN exercises e ON ws.exercise_id = e.id
-             WHERE ws.workout_log_id = $1
-             ORDER BY ws.created_at`,
-              [log.id],
-            );
-            return {
-              ...log,
-              sets: setsResult.rows as WorkoutSetWithExercise[],
-            };
-          }),
-        );
-
-        setLogs(logsWithSets);
-        return logsWithSets;
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : 'Failed to fetch workout logs',
-        );
-        return [];
-      } finally {
-        setLoading(false);
-      }
-    },
-    [],
-  );
-
-  const getLogsByDateRange = useCallback(
-    async (
-      startDate: string,
-      endDate: string,
-    ): Promise<WorkoutLogWithSets[]> => {
-      try {
-        const db = await getDB();
-        const result = await db.query(
-          `SELECT wl.*, ps.name as session_name, wp.name as program_name
-         FROM workout_logs wl
-         LEFT JOIN program_sessions ps ON wl.session_id = ps.id
-         LEFT JOIN workout_programs wp ON wl.program_id = wp.id
-         WHERE wl.date >= $1 AND wl.date <= $2
-         ORDER BY wl.date DESC, wl.started_at DESC`,
-          [startDate, endDate],
-        );
-        const workoutLogs = result.rows as (WorkoutLog & {
-          session_name?: string;
-          program_name?: string;
-        })[];
-
-        const logsWithSets: WorkoutLogWithSets[] = await Promise.all(
-          workoutLogs.map(async (log) => {
-            const setsResult = await db.query(
-              `SELECT ws.*, e.name as exercise_name
-             FROM workout_sets ws
-             JOIN exercises e ON ws.exercise_id = e.id
-             WHERE ws.workout_log_id = $1
-             ORDER BY ws.created_at`,
-              [log.id],
-            );
-            return {
-              ...log,
-              sets: setsResult.rows as WorkoutSetWithExercise[],
-            };
-          }),
-        );
-
-        return logsWithSets;
-      } catch {
-        return [];
-      }
-    },
-    [],
-  );
+  const fetchLogs = useCallback(async (limit = 20) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const db = await getDB();
+      const logsWithSets = await workoutHistory.recent(db, limit);
+      setLogs(logsWithSets);
+      return logsWithSets;
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to fetch workout logs',
+      );
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   // Copy exercises from program session template to workout_log_exercises
   // AND pre-create all workout_sets records (empty, with NULL values)
@@ -644,102 +557,6 @@ export function useWorkoutLogs() {
     [],
   );
 
-  const getExerciseHistory = useCallback(
-    async (exerciseId: number, limit = 5): Promise<ExerciseHistory | null> => {
-      try {
-        const db = await getDB();
-
-        // Get exercise name
-        const exerciseResult = await db.query(
-          'SELECT name FROM exercises WHERE id = $1',
-          [exerciseId],
-        );
-        if ((exerciseResult.rows as { name: string }[]).length === 0)
-          return null;
-        const exerciseName = (exerciseResult.rows as { name: string }[])[0]
-          .name;
-
-        // Get the most recent workout logs that include this exercise
-        const logsResult = await db.query(
-          `SELECT DISTINCT wl.id, wl.date
-         FROM workout_logs wl
-         JOIN workout_sets ws ON wl.id = ws.workout_log_id
-         WHERE ws.exercise_id = $1
-         ORDER BY wl.date DESC
-         LIMIT $2`,
-          [exerciseId, limit],
-        );
-        const logs = logsResult.rows as { id: number; date: string }[];
-
-        if (logs.length === 0) return null;
-
-        // Get all sets from these workout logs for this exercise
-        const logIds = logs.map((l) => l.id);
-        const setsResult = await db.query(
-          `SELECT ws.*
-         FROM workout_sets ws
-         JOIN workout_logs wl ON ws.workout_log_id = wl.id
-         WHERE ws.exercise_id = $1 AND ws.workout_log_id = ANY($2)
-         ORDER BY wl.date DESC, ws.set_number`,
-          [exerciseId, logIds],
-        );
-
-        return {
-          exercise_id: exerciseId,
-          exercise_name: exerciseName,
-          last_workout_date: logs[0].date,
-          sets: setsResult.rows as WorkoutSet[],
-        };
-      } catch {
-        return null;
-      }
-    },
-    [],
-  );
-
-  const getLastPerformance = useCallback(
-    async (
-      exerciseId: number,
-      excludeWorkoutLogId?: number,
-    ): Promise<WorkoutSet[] | null> => {
-      try {
-        const db = await getDB();
-
-        // Get the most recent COMPLETED workout log that includes this exercise
-        // Exclude the current workout if provided, and only consider sets that were completed
-        const logResult = await db.query(
-          `SELECT DISTINCT wl.id
-         FROM workout_logs wl
-         JOIN workout_sets ws ON wl.id = ws.workout_log_id
-         WHERE ws.exercise_id = $1
-           AND ws.completed_at IS NOT NULL
-           ${excludeWorkoutLogId ? 'AND wl.id != $2' : ''}
-         ORDER BY wl.id DESC
-         LIMIT 1`,
-          excludeWorkoutLogId
-            ? [exerciseId, excludeWorkoutLogId]
-            : [exerciseId],
-        );
-
-        if ((logResult.rows as { id: number }[]).length === 0) return null;
-        const logId = (logResult.rows as { id: number }[])[0].id;
-
-        // Get all completed sets from that workout for this exercise
-        const setsResult = await db.query(
-          `SELECT * FROM workout_sets 
-         WHERE workout_log_id = $1 AND exercise_id = $2 AND completed_at IS NOT NULL
-         ORDER BY set_number`,
-          [logId, exerciseId],
-        );
-
-        return setsResult.rows as WorkoutSet[];
-      } catch {
-        return null;
-      }
-    },
-    [],
-  );
-
   const loadActiveWorkoutSets = useCallback(
     async (workoutLogId: number): Promise<void> => {
       try {
@@ -1120,56 +937,6 @@ export function useWorkoutLogs() {
     [],
   );
 
-  // Get exercise history organized by session for AI coaching analysis
-  // Returns array of sessions, each with date and sets for that session
-  const getRecentExerciseHistoryBySession = useCallback(
-    async (
-      exerciseId: number,
-      sessionCount = 5,
-    ): Promise<{ date: string; sets: WorkoutSet[] }[]> => {
-      try {
-        const db = await getDB();
-
-        // Get the most recent workout logs that include this exercise
-        const logsResult = await db.query(
-          `SELECT DISTINCT wl.id, wl.date
-           FROM workout_logs wl
-           JOIN workout_sets ws ON wl.id = ws.workout_log_id
-           WHERE ws.exercise_id = $1 AND (wl.status = 'completed' OR wl.ended_at IS NOT NULL)
-           ORDER BY wl.date DESC
-           LIMIT $2`,
-          [exerciseId, sessionCount],
-        );
-        const logs = logsResult.rows as { id: number; date: string }[];
-
-        if (logs.length === 0) return [];
-
-        // Get sets for each session separately
-        const sessions: { date: string; sets: WorkoutSet[] }[] = [];
-
-        for (const log of logs) {
-          const setsResult = await db.query(
-            `SELECT * FROM workout_sets
-             WHERE workout_log_id = $1 AND exercise_id = $2
-             ORDER BY set_number`,
-            [log.id, exerciseId],
-          );
-
-          sessions.push({
-            date: log.date,
-            sets: setsResult.rows as WorkoutSet[],
-          });
-        }
-
-        // Return in chronological order (oldest first, most recent last)
-        return sessions.reverse();
-      } catch {
-        return [];
-      }
-    },
-    [],
-  );
-
   return {
     logs,
     activeWorkout,
@@ -1177,7 +944,6 @@ export function useWorkoutLogs() {
     loading,
     error,
     fetchLogs,
-    getLogsByDateRange,
     startWorkout,
     endWorkout,
     cancelWorkout,
@@ -1191,8 +957,6 @@ export function useWorkoutLogs() {
     addRoundToSuperset,
     removeRoundFromSuperset,
     getWorkoutSets,
-    getExerciseHistory,
-    getLastPerformance,
     loadActiveWorkoutSets,
     resumeWorkout,
     deleteLog,
@@ -1204,7 +968,6 @@ export function useWorkoutLogs() {
     getSessionStatusForDate,
     // Backwards compatibility alias
     getTodaySessionStatus: getSessionStatusForDate,
-    getRecentExerciseHistoryBySession,
     // Workout Log Exercises CRUD
     getWorkoutLogExercises,
     addWorkoutLogExercise,

@@ -4,6 +4,7 @@ import { getDB } from '../services/db';
 // Import for local use and re-export so existing consumers don't change imports.
 import type { WorkoutLogWithSets } from '../services/queries/types';
 import * as workoutHistory from '../services/queries/workoutHistory';
+import * as WorkoutWriter from '../services/writers/workoutWriter';
 import type {
   ExerciseNote,
   WorkoutLog,
@@ -46,70 +47,6 @@ export function useWorkoutLogs() {
 
   // Copy exercises from program session template to workout_log_exercises
   // AND pre-create all workout_sets records (empty, with NULL values)
-  const copySessionExercisesToWorkout = useCallback(
-    async (workoutLogId: number, sessionId: number): Promise<void> => {
-      const db = await getDB();
-
-      // Get all exercises from the program session
-      const result = await db.query(
-        `SELECT exercise_id, order_index, superset_group_id, target_sets, 
-                target_rep_min, target_rep_max, target_duration_seconds, notes
-         FROM program_exercises
-         WHERE session_id = $1
-         ORDER BY order_index`,
-        [sessionId],
-      );
-
-      const programExercises = result.rows as {
-        exercise_id: number;
-        order_index: number;
-        superset_group_id: string | null;
-        target_sets: number;
-        target_rep_min: number | null;
-        target_rep_max: number | null;
-        target_duration_seconds: number | null;
-        notes: string | null;
-      }[];
-
-      // Insert each exercise into workout_log_exercises AND pre-create its sets
-      for (const ex of programExercises) {
-        const insertResult = await db.query(
-          `INSERT INTO workout_log_exercises 
-           (workout_log_id, exercise_id, order_index, superset_group_id, 
-            target_sets, target_rep_min, target_rep_max, target_duration_seconds, notes)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-           RETURNING id`,
-          [
-            workoutLogId,
-            ex.exercise_id,
-            ex.order_index,
-            ex.superset_group_id,
-            ex.target_sets,
-            ex.target_rep_min,
-            ex.target_rep_max,
-            ex.target_duration_seconds,
-            ex.notes,
-          ],
-        );
-
-        const workoutLogExerciseId = (insertResult.rows as { id: number }[])[0]
-          .id;
-
-        // Pre-create all workout_sets for this exercise (empty, NULL values)
-        const targetSets = ex.target_sets || 3;
-        for (let setNum = 1; setNum <= targetSets; setNum++) {
-          await db.query(
-            `INSERT INTO workout_sets 
-             (workout_log_id, exercise_id, workout_log_exercise_id, set_number, reps, weight_kg, duration_seconds, completed_at)
-             VALUES ($1, $2, $3, $4, NULL, NULL, NULL, NULL)`,
-            [workoutLogId, ex.exercise_id, workoutLogExerciseId, setNum],
-          );
-        }
-      }
-    },
-    [],
-  );
-
   const startWorkout = useCallback(
     async (
       programId: number | null = null,
@@ -141,10 +78,8 @@ export function useWorkoutLogs() {
         );
         const workout = (result.rows as WorkoutLog[])[0];
 
-        // If starting from a program session, copy exercises to workout_log_exercises
-        // AND pre-create all workout_sets records
         if (sessionId) {
-          await copySessionExercisesToWorkout(workout.id, sessionId);
+          await WorkoutWriter.instantiateSession(db, workout.id, sessionId);
         }
 
         setActiveWorkout(workout);
@@ -159,7 +94,7 @@ export function useWorkoutLogs() {
         setLoading(false);
       }
     },
-    [copySessionExercisesToWorkout],
+    [],
   );
 
   const endWorkout = useCallback(
@@ -698,8 +633,6 @@ export function useWorkoutLogs() {
     [],
   );
 
-  // Add a new exercise to a workout log (for ad-hoc exercises added during workout)
-  // Also pre-creates all workout_sets for the exercise
   const addWorkoutLogExercise = useCallback(
     async (
       workoutLogId: number,
@@ -713,41 +646,17 @@ export function useWorkoutLogs() {
         targetDurationSeconds?: number | null;
         notes?: string | null;
       },
-    ): Promise<WorkoutLogExercise> => {
+    ): Promise<{ exercise: WorkoutLogExercise; sets: WorkoutSet[] }> => {
       const db = await getDB();
-      const targetSets = data.targetSets ?? 3;
-
-      const result = await db.query(
-        `INSERT INTO workout_log_exercises 
-         (workout_log_id, exercise_id, order_index, superset_group_id, 
-          target_sets, target_rep_min, target_rep_max, target_duration_seconds, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         RETURNING *`,
-        [
-          workoutLogId,
-          exerciseId,
-          data.orderIndex,
-          data.supersetGroupId ?? null,
-          targetSets,
-          data.targetRepMin ?? null,
-          data.targetRepMax ?? null,
-          data.targetDurationSeconds ?? null,
-          data.notes ?? null,
-        ],
-      );
-      const newWorkoutLogExercise = (result.rows as WorkoutLogExercise[])[0];
-
-      // Pre-create all workout_sets for this exercise (empty, with NULL values)
-      for (let setNum = 1; setNum <= targetSets; setNum++) {
-        await db.query(
-          `INSERT INTO workout_sets 
-           (workout_log_id, exercise_id, workout_log_exercise_id, set_number, reps, weight_kg, duration_seconds, completed_at)
-           VALUES ($1, $2, $3, $4, NULL, NULL, NULL, NULL)`,
-          [workoutLogId, exerciseId, newWorkoutLogExercise.id, setNum],
-        );
-      }
-
-      return newWorkoutLogExercise;
+      return WorkoutWriter.addExercise(db, workoutLogId, exerciseId, {
+        orderIndex: data.orderIndex,
+        supersetGroupId: data.supersetGroupId,
+        targetSets: data.targetSets,
+        targetRepMin: data.targetRepMin,
+        targetRepMax: data.targetRepMax,
+        targetDurationSeconds: data.targetDurationSeconds,
+        notes: data.notes,
+      });
     },
     [],
   );

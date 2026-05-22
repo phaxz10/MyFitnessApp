@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { triggerAutoBackup } from '../services/autoBackup';
 import { getDB } from '../services/db';
+import * as FoodEntryWriter from '../services/writers/foodEntryWriter';
 import type { DailyCalorieSummary, FoodEntry, MealType } from '../types';
 import { formatDate, getPreviousDay } from '../utils/date';
 
@@ -93,24 +94,7 @@ export function useCalories() {
       setError(null);
       try {
         const db = await getDB();
-        for (const entry of entriesToAdd) {
-          await db.query(
-            `INSERT INTO food_entries (date, meal_type, food_description, portion_grams, calories, protein_g, carbs_g, fat_g, is_ai_generated)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-            [
-              entry.date,
-              entry.meal_type,
-              entry.food_description,
-              entry.portion_grams,
-              entry.calories,
-              entry.protein_g,
-              entry.carbs_g,
-              entry.fat_g,
-              entry.is_ai_generated,
-            ],
-          );
-        }
-
+        await FoodEntryWriter.addMany(db, entriesToAdd);
         await fetchEntriesByDate(entriesToAdd[0].date);
         triggerAutoBackup();
       } catch (err) {
@@ -129,39 +113,19 @@ export function useCalories() {
       setError(null);
       try {
         const db = await getDB();
-        // Fetch entries from source date
-        const result = await db.query(
-          'SELECT * FROM food_entries WHERE date = $1',
-          [sourceDate],
+        const copied = await FoodEntryWriter.copyFromDate(
+          db,
+          sourceDate,
+          targetDate,
         );
-        const sourceEntries = result.rows as FoodEntry[];
 
-        if (sourceEntries.length === 0) {
+        if (copied.length === 0) {
           throw new Error('No meals found on the source date');
-        }
-
-        // Insert entries with new date
-        for (const entry of sourceEntries) {
-          await db.query(
-            `INSERT INTO food_entries (date, meal_type, food_description, portion_grams, calories, protein_g, carbs_g, fat_g, is_ai_generated)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-            [
-              targetDate,
-              entry.meal_type,
-              entry.food_description,
-              entry.portion_grams,
-              entry.calories,
-              entry.protein_g,
-              entry.carbs_g,
-              entry.fat_g,
-              false, // Mark as not AI generated since it's a copy
-            ],
-          );
         }
 
         await fetchEntriesByDate(targetDate);
         triggerAutoBackup();
-        return sourceEntries.length;
+        return copied.length;
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : 'Failed to copy meals';

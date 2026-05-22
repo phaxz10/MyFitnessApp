@@ -36,7 +36,7 @@ export function AIImageEntryAdapter({
   onSubmitted,
   onBack,
 }: AIImageEntryAdapterProps) {
-  const { addEntry } = useCalories();
+  const { addEntriesBatch } = useCalories();
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -207,8 +207,8 @@ export function AIImageEntryAdapter({
     setIsSaving(true);
     setError(null);
     try {
-      for (const item of results) {
-        await addEntry({
+      await addEntriesBatch(
+        results.map((item) => ({
           date,
           meal_type: mealType,
           food_description: item.name,
@@ -218,8 +218,8 @@ export function AIImageEntryAdapter({
           carbs_g: item.carbs_g,
           fat_g: item.fat_g,
           is_ai_generated: true,
-        });
-      }
+        })),
+      );
       onSubmitted();
     } catch {
       setError('Failed to save entries');
@@ -342,8 +342,8 @@ export function AIImageEntryAdapter({
                 {Math.round(totals.calories)} kcal
               </span>
               <span className="text-slate-400">
-                P: {Math.round(totals.protein)}g | C:{' '}
-                {Math.round(totals.carbs)}g | F: {Math.round(totals.fat)}g
+                P: {Math.round(totals.protein)}g | C: {Math.round(totals.carbs)}
+                g | F: {Math.round(totals.fat)}g
               </span>
             </div>
           </div>
@@ -498,11 +498,7 @@ export function AIImageEntryAdapter({
 
       {error && <p className="text-red-400 text-sm text-center">{error}</p>}
 
-      <Button
-        onClick={handleAnalyze}
-        disabled={!imageData}
-        className="w-full"
-      >
+      <Button onClick={handleAnalyze} disabled={!imageData} className="w-full">
         Analyze meal
       </Button>
     </div>

@@ -991,27 +991,16 @@ export function useWorkoutSession(dateOverride?: string) {
       );
 
       try {
-        // Add to workout_log_exercises in DB (this also pre-creates sets now)
-        const newWorkoutLogExercise = await addWorkoutLogExercise(
-          activeWorkout.id,
-          exercise.id,
-          {
+        const { exercise: newWorkoutLogExercise, sets: exerciseSets } =
+          await addWorkoutLogExercise(activeWorkout.id, exercise.id, {
             orderIndex: maxOrderIndex + 1,
             supersetGroupId: supersetGroupId || null,
             targetSets: 3,
             targetRepMin: isDuration ? null : 8,
             targetRepMax: isDuration ? null : 12,
             targetDurationSeconds: isDuration ? 30 : null,
-          },
-        );
+          });
 
-        // Get the pre-created sets for this exercise
-        const allSets = await getWorkoutSets(activeWorkout.id);
-        const exerciseSets = allSets
-          .filter((s) => s.workout_log_exercise_id === newWorkoutLogExercise.id)
-          .sort((a, b) => a.set_number - b.set_number);
-
-        // Create the full details object
         const workoutLogExerciseWithDetails: WorkoutLogExerciseWithDetails = {
           ...newWorkoutLogExercise,
           exercise_name: exercise.name,
@@ -1056,7 +1045,7 @@ export function useWorkoutSession(dateOverride?: string) {
         console.error('Failed to add exercise:', err);
       }
     },
-    [activeWorkout, addWorkoutLogExercise, getWorkoutSets],
+    [activeWorkout, addWorkoutLogExercise],
   );
 
   // Toggle exercise expansion

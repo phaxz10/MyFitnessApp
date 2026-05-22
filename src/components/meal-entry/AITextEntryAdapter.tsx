@@ -27,7 +27,7 @@ export function AITextEntryAdapter({
   onSubmitted,
   onBack,
 }: AITextEntryAdapterProps) {
-  const { addEntry } = useCalories();
+  const { addEntriesBatch } = useCalories();
 
   const [step, setStep] = useState<Step>('input');
   const [mealType, setMealType] = useState<MealType>(
@@ -57,7 +57,9 @@ export function AITextEntryAdapter({
       );
       setStep('results');
     } catch (err) {
-      setError(describeAIError(err, 'Failed to analyze food. Please try again.'));
+      setError(
+        describeAIError(err, 'Failed to analyze food. Please try again.'),
+      );
       setStep('input');
     }
   };
@@ -98,8 +100,8 @@ export function AITextEntryAdapter({
     setIsSaving(true);
     setError(null);
     try {
-      for (const item of results) {
-        await addEntry({
+      await addEntriesBatch(
+        results.map((item) => ({
           date,
           meal_type: mealType,
           food_description: item.name,
@@ -109,8 +111,8 @@ export function AITextEntryAdapter({
           carbs_g: item.carbs_g,
           fat_g: item.fat_g,
           is_ai_generated: true,
-        });
-      }
+        })),
+      );
       onSubmitted();
     } catch {
       setError('Failed to save entries');
@@ -220,8 +222,8 @@ export function AITextEntryAdapter({
                 {Math.round(totals.calories)} kcal
               </span>
               <span className="text-slate-400">
-                P: {Math.round(totals.protein)}g | C:{' '}
-                {Math.round(totals.carbs)}g | F: {Math.round(totals.fat)}g
+                P: {Math.round(totals.protein)}g | C: {Math.round(totals.carbs)}
+                g | F: {Math.round(totals.fat)}g
               </span>
             </div>
           </div>

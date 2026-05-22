@@ -82,6 +82,14 @@ The list of past workout logs joined with their sets and exercise names. Produce
 
 The list of past sessions that included a specific exercise. Produced by [src/services/queries/exerciseHistory.ts](src/services/queries/exerciseHistory.ts) — `sessions(db, exerciseId, opts)`. Returns `ExerciseSession[]` (unified shape) regardless of caller. Call-site adapters extract what each consumer needs (last performance, coaching history, full history).
 
+## Food Entry Writer
+
+The batch-write module for food entries. Produced by [src/services/writers/foodEntryWriter.ts](src/services/writers/foodEntryWriter.ts) — `addMany(db, entries)` for multi-row INSERT (replaces loop-of-single-INSERTs from AI adapters), `copyFromDate(db, source, target)` for copying a day's meals via INSERT...SELECT. Returns inserted `FoodEntry[]` via RETURNING *.
+
+## Workout Writer
+
+The batch-write module for workout exercises and sets. Produced by [src/services/writers/workoutWriter.ts](src/services/writers/workoutWriter.ts) — `instantiateSession(db, workoutLogId, sessionId)` creates exercises + pre-created sets from a program session template in two INSERT-SELECT statements (replaces the ~20 serial INSERTs from the doubly-nested loop), `addExercise(db, workoutLogId, exerciseId, opts)` adds a single exercise mid-workout with its pre-created sets. Both return the created rows via RETURNING *.
+
 ## Program Origin Adapter
 
 A way to *produce* a draft Workout Program. Three envisioned:

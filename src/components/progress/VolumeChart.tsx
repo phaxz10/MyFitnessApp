@@ -74,8 +74,8 @@ export function VolumeChart({
                     borderRadius: '8px',
                   }}
                   labelStyle={{ color: '#94a3b8' }}
-                  formatter={(value: number | undefined) => [
-                    value !== undefined ? `${formatVolume(value)} lbs` : '--',
+                  formatter={(value) => [
+                    typeof value === 'number' ? `${formatVolume(value)} lbs` : '--',
                     'Volume',
                   ]}
                 />

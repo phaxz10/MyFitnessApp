@@ -66,13 +66,10 @@ export function OneRMChart({
                     borderRadius: '8px',
                   }}
                   labelStyle={{ color: '#94a3b8' }}
-                  formatter={(
-                    value: number | undefined,
-                    name: string | undefined,
-                  ) => {
-                    if (value === undefined) return ['--', name ?? ''];
+                  formatter={(value, name) => {
+                    if (value === undefined) return ['--', String(name ?? '')];
                     if (name === 'oneRM') return [`${value} lbs`, 'Est. 1RM'];
-                    return [value, name ?? ''];
+                    return [String(value), String(name ?? '')];
                   }}
                 />
                 <Line

@@ -7,7 +7,7 @@ export interface FoodLogModalState {
   isOpen: boolean;
   date: string;
   mealType?: MealType;
-  mode: 'select' | 'text' | 'scanner' | 'manual';
+  mode: 'picker' | 'manual' | 'ai_text' | 'ai_image';
   onSuccess?: () => void;
 }
 
@@ -35,11 +35,11 @@ interface AppState {
   openFoodLogModal: (options?: {
     date?: string;
     mealType?: MealType;
-    mode?: 'select' | 'text' | 'scanner' | 'manual';
+    mode?: 'picker' | 'manual' | 'ai_text' | 'ai_image';
     onSuccess?: () => void;
   }) => void;
   closeFoodLogModal: () => void;
-  setFoodLogModalMode: (mode: 'select' | 'text' | 'scanner' | 'manual') => void;
+  setFoodLogModalMode: (mode: 'picker' | 'manual' | 'ai_text' | 'ai_image') => void;
 
   openWeightLogModal: (options?: {
     date?: string;
@@ -52,7 +52,7 @@ const getDefaultFoodLogModal = (): FoodLogModalState => ({
   isOpen: false,
   date: new Date().toISOString().split('T')[0],
   mealType: undefined,
-  mode: 'select',
+  mode: 'picker',
   onSuccess: undefined,
 });
 
@@ -86,7 +86,7 @@ export const useAppStore = create<AppState>()(
             isOpen: true,
             date: options?.date || new Date().toISOString().split('T')[0],
             mealType: options?.mealType,
-            mode: options?.mode || 'select',
+            mode: options?.mode || 'picker',
             onSuccess: options?.onSuccess,
           },
         }),

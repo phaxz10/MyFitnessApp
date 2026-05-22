@@ -56,7 +56,7 @@ import {
   readBackupFile,
 } from '../services/backup';
 import { resetDatabase } from '../services/db';
-import { calculateTargets, initOpenAI } from '../services/openai';
+import { calculateTargets } from '../services/coaching/nutritionCoach';
 import { calculateAgeFromBirthdate, formatDate } from '../utils/date';
 
 const activityOptions = [
@@ -126,6 +126,7 @@ export function Settings() {
     resolver: zodResolver(apiKeyFormSchema),
     defaultValues: {
       apiKey: '',
+      proxyUrl: '',
     },
   });
 
@@ -147,6 +148,7 @@ export function Settings() {
       });
       apiKeyForm.reset({
         apiKey: profile.openai_api_key || '',
+        proxyUrl: profile.openai_proxy_url || '',
       });
     }
   }, [profile, profileForm, goalsForm, apiKeyForm]);
@@ -202,7 +204,6 @@ export function Settings() {
     setIsLoading(true);
     setError(null);
     try {
-      initOpenAI(profile.openai_api_key);
       const values = goalsForm.getValues();
       const result = await calculateTargets({
         age: calculateAgeFromBirthdate(profileForm.getValues().birthdate),
@@ -238,11 +239,13 @@ export function Settings() {
     setIsLoading(true);
     setError(null);
     try {
-      await updateProfile({ openai_api_key: data.apiKey || null });
-      if (data.apiKey) {
-        initOpenAI(data.apiKey);
-      }
-      setSuccess('API key updated');
+      await updateProfile({
+        openai_api_key: data.apiKey || null,
+        openai_proxy_url: data.proxyUrl?.trim() || null,
+      });
+      // useProfile's refetch + App.tsx's mirror effect updates the store,
+      // which the stateless aiClient reads on its next call.
+      setSuccess('AI settings updated');
       setActiveSection(null);
     } catch (_err) {
       setError('Failed to update API key');
@@ -641,8 +644,22 @@ export function Settings() {
               >
                 Get your API key
               </a>
+              <Input
+                label="Proxy URL (optional)"
+                type="url"
+                {...apiKeyForm.register('proxyUrl')}
+                placeholder="https://your-worker.workers.dev"
+                error={apiKeyForm.formState.errors.proxyUrl?.message}
+              />
+              <p className="text-slate-400 text-xs leading-relaxed">
+                Browsers can't call OpenAI's Responses API directly (CORS). Deploy
+                the included Cloudflare Worker (see{' '}
+                <code className="text-slate-300">worker/README.md</code>) and
+                paste its URL above. Your API key still lives in this browser —
+                the proxy only adds CORS headers.
+              </p>
               <Button type="submit" isLoading={isLoading} className="w-full">
-                Save API Key
+                Save AI Settings
               </Button>
             </form>
           )}

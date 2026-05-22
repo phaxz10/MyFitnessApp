@@ -490,7 +490,7 @@ export function isAutoBackupEnabled(): boolean {
 /**
  * Debounce timer for auto-backup triggers
  */
-let backupTimeout: NodeJS.Timeout | null = null;
+let backupTimeout: ReturnType<typeof setTimeout> | null = null;
 const BACKUP_DEBOUNCE_MS = 60000; // 1 minute debounce
 
 /**

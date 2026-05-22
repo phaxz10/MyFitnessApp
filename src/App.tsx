@@ -19,7 +19,6 @@ import { CalorieLog } from './pages/CalorieLog';
 import { Dashboard } from './pages/Dashboard';
 import { DatabaseDebug } from './pages/DatabaseDebug';
 import { ExerciseLibrary } from './pages/ExerciseLibrary';
-import { MealScanner } from './pages/MealScanner';
 import { Onboarding } from './pages/Onboarding';
 import { ProgramEditor } from './pages/ProgramEditor';
 import { Progress } from './pages/Progress';
@@ -30,7 +29,6 @@ import { WorkoutDetail } from './pages/WorkoutDetail';
 import { WorkoutSession } from './pages/WorkoutSession';
 import { isAutoBackupEnabled, performAutoBackup } from './services/autoBackup';
 import { getDB, isOnboardingComplete } from './services/db';
-import { initOpenAI } from './services/openai';
 
 function MainLayout() {
   return (
@@ -105,10 +103,9 @@ function AppRoutes() {
     init();
   }, [setOnboardingComplete, processStaleWorkouts]);
 
-  // Initialize OpenAI when profile is loaded
+  // Mirror the profile into Zustand so the stateless aiClient can read the API key.
   useEffect(() => {
-    if (profile?.openai_api_key) {
-      initOpenAI(profile.openai_api_key);
+    if (profile) {
       setUserProfile(profile);
     }
   }, [profile, setUserProfile]);
@@ -153,7 +150,6 @@ function AppRoutes() {
         <Route path="/workout" element={<Workout />} />
         <Route path="/exercises" element={<ExerciseLibrary />} />
         <Route path="/weight" element={<WeightTracker />} />
-        <Route path="/scanner" element={<MealScanner />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
 

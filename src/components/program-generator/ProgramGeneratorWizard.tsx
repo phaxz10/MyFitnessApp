@@ -23,7 +23,7 @@ import {
 import { useAppStore } from '../../hooks/useAppStore';
 import { useProfile } from '../../hooks/useProfile';
 import { useProgramGenerator } from '../../hooks/useProgramGenerator';
-import { initOpenAI, isOpenAIInitialized } from '../../services/openai';
+import { useAICapability } from '../../services/ai/useAICapability';
 import type {
   AIProgramGeneratorInput,
   EquipmentType,
@@ -78,12 +78,8 @@ export function ProgramGeneratorWizard({
   const [focusAreas, setFocusAreas] = useState<string[]>([]);
   const [injuries, setInjuries] = useState('');
 
-  // Initialize OpenAI when profile loads
-  useEffect(() => {
-    if (profile?.openai_api_key && !isOpenAIInitialized()) {
-      initOpenAI(profile.openai_api_key);
-    }
-  }, [profile]);
+  // AI capability is derived from store profile — no init needed.
+  const aiCapability = useAICapability();
 
   // Reset state when modal closes
   useEffect(() => {
@@ -751,7 +747,7 @@ export function ProgramGeneratorWizard({
           <Button
             onClick={handleGenerate}
             disabled={
-              !canProceedFromGoals || !isOnline || !isOpenAIInitialized()
+              !canProceedFromGoals || !isOnline || !aiCapability.available
             }
           >
             <Sparkles size={18} className="mr-1" />

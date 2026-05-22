@@ -27,12 +27,12 @@ import {
 } from '../components/ui';
 import { useExercises } from '../hooks/useExercises';
 import { type ExerciseFormData, exerciseFormSchema } from '../schemas/forms';
+import { useAICapability } from '../services/ai/useAICapability';
 import {
   findDuplicateExercises,
   generateExerciseDetails,
   generateExerciseDetailsBatch,
-  isOpenAIInitialized,
-} from '../services/openai';
+} from '../services/coaching/exerciseLibraryCoach';
 import type { AIExerciseResponse, Exercise, ExerciseType } from '../types';
 
 const MUSCLE_GROUPS = [
@@ -80,6 +80,8 @@ function getYouTubeSearchUrl(exerciseName: string): string {
 }
 export function ExerciseLibrary() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const aiCapability = useAICapability();
+  const aiAvailable = aiCapability.available;
   const {
     exercises,
     fetchExercises,
@@ -144,7 +146,7 @@ export function ExerciseLibrary() {
 
   // Regenerate all exercises - updates descriptions using current AI prompts
   const handleRegenerateAllExercises = useCallback(async () => {
-    if (!isOpenAIInitialized()) {
+    if (!aiAvailable) {
       alert('Please set up your OpenAI API key in Settings');
       return;
     }
@@ -312,7 +314,7 @@ export function ExerciseLibrary() {
       alert('Please enter an exercise name first');
       return;
     }
-    if (!isOpenAIInitialized()) {
+    if (!aiAvailable) {
       alert('Please set up your OpenAI API key in Settings');
       return;
     }
@@ -435,7 +437,7 @@ export function ExerciseLibrary() {
     setBatchExercises((prev) => prev.filter((_, i) => i !== index));
   };
   const handleGenerateBatchDetails = async () => {
-    if (!isOpenAIInitialized()) {
+    if (!aiAvailable) {
       alert('Please set up your OpenAI API key in Settings');
       return;
     }
@@ -697,7 +699,7 @@ export function ExerciseLibrary() {
                 className="flex-1"
                 error={errors.name?.message}
               />
-              {isOpenAIInitialized() && (
+              {aiAvailable && (
                 <Button
                   type="button"
                   variant="secondary"
@@ -1039,7 +1041,7 @@ export function ExerciseLibrary() {
                     type="button"
                     className="flex-1"
                     onClick={handleGenerateBatchDetails}
-                    disabled={isBatchGenerating || !isOpenAIInitialized()}
+                    disabled={isBatchGenerating || !aiAvailable}
                   >
                     {isBatchGenerating ? (
                       <>
@@ -1070,7 +1072,7 @@ export function ExerciseLibrary() {
                   </Button>
                 )}
               </div>
-              {!isOpenAIInitialized() && (
+              {!aiAvailable && (
                 <p className="text-amber-400 text-sm text-center">
                   Set up your OpenAI API key in Settings to use AI generation
                 </p>
@@ -1127,7 +1129,7 @@ export function ExerciseLibrary() {
                 <Button
                   className="flex-1"
                   onClick={handleRegenerateAllExercises}
-                  disabled={!isOpenAIInitialized()}
+                  disabled={!aiAvailable}
                 >
                   <RefreshCw size={18} className="mr-2" />
                   Regenerate All

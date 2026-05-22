@@ -35,7 +35,8 @@ import {
   type WorkoutNotesFormData,
   workoutNotesSchema,
 } from '../schemas/forms';
-import { getExerciseCoaching, isOpenAIInitialized } from '../services/openai';
+import { getAICapability } from '../services/ai/useAICapability';
+import { getExerciseCoaching } from '../services/coaching/workoutCoach';
 import type { AIExerciseCoachingResponse, Exercise } from '../types';
 import { parseLocalTimestamp } from '../utils/date';
 import { formatElapsedTime } from '../utils/formatters';
@@ -232,7 +233,7 @@ export function WorkoutSession() {
       targetRepMax: number,
       targetSets: number,
     ) => {
-      if (!isOpenAIInitialized()) return;
+      if (!getAICapability().available) return;
       if (coachingLoading.has(exerciseId)) return;
       if (exerciseCoaching.has(exerciseId)) return;
 
@@ -283,7 +284,7 @@ export function WorkoutSession() {
 
   // Fetch coaching when exercises load
   useEffect(() => {
-    if (!isOpenAIInitialized() || exercisesWithSets.length === 0) return;
+    if (!getAICapability().available || exercisesWithSets.length === 0) return;
 
     exercisesWithSets.forEach((ex) => {
       const exerciseId = getExerciseId(ex);

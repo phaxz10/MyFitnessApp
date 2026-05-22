@@ -10,7 +10,7 @@ import { useProfile } from '../hooks/useProfile';
 import { useWeight } from '../hooks/useWeight';
 import { type OnboardingFormData, onboardingSchema } from '../schemas/forms';
 import { importData, readBackupFile } from '../services/backup';
-import { calculateTargets, initOpenAI } from '../services/openai';
+import { calculateTargets } from '../services/coaching/nutritionCoach';
 import { calculateAgeFromBirthdate, formatDate } from '../utils/date';
 
 type Step =
@@ -129,7 +129,26 @@ export function Onboarding() {
     const values = getValues();
     try {
       if (values.apiKey) {
-        initOpenAI(values.apiKey);
+        // Seed the API key in the store so the stateless aiClient can read it.
+        // The full profile is created right after this step completes.
+        useAppStore.setState({
+          userProfile: {
+            id: 0,
+            birthdate: values.birthdate,
+            gender: values.gender,
+            height_cm: parseFloat(values.heightCm),
+            activity_level: values.activityLevel,
+            goal: values.goal,
+            calorie_target: 0,
+            protein_target_g: 0,
+            carbs_target_g: 0,
+            fat_target_g: 0,
+            openai_api_key: values.apiKey,
+            openai_proxy_url: null,
+            created_at: '',
+            updated_at: '',
+          },
+        });
         const result = await calculateTargets({
           age: calculateAgeFromBirthdate(values.birthdate),
           gender: values.gender,
@@ -205,6 +224,7 @@ export function Onboarding() {
         carbs_target_g: values.targets.carbs,
         fat_target_g: values.targets.fat,
         openai_api_key: values.apiKey || null,
+        openai_proxy_url: null,
       });
 
       // Add initial weight log

@@ -27,6 +27,7 @@ async function initSchema(): Promise<void> {
       carbs_target_g INTEGER NOT NULL,
       fat_target_g INTEGER NOT NULL,
       openai_api_key TEXT,
+      openai_proxy_url TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -381,6 +382,16 @@ async function initSchema(): Promise<void> {
     `);
   } catch {
     // Already renamed or column never existed, ignore
+  }
+
+  // Migration: add openai_proxy_url for the Cloudflare Worker CORS proxy
+  // (see worker/README.md). Idempotent — safe to run on existing DBs.
+  try {
+    await db.exec(`
+      ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS openai_proxy_url TEXT;
+    `);
+  } catch {
+    // Already exists, ignore
   }
 }
 

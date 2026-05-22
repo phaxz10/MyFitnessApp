@@ -2,6 +2,7 @@ import path from 'path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
@@ -11,8 +12,16 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  // Listen on all interfaces so the LAN (phone) can reach the dev server.
+  // HTTPS is required for getUserMedia (camera) on non-localhost origins —
+  // the basic-ssl plugin generates a self-signed cert on first run.
+  server: {
+    host: '0.0.0.0',
+    https: true,
+  },
   plugins: [
     react(),
+    basicSsl(),
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',

@@ -1,0 +1,6 @@
+name = "mypersonalfitness-openai-proxy"
+main = "openai-proxy.ts"
+compatibility_date = "2025-01-01"
+
+# Free tier: 100,000 requests/day, more than enough for a personal app.
+# No KV / R2 / D1 bindings — this worker is stateless by design.

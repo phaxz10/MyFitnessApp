@@ -1,0 +1,19 @@
+{
+  "name": "mypersonalfitness-openai-proxy",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Cloudflare Worker that proxies api.openai.com with CORS headers added, so browser PWAs can call the Responses API directly.",
+  "scripts": {
+    "dev": "wrangler dev --port 8787 --local",
+    "deploy": "wrangler deploy",
+    "ship": "wrangler deploy",
+    "login": "wrangler login",
+    "auth": "wrangler login",
+    "logout": "wrangler logout",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^3.99.0",
+    "@cloudflare/workers-types": "^4.20241218.0"
+  }
+}

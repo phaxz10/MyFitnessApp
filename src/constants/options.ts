@@ -7,7 +7,7 @@ import type { MealType } from '../types';
 
 /**
  * Meal type options for food logging
- * Used by: CalorieLog, FoodLogModal, MealScanner
+ * Used by: CalorieLog, MealEntryShell (and its adapters)
  */
 export const mealTypes: { value: MealType; label: string }[] = [
   { value: 'breakfast', label: 'Breakfast' },

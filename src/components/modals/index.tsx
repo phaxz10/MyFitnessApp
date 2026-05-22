@@ -1,14 +1,13 @@
-import { FoodLogModal } from './FoodLogModal';
+import { MealEntryShell } from '../meal-entry/MealEntryShell';
 import { WeightLogModal } from './WeightLogModal';
 
 export function GlobalModalContainer() {
   return (
     <>
-      <FoodLogModal />
+      <MealEntryShell />
       <WeightLogModal />
     </>
   );
 }
 
-export { FoodLogModal } from './FoodLogModal';
 export { WeightLogModal } from './WeightLogModal';

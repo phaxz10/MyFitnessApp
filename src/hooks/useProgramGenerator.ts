@@ -3,11 +3,13 @@ import { getDB } from '../services/db';
 import {
   findDuplicateExercises,
   generateExerciseDetailsBatch,
+} from '../services/coaching/exerciseLibraryCoach';
+import {
   generateWorkoutProgram,
   generateWorkoutProgramWithFunctionCalling,
   inferExperienceLevel,
   type StreamlinedProgramResult,
-} from '../services/openai';
+} from '../services/coaching/programCoach';
 import type {
   AIExerciseResponse,
   AIProgramGeneratorInput,

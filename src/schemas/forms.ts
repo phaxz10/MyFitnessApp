@@ -130,6 +130,21 @@ export const goalsFormSchema = z.object({
 
 export const apiKeyFormSchema = z.object({
   apiKey: z.string().optional(),
+  proxyUrl: z
+    .string()
+    .optional()
+    .refine(
+      (val) => {
+        if (!val || val.trim() === '') return true;
+        try {
+          const url = new URL(val);
+          return url.protocol === 'https:' || url.protocol === 'http:';
+        } catch {
+          return false;
+        }
+      },
+      { message: 'Must be a valid http(s) URL' },
+    ),
 });
 
 export type ProfileFormData = z.infer<typeof profileFormSchema>;
@@ -160,15 +175,6 @@ export const foodEntrySchema = z.object({
 });
 
 export type FoodEntryFormData = z.infer<typeof foodEntrySchema>;
-
-// ============== Meal Scanner Schema ==============
-
-export const mealScannerSchema = z.object({
-  mealType: z.enum(['breakfast', 'lunch', 'dinner', 'snack']),
-  description: z.string().optional(),
-});
-
-export type MealScannerFormData = z.infer<typeof mealScannerSchema>;
 
 // ============== Exercise Library Schema ==============
 

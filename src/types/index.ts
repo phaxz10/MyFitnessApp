@@ -11,6 +11,7 @@ export interface UserProfile {
   carbs_target_g: number;
   fat_target_g: number;
   openai_api_key: string | null;
+  openai_proxy_url: string | null;
   created_at: string;
   updated_at: string;
 }

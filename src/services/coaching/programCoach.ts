@@ -1,37 +1,73 @@
-import OpenAI from 'openai';
 import type {
   FunctionTool,
   ResponseInputItem,
   Tool,
 } from 'openai/resources/responses/responses';
+import { z } from 'zod';
 import {
   ALWAYS_AVAILABLE_EQUIPMENT,
-  MUSCLE_GROUPS,
-} from '../constants/equipment';
+} from '../../constants/equipment';
 import type {
-  AIExerciseCoachingResponse,
   AIExerciseResponse,
-  AIFoodAnalysisResponse,
-  AIGoalReviewResponse,
   AIProgramGeneratorInput,
   AIProgramGeneratorInputV2,
   AIProgramGeneratorResponse,
   AIProgramOptimizationInput,
-  AITargetResponse,
-  AIWeeklyReviewResponse,
   Exercise,
-  ExerciseNote,
   ExperienceLevel,
   ExperienceLevelInference,
-  UserProfile,
-  WeeklyReviewData,
-  WeightLog,
-  WorkoutSet,
-} from '../types';
-import { calculateAgeFromBirthdate } from '../utils/date';
+} from '../../types';
+import { complete, respond } from '../ai/aiClient';
+
+const WEB_SEARCH_TOOL: Tool = { type: 'web_search' };
 
 // ============================================================================
-// FUNCTION DECLARATIONS FOR OPENAI FUNCTION CALLING
+// SCHEMAS — programs are high-stakes (saved to DB, drive workout sessions)
+// ============================================================================
+
+// Optional rather than nullable: the AIGeneratedExercise type uses
+// `number | undefined` (no null), and the AI's null values get coerced to
+// undefined in the transform below.
+const generatedExerciseSchema = z
+  .object({
+    name: z.string(),
+    targetSets: z.number(),
+    targetRepMin: z.number(),
+    targetRepMax: z.number(),
+    targetDurationSeconds: z.number().nullable().optional(),
+    notes: z.string().nullable().optional(),
+    supersetWith: z.string().nullable().optional(),
+  })
+  .transform((ex) => ({
+    name: ex.name,
+    targetSets: ex.targetSets,
+    targetRepMin: ex.targetRepMin,
+    targetRepMax: ex.targetRepMax,
+    targetDurationSeconds: ex.targetDurationSeconds ?? undefined,
+    notes: ex.notes ?? undefined,
+    supersetWith: ex.supersetWith ?? undefined,
+  }));
+
+const generatedSessionSchema = z.object({
+  name: z.string(),
+  dayOfWeek: z.number().nullable(),
+  exercises: z.array(generatedExerciseSchema),
+});
+
+const programResponseSchema = z.object({
+  programName: z.string(),
+  programDescription: z.string(),
+  sessions: z.array(generatedSessionSchema),
+  weeklyVolumeSummary: z.object({
+    totalSets: z.number(),
+    muscleGroupBreakdown: z.record(z.string(), z.number()),
+  }),
+  recommendations: z.array(z.string()),
+  experienceLevel: z.enum(['beginner', 'intermediate', 'advanced']).optional(),
+}) satisfies z.ZodType<AIProgramGeneratorResponse>;
+
+// ============================================================================
+// FUNCTION TOOLS for multi-turn program generation
 // ============================================================================
 
 const createExercisesFunctionTool: FunctionTool = {
@@ -275,551 +311,14 @@ const inferExperienceLevelFunctionTool: FunctionTool = {
   },
 };
 
-let client: OpenAI | null = null;
+// ============================================================================
+// generateWorkoutProgram — single-turn program generation
+// ============================================================================
 
-const MODEL = 'gpt-4o';
-const WEB_SEARCH_TOOL: Tool = { type: 'web_search' };
-
-export function initOpenAI(apiKey: string): void {
-  client = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
-}
-
-export function isOpenAIInitialized(): boolean {
-  return client !== null;
-}
-
-function requireClient(): OpenAI {
-  if (!client) throw new Error('OpenAI API not initialized');
-  return client;
-}
-
-// Strip code fences if the model wraps JSON in markdown despite instructions
-function cleanJsonResponse(text: string): string {
-  return text
-    .replace(/```json\n?/g, '')
-    .replace(/```\n?/g, '')
-    .trim();
-}
-
-// Analyze food from text description
-export async function analyzeFoodText(
-  foodDescription: string,
-): Promise<AIFoodAnalysisResponse> {
-  const openai = requireClient();
-
-  const prompt = `Analyze the following food description and look up on the internet for nutritional information.
-Return JSON format only, no markdown code blocks.
-
-Food: ${foodDescription}
-
-Return format:
-{
-  "items": [
-    {
-      "name": "food item name",
-      "portion_grams": grams,
-      "calories": calories,
-      "protein_g": protein,
-      "carbs_g": carbs,
-      "fat_g": fat
-    }
-  ],
-  "total": {
-    "calories": total_calories,
-    "protein_g": total_protein,
-    "carbs_g": total_carbs,
-    "fat_g": total_fat
-  }
-}`;
-
-  const response = await openai.responses.create({
-    model: MODEL,
-    input: prompt,
-    tools: [WEB_SEARCH_TOOL],
-    temperature: 1,
-  });
-
-  return JSON.parse(
-    cleanJsonResponse(response.output_text ?? ''),
-  ) as AIFoodAnalysisResponse;
-}
-
-// Analyze food from image with optional text description
-export async function analyzeFoodImage(
-  imageBase64: string,
-  mimeType: string,
-  textDescription?: string,
-): Promise<AIFoodAnalysisResponse> {
-  const openai = requireClient();
-
-  const prompt = `Analyze this food image and estimate nutritional information. please throw error if the image is not food.
-${textDescription ? `Additional context from user: ${textDescription}` : ''}
-
-All portions should be estimated in grams.
-
-Return JSON format only, no markdown code blocks:
-{
-  "items": [
-    {
-      "name": "identified food item",
-      "portion_grams": estimated_grams,
-      "calories": estimated_calories,
-      "protein_g": estimated_protein,
-      "carbs_g": estimated_carbs,
-      "fat_g": estimated_fat
-    }
-  ],
-  "total": {
-    "calories": total_calories,
-    "protein_g": total_protein,
-    "carbs_g": total_carbs,
-    "fat_g": total_fat
-  }
-}`;
-
-  const response = await openai.responses.create({
-    model: MODEL,
-    input: [
-      {
-        role: 'user',
-        content: [
-          { type: 'input_text', text: prompt },
-          {
-            type: 'input_image',
-            image_url: `data:${mimeType};base64,${imageBase64}`,
-            detail: 'auto',
-          },
-        ],
-      },
-    ],
-    temperature: 1,
-  });
-
-  return JSON.parse(
-    cleanJsonResponse(response.output_text ?? ''),
-  ) as AIFoodAnalysisResponse;
-}
-
-function buildExerciseDetailsPrompt(exerciseNames: string[]): string {
-  const isBatch = exerciseNames.length > 1;
-  const exerciseList = exerciseNames
-    .map((name, index) => `${index + 1}. ${name}`)
-    .join('\n');
-  const intro = isBatch
-    ? `You are a certified personal trainer and exercise science expert. Generate comprehensive exercise details for the following exercises:\n\n${exerciseList}`
-    : `You are a certified personal trainer and exercise science expert. Generate comprehensive exercise details for: "${exerciseNames[0]}"`;
-  const responseShape = `[
-  {
-    "name": "standardized exercise name",
-    "description": "A comprehensive step-by-step guide on how to perform this exercise. Include: starting position, movement execution (concentric and eccentric phases), and end position. Be specific about body positioning, grip, stance, and range of motion.",
-    "muscle_groups": ["Primary category", "Secondary category"],
-    "equipment": "required equipment (or 'Bodyweight' if none)",
-    "exercise_type": "reps_weight|reps_only|duration|duration_weight",
-    "tips": [
-      "Form cue or technique tip",
-      "Common mistake to avoid",
-      "Breathing instruction (e.g., 'Exhale during the lift, inhale on the descent')",
-      "Safety consideration",
-      "Progression or variation tip"
-    ]
-  }
-]`;
-
-  return `${intro}
-
-Provide detailed, actionable information that helps someone perform this exercise safely and effectively.
-
-IMPORTANT: For muscle_groups, you MUST ONLY use values from this list: ${MUSCLE_GROUPS.join(', ')}
-- Map anatomical terms to these categories, using simple region cues to pick the best category (upper/mid/lower chest or back, front/side/rear shoulders, quads/hamstrings/calves for legs, upper/lower abs or obliques for core, upper/lower glutes). Example mappings: "Pectoralis Major" -> "Chest", "Latissimus Dorsi" -> "Back", "Quadriceps" -> "Quads", "Hamstrings" -> "Hamstrings", "Deltoids" -> "Shoulders", "Abdominals" -> "Core", "Obliques" -> "Core", "Gluteus Maximus/Med" -> "Glutes", "Calves" -> "Calves"
-- If multiple muscle groups are targeted, include both primary and secondary groups and specific region of the primary group. For example: a bench press targets "Chest" primarily and "Triceps" secondarily so the list would be ["Chest", "Mid Chest", "Triceps"]. another exampe: a deadlift targets "Back" primarily and "Hamstrings" secondarily so the list would be ["Back", "Lower Back", "Hamstrings"]
-- List primary muscle group first
-- For exercises targeting arms, also include triceps or biceps or both as applicable
-- For compound movements targeting many areas, you can include "Full Body"
-
-IMPORTANT: For exercise_type, determine which type this exercise is:
-- "reps_weight": Exercise performed with reps and external weight (e.g., Bench Press, Squat, Bicep Curl)
-- "reps_only": Exercise performed with reps but no weight (e.g., Pull-ups, Push-ups, Air Squats)
-- "duration": Exercise held for time without weight (e.g., Plank, Dead Hang, Wall Sit)
-- "duration_weight": Exercise held for time with weight (e.g., Weighted Plank, Farmer's Carry)
-
-Return JSON format only, no markdown code blocks:
-${responseShape}
-
-Guidelines:
-- Description should be 3-5 sentences covering the full movement pattern
-- Include 4-6 practical tips covering form, breathing, safety, and common errors
-- Be specific and actionable - avoid vague instructions
-- Use builtwithscience.com publicly available data as reference where applicable${isBatch ? '\n- Return an array with one object per exercise, in the same order as the input list' : ''}`;
-}
-
-// Generate exercise details
-export async function generateExerciseDetails(
-  exerciseName: string,
-): Promise<AIExerciseResponse> {
-  const openai = requireClient();
-
-  const prompt = buildExerciseDetailsPrompt([exerciseName]);
-
-  const response = await openai.responses.create({
-    model: MODEL,
-    input: prompt,
-    tools: [WEB_SEARCH_TOOL],
-  });
-
-  return JSON.parse(
-    cleanJsonResponse(response.output_text ?? ''),
-  ) as AIExerciseResponse;
-}
-
-// Generate details for multiple exercises at once
-export async function generateExerciseDetailsBatch(
-  exerciseNames: string[],
-): Promise<AIExerciseResponse[]> {
-  const openai = requireClient();
-
-  const prompt = buildExerciseDetailsPrompt(exerciseNames);
-
-  const response = await openai.responses.create({
-    model: MODEL,
-    input: prompt,
-    tools: [WEB_SEARCH_TOOL],
-  });
-
-  return JSON.parse(
-    cleanJsonResponse(response.output_text ?? ''),
-  ) as AIExerciseResponse[];
-}
-
-// Check for potential duplicate exercises using AI
-export async function findDuplicateExercises(
-  candidateName: string,
-  existingExercises: Exercise[],
-): Promise<Exercise[]> {
-  const openai = requireClient();
-
-  if (existingExercises.length === 0) return [];
-
-  const list = existingExercises
-    .slice(0, 100)
-    .map(
-      (ex, index) =>
-        `${index + 1}. Name: ${ex.name}; Muscles: ${ex.muscle_groups}; Equipment: ${ex.equipment}`,
-    )
-    .join('\n');
-
-  const prompt = `You are helping manage a personal exercise library.
-User wants to add or generate a new exercise with name: "${candidateName}".
-
-Here is the current exercise library (up to 100 items):
-${list}
-
-Task:
-- Identify any existing exercises that are likely the same exercise or a very close duplicate.
-- Focus on name similarity and overlapping muscle groups/equipment.
-
-Return JSON ONLY (no markdown) in this format:
-{
-  "duplicate_indices": [
-    index_numbers_of_potential_duplicates_using_1_based_indices_from_the_list_above
-  ]
-}`;
-
-  const response = await openai.responses.create({
-    model: MODEL,
-    input: prompt,
-  });
-
-  const text = response.output_text ?? '';
-
-  try {
-    const parsed = JSON.parse(cleanJsonResponse(text)) as {
-      duplicate_indices?: number[];
-    };
-    const indices = Array.isArray(parsed.duplicate_indices)
-      ? parsed.duplicate_indices.filter((n) => Number.isInteger(n) && n >= 1)
-      : [];
-
-    if (indices.length === 0) return [];
-
-    return indices
-      .map((i) => existingExercises[i - 1])
-      .filter((ex) => ex !== undefined);
-  } catch (error) {
-    console.error('Failed to parse duplicate exercise response', error, text);
-    return [];
-  }
-}
-
-// Calculate calorie and macro targets
-export async function calculateTargets(profile: {
-  age: number;
-  gender: 'male' | 'female';
-  height_cm: number;
-  weight_kg: number;
-  activity_level: 'sedentary' | 'light' | 'moderate' | 'active';
-  goal: 'bulk' | 'lean_bulk' | 'recomp' | 'cut' | 'maintain';
-}): Promise<AITargetResponse> {
-  const openai = requireClient();
-
-  const prompt = `Calculate daily calorie and macro targets for:
-
-Profile:
-- Age: ${profile.age}
-- Gender: ${profile.gender}
-- Height: ${profile.height_cm}cm
-- Weight: ${profile.weight_kg}kg
-- Activity Level: ${profile.activity_level}
-- Goal: ${profile.goal}
-
-Provide personalized daily targets considering the goal and sustainable progress. Aim for a reasonable, sustainable rate based on recent progress rather than user-selected targets.
-
-Note:
-- Use builtwithscience.com publicly available data as reference where applicable
-
-Return JSON format only, no markdown code blocks:
-{
-  "calorie_target": daily_calories,
-  "protein_g": protein_grams,
-  "carbs_g": carb_grams,
-  "fat_g": fat_grams,
-  "reasoning": "brief explanation of calculation"
-}`;
-
-  const response = await openai.responses.create({
-    model: MODEL,
-    input: prompt,
-    tools: [WEB_SEARCH_TOOL],
-  });
-
-  return JSON.parse(
-    cleanJsonResponse(response.output_text ?? ''),
-  ) as AITargetResponse;
-}
-
-// Review goals and progress
-export async function reviewGoals(
-  profile: UserProfile,
-  weightHistory: WeightLog[],
-  avgCalories: number,
-  daysLogged: number,
-  adherencePct: number,
-): Promise<AIGoalReviewResponse> {
-  const openai = requireClient();
-
-  const startWeight = weightHistory.length > 0 ? weightHistory[0].weight_kg : 0;
-  const currentWeight =
-    weightHistory.length > 0
-      ? weightHistory[weightHistory.length - 1].weight_kg
-      : 0;
-  const weightChange = currentWeight - startWeight;
-  const periodDays =
-    weightHistory.length > 1
-      ? Math.ceil(
-          (new Date(weightHistory[weightHistory.length - 1].date).getTime() -
-            new Date(weightHistory[0].date).getTime()) /
-            (1000 * 60 * 60 * 24),
-        )
-      : 0;
-
-  const weightDataSummary = weightHistory
-    .slice(-30)
-    .map((w) => `${w.date}: ${w.weight_kg}kg`)
-    .join('\n');
-
-  const prompt = `Review my fitness progress and provide recommendations.
-
-Current Profile:
-- Age: ${calculateAgeFromBirthdate(profile.birthdate)}, Gender: ${profile.gender}, Height: ${profile.height_cm}cm
-- Goal: ${profile.goal}
-- Current calorie target: ${profile.calorie_target}
-
-Weight History (recent):
-${weightDataSummary}
-
-Calorie Adherence:
-- Average daily intake: ${avgCalories}
-- Days logged: ${daysLogged}
-- Target adherence: ${adherencePct}%
-
-Current weight: ${currentWeight}kg
-Starting weight: ${startWeight}kg
-Weight change: ${weightChange.toFixed(1)}kg over ${periodDays} days
-
-Analyze my progress and provide:
-1. Assessment of current progress vs goal
-2. Recommended calorie target adjustment (if any)
-3. Suggested goal change (if appropriate)
-4. Any other recommendations
-
-Note:
-- Use builtwithscience.com publicly available data as reference where applicable
-
-Return JSON format only, no markdown code blocks:
-{
-  "assessment": "text analysis of progress",
-  "on_track": true or false,
-  "recommendations": {
-    "calorie_target": new_target_or_null,
-    "protein_g": new_protein_or_null,
-    "carbs_g": new_carbs_or_null,
-    "fat_g": new_fat_or_null,
-    "goal_change": "suggested_goal_or_null",
-    "reasoning": "why these changes"
-  },
-  "program_suggestions": "any workout program advice"
-}`;
-
-  const response = await openai.responses.create({
-    model: MODEL,
-    input: prompt,
-    tools: [WEB_SEARCH_TOOL],
-  });
-
-  return JSON.parse(
-    cleanJsonResponse(response.output_text ?? ''),
-  ) as AIGoalReviewResponse;
-}
-
-// Weekly progress review for Monday check-in
-export async function reviewWeeklyProgress(
-  profile: UserProfile,
-  weeklyData: WeeklyReviewData,
-): Promise<AIWeeklyReviewResponse> {
-  const openai = requireClient();
-
-  const weightDataSummary = weeklyData.weightLogs
-    .map(
-      (w) =>
-        `${w.date}: ${w.weight_kg}kg${w.body_fat_pct ? ` (${w.body_fat_pct}% BF)` : ''}`,
-    )
-    .join('\n');
-
-  // 7700 kcal ≈ 1kg of body weight — used to estimate expected vs actual change
-  const dailyDeficitOrSurplus =
-    weeklyData.avgDailyCalories - profile.calorie_target;
-  const weeklyCalorieDifference = dailyDeficitOrSurplus * 7;
-  const expectedWeeklyWeightChange = weeklyCalorieDifference / 7700;
-
-  const prompt = `You are a fitness coach conducting a weekly check-in review. Analyze the user's past week of progress and provide actionable recommendations.
-
-User Profile:
-- Age: ${calculateAgeFromBirthdate(profile.birthdate)}, Gender: ${profile.gender}, Height: ${profile.height_cm}cm
-- Current Goal: ${profile.goal}
-- Current Calorie Target: ${profile.calorie_target} kcal/day
-- Macro Targets: ${profile.protein_target_g}g protein, ${profile.carbs_target_g}g carbs, ${profile.fat_target_g}g fat
-
-Week Summary (${weeklyData.weekStart} to ${weeklyData.weekEnd}):
-- Days with weight logged: ${weeklyData.daysWithWeightLog}
-- Days with calories logged: ${weeklyData.daysWithCalorieLog}
-- Workouts completed: ${weeklyData.totalWorkouts}
-
-Weight Data:
-${weightDataSummary || 'No weight logs this week'}
-${weeklyData.weightChange !== null ? `Actual weekly weight change: ${weeklyData.weightChange > 0 ? '+' : ''}${weeklyData.weightChange.toFixed(2)}kg` : ''}
-
-Calorie Adherence:
-- Average daily intake: ${weeklyData.avgDailyCalories} kcal
-- Target: ${profile.calorie_target} kcal
-- Adherence: ${weeklyData.calorieAdherence}%
-- Weekly calorie difference from target: ${weeklyCalorieDifference > 0 ? '+' : ''}${Math.round(weeklyCalorieDifference)} kcal
-- Expected weight change based on intake: ${expectedWeeklyWeightChange > 0 ? '+' : ''}${expectedWeeklyWeightChange.toFixed(2)}kg
-
-METABOLIC RESPONSE ANALYSIS:
-Compare actual weight change vs expected weight change to assess metabolic adaptation:
-
-"Thrifty" Metabolic Response (signs of metabolic adaptation):
-- Weight loss is SLOWER than expected despite calorie deficit
-- Or weight gain is FASTER than expected on small surplus
-- Body is conserving energy, reducing NEAT (non-exercise activity thermogenesis)
-- Common after prolonged dieting or multiple cut cycles
-- Recommendation: Consider diet break, reverse diet, or increase calories slightly to restore metabolic rate
-
-"Spendthrift" Metabolic Response (metabolically flexible):
-- Weight changes roughly match expected rates based on calorie intake
-- Body responds predictably to calorie adjustments
-- Good metabolic flexibility - continue current approach
-
-"Hyper-Spendthrift" Response (rare):
-- Weight loss is FASTER than expected
-- Or difficulty gaining weight despite surplus
-- High metabolic rate, body "wastes" excess energy as heat
-- May need larger surplus for bulking goals
-
-Based on this data, provide a comprehensive weekly review. Consider:
-1. Is the user on track for their ${profile.goal} goal?
-2. Analyze their metabolic response: Is their body responding as expected to their calorie intake, or showing signs of metabolic adaptation (thrifty) or high metabolism (spendthrift)?
-3. Should they update body measurements (weight, body fat)? Recommend this if no recent measurements or if significant weight change detected.
-4. Should calorie targets be adjusted? Consider:
-   - If showing "thrifty" response during a cut: may need a diet break or slight calorie increase
-   - If showing "thrifty" response during bulk: current calories may be sufficient
-   - If showing "spendthrift" response: continue current approach or adjust based on goals
-5. Should the goal be changed? (e.g., cut -> maintenance for diet break if metabolically adapted)
-6. Are there any workout/program adjustments needed?
-
-Return JSON format only, no markdown code blocks:
-{
-  "summary": "2-3 sentence overview of the week's progress",
-  "onTrack": true/false,
-  "metabolicResponse": {
-    "type": "thrifty|normal|spendthrift",
-    "analysis": "explanation of how body is responding to current calorie intake vs expected",
-    "recommendation": "specific advice based on metabolic response"
-  },
-  "progressAssessment": {
-    "weightProgress": "assessment of weight trend vs goal",
-    "calorieAdherence": "assessment of calorie tracking consistency",
-    "workoutConsistency": "assessment of workout frequency"
-  },
-  "recommendations": {
-    "updateMeasurements": true/false,
-    "measurementsReason": "why measurements should be updated, or null",
-    "adjustCalories": true/false,
-    "newCalorieTarget": new_target_number_or_null,
-    "newProteinTarget": new_protein_or_null,
-    "newCarbsTarget": new_carbs_or_null,
-    "newFatTarget": new_fat_or_null,
-    "caloriesReason": "explanation for calorie adjustment including metabolic response considerations, or null",
-    "dietBreakRecommended": true/false,
-    "dietBreakReason": "if thrifty response detected during cut, explain benefit of 1-2 week maintenance phase, or null",
-    "changeGoal": true/false,
-    "suggestedGoal": "bulk|lean_bulk|recomp|cut|maintain" or null,
-    "goalReason": "why goal should change, or null",
-    "changeProgram": true/false,
-    "programSuggestion": "program advice or null"
-  },
-  "motivationalMessage": "encouraging message tailored to their progress and metabolic situation"
-}
-
-Guidelines:
-- Be encouraging but honest about metabolic adaptation
-- If data shows thrifty response during a cut (weight not dropping despite deficit), suggest:
-  * A 1-2 week "diet break" at maintenance calories to restore metabolic rate
-  * Slightly increasing calories (100-200) to break through plateau
-  * Adding refeed days (1-2 higher carb days per week)
-- If data shows spendthrift response, reassure user their metabolism is healthy
-- Only suggest goal changes if there's a clear reason (e.g., metabolic adaptation requiring diet break)
-- Calorie adjustments should consider metabolic state, not just weight trends
-- If data is limited, acknowledge uncertainty but note that consistent logging helps identify metabolic patterns
-- Use builtwithscience.com publicly available data as reference where applicable`;
-
-  const response = await openai.responses.create({
-    model: MODEL,
-    input: prompt,
-    tools: [WEB_SEARCH_TOOL],
-  });
-
-  return JSON.parse(
-    cleanJsonResponse(response.output_text ?? ''),
-  ) as AIWeeklyReviewResponse;
-}
-
-// Generate a complete workout program based on user preferences
 export async function generateWorkoutProgram(
   input: AIProgramGeneratorInput,
   existingExercises: Exercise[],
 ): Promise<AIProgramGeneratorResponse> {
-  const openai = requireClient();
-
   const allEquipment = [
     ...ALWAYS_AVAILABLE_EQUIPMENT,
     ...input.availableEquipment,
@@ -1246,22 +745,20 @@ CRITICAL RULES:
 - If possible, prioritize builtwithscience.com publicly available routines to align with evidence-based practices
 - Infer "experienceLevel" from the exercise selection, volume, and superset use; if input.experienceLevel seems mismatched, return the best-fit level`;
 
-  const response = await openai.responses.create({
-    model: MODEL,
-    input: prompt,
+  return complete({
+    prompt,
+    schema: programResponseSchema,
     tools: [WEB_SEARCH_TOOL],
   });
-
-  return JSON.parse(
-    cleanJsonResponse(response.output_text ?? ''),
-  ) as AIProgramGeneratorResponse;
 }
+
+// ============================================================================
+// optimizeWorkoutProgram — single-turn optimization
+// ============================================================================
 
 export async function optimizeWorkoutProgram(
   input: AIProgramOptimizationInput,
 ): Promise<AIProgramGeneratorResponse> {
-  const openai = requireClient();
-
   const formattedProgram = input.program.sessions
     .map((session) => {
       const exercises = session.exercises
@@ -1377,114 +874,85 @@ Return JSON only (no markdown):
   "recommendations": ["string"]
 }`;
 
-  const response = await openai.responses.create({
-    model: MODEL,
-    input: prompt,
+  return complete({
+    prompt,
+    schema: programResponseSchema,
     tools: [WEB_SEARCH_TOOL],
   });
-
-  return JSON.parse(
-    cleanJsonResponse(response.output_text ?? ''),
-  ) as AIProgramGeneratorResponse;
-}
-
-// Get AI coaching recommendations for exercise progression
-export async function getExerciseCoaching(
-  exerciseName: string,
-  exerciseHistory: { date: string; sets: WorkoutSet[] }[],
-  targetRepMin: number,
-  targetRepMax: number,
-  targetSets: number,
-  exerciseNotes: ExerciseNote[] = [],
-): Promise<AIExerciseCoachingResponse> {
-  const openai = requireClient();
-
-  const historyFormatted = exerciseHistory
-    .slice(-5)
-    .map((session) => {
-      const setsStr = session.sets
-        .map((s, i) => `Set ${i + 1}: ${s.weight_kg ?? 0}lbs × ${s.reps ?? 0}`)
-        .join(', ');
-      return `${session.date}: ${setsStr}`;
-    })
-    .join('\n');
-
-  const lastSession = exerciseHistory[exerciseHistory.length - 1];
-  const lastSets = lastSession?.sets || [];
-  const notesSummary = exerciseNotes.length
-    ? exerciseNotes
-        .slice(-5)
-        .map((note) => `- ${note.content}`)
-        .join('\n')
-    : 'No exercise notes available';
-
-  const prompt = `You are an expert strength coach analyzing exercise progression data. Based on the training history, provide recommendations for the next workout.
-
-EXERCISE: ${exerciseName}
-TARGET: ${targetSets} sets × ${targetRepMin}-${targetRepMax} reps
-
-EXERCISE NOTES (most recent last):
-${notesSummary}
-
-RECENT TRAINING HISTORY (most recent last):
-${historyFormatted || 'No previous history'}
-
-LAST SESSION SETS:
-${lastSets.map((s, i) => `Set ${i + 1}: ${s.weight_kg ?? 0}lbs × ${s.reps ?? 0} reps`).join('\n') || 'No data'}
-
-PROGRESSIVE OVERLOAD PRINCIPLES:
-1. If athlete hit the TOP of rep range (${targetRepMax} reps) on all sets with good form → INCREASE weight by 5-10lbs next session
-2. If athlete hit MIDDLE of rep range (${Math.floor((targetRepMin + targetRepMax) / 2)} reps) → MAINTAIN weight, focus on adding 1-2 reps
-3. If athlete FAILED to hit minimum reps (${targetRepMin}) → DECREASE weight or maintain and focus on form
-4. Consider consistency: multiple sessions at same weight hitting high reps = ready to progress
-5. Consider fatigue: declining reps across sets is normal, but dramatic drops suggest too heavy
-
-ANALYSIS REQUIRED:
-1. Assess the overall trend: Is the athlete progressing, plateauing, or regressing?
-2. For EACH set (up to ${targetSets} sets), recommend:
-   - Weight direction: increase, maintain, or decrease
-   - Rep direction: increase, maintain, or decrease
-   - Suggested weight (in lbs)
-   - Suggested reps
-
-Return JSON format only, no markdown code blocks:
-{
-  "exerciseId": 0,
-  "overallTrend": "progressing|plateau|regressing",
-  "sets": [
-    {
-      "setNumber": 1,
-      "weight": "increase|maintain|decrease",
-      "reps": "increase|maintain|decrease",
-      "suggestedWeight": number_in_lbs,
-      "suggestedReps": number
-    }
-  ],
-  "coachingTip": "Brief actionable advice for this exercise"
-}
-
-RULES:
-- Consider user notes when analyzing performance
-- Return exactly ${targetSets} sets in the response
-- suggestedWeight should be a realistic number based on history (use last weight as baseline)
-- suggestedReps should be within the target range (${targetRepMin}-${targetRepMax})
-- If no history, suggest conservative starting weights and recommend "maintain" for first session
-- Weight increments should be practical: 5lb for upper body, 5-10lb for lower body
-- Use builtwithscience.com publicly available data as reference where applicable`;
-
-  const response = await openai.responses.create({
-    model: MODEL,
-    input: prompt,
-    tools: [WEB_SEARCH_TOOL],
-  });
-
-  return JSON.parse(
-    cleanJsonResponse(response.output_text ?? ''),
-  ) as AIExerciseCoachingResponse;
 }
 
 // ============================================================================
-// STREAMLINED PROGRAM GENERATION WITH FUNCTION CALLING
+// inferExperienceLevel — standalone helper (rarely called directly)
+// ============================================================================
+
+export async function inferExperienceLevel(workoutHistory: {
+  totalWorkouts: number;
+  totalWeeks: number;
+  avgExercisesPerSession: number;
+  avgSetsPerSession: number;
+  hasUsedSupersets: boolean;
+  topExercises: string[];
+  avgWeightProgression?: number;
+}): Promise<ExperienceLevelInference> {
+  const totalWorkouts = Number(workoutHistory.totalWorkouts) || 0;
+  const totalWeeks = Number(workoutHistory.totalWeeks) || 0;
+  const avgExercises = Number(workoutHistory.avgExercisesPerSession) || 0;
+  const avgSets = Number(workoutHistory.avgSetsPerSession) || 0;
+  const avgProgression = workoutHistory.avgWeightProgression
+    ? Number(workoutHistory.avgWeightProgression)
+    : null;
+
+  const prompt = `Analyze this workout history and determine the user's experience level (beginner, intermediate, or advanced).
+
+WORKOUT HISTORY:
+- Total workouts completed: ${totalWorkouts}
+- Training span: ${totalWeeks} weeks
+- Average exercises per session: ${avgExercises.toFixed(1)}
+- Average sets per session: ${avgSets.toFixed(1)}
+- Has used supersets: ${workoutHistory.hasUsedSupersets ? 'Yes' : 'No'}
+- Most used exercises: ${(workoutHistory.topExercises || []).slice(0, 10).join(', ') || 'None recorded'}
+${avgProgression !== null ? `- Average weight progression: ${avgProgression.toFixed(1)}% per month` : ''}
+
+EXPERIENCE LEVEL CRITERIA:
+- BEGINNER (0-12 months consistent training):
+  * < 50 total workouts OR < 12 weeks training
+  * Simple exercise selection, mostly compounds
+  * Lower volume (< 15 sets per session on average)
+  * Rarely uses supersets
+
+- INTERMEDIATE (1-3 years consistent training):
+  * 50-200 total workouts AND 12-36 weeks training
+  * Mix of compounds and isolation exercises
+  * Moderate volume (15-25 sets per session)
+  * Occasionally uses supersets
+  * Shows exercise variety
+
+- ADVANCED (3+ years consistent training):
+  * > 200 total workouts AND > 36 weeks training
+  * Diverse exercise selection with targeted isolation work
+  * Higher volume (20+ sets per session)
+  * Regular superset usage
+  * Evidence of periodization or structured programming
+
+Return JSON only, no markdown:
+{
+  "inferredLevel": "beginner|intermediate|advanced",
+  "confidence": "low|medium|high",
+  "reasoning": "2-3 sentence explanation",
+  "metrics": {
+    "totalWorkouts": ${workoutHistory.totalWorkouts},
+    "averageVolumePerSession": ${workoutHistory.avgSetsPerSession.toFixed(1)},
+    "exerciseVariety": ${workoutHistory.topExercises.length},
+    "trainingConsistencyWeeks": ${workoutHistory.totalWeeks},
+    "hasProgressiveOverload": true/false
+  }
+}`;
+
+  return complete<ExperienceLevelInference>({ prompt });
+}
+
+// ============================================================================
+// generateWorkoutProgramWithFunctionCalling — multi-turn orchestration
 // ============================================================================
 
 export interface StreamlinedProgramResult {
@@ -1504,8 +972,6 @@ export async function generateWorkoutProgramWithFunctionCalling(
   input: AIProgramGeneratorInputV2,
   existingExercises: Exercise[],
 ): Promise<StreamlinedProgramResult> {
-  const openai = requireClient();
-
   const allEquipment = [
     ...ALWAYS_AVAILABLE_EQUIPMENT,
     ...input.availableEquipment,
@@ -1704,10 +1170,9 @@ Remember: ALWAYS pair supersets bidirectionally. If Bicep Curls superset with Tr
   const maxIterations = 10;
 
   for (let i = 0; i < maxIterations; i++) {
-    const response = await openai.responses.create({
-      model: MODEL,
+    const response = await respond({
       instructions: systemPrompt,
-      input: conversation,
+      prompt: conversation,
       tools,
       tool_choice: 'auto',
     });
@@ -1848,82 +1313,4 @@ Remember: ALWAYS pair supersets bidirectionally. If Bicep Curls superset with Tr
     selectedExercises,
     inferredExperienceLevel,
   };
-}
-
-/**
- * Infer experience level from workout history using AI analysis.
- */
-export async function inferExperienceLevel(workoutHistory: {
-  totalWorkouts: number;
-  totalWeeks: number;
-  avgExercisesPerSession: number;
-  avgSetsPerSession: number;
-  hasUsedSupersets: boolean;
-  topExercises: string[];
-  avgWeightProgression?: number;
-}): Promise<ExperienceLevelInference> {
-  const openai = requireClient();
-
-  const totalWorkouts = Number(workoutHistory.totalWorkouts) || 0;
-  const totalWeeks = Number(workoutHistory.totalWeeks) || 0;
-  const avgExercises = Number(workoutHistory.avgExercisesPerSession) || 0;
-  const avgSets = Number(workoutHistory.avgSetsPerSession) || 0;
-  const avgProgression = workoutHistory.avgWeightProgression
-    ? Number(workoutHistory.avgWeightProgression)
-    : null;
-
-  const prompt = `Analyze this workout history and determine the user's experience level (beginner, intermediate, or advanced).
-
-WORKOUT HISTORY:
-- Total workouts completed: ${totalWorkouts}
-- Training span: ${totalWeeks} weeks
-- Average exercises per session: ${avgExercises.toFixed(1)}
-- Average sets per session: ${avgSets.toFixed(1)}
-- Has used supersets: ${workoutHistory.hasUsedSupersets ? 'Yes' : 'No'}
-- Most used exercises: ${(workoutHistory.topExercises || []).slice(0, 10).join(', ') || 'None recorded'}
-${avgProgression !== null ? `- Average weight progression: ${avgProgression.toFixed(1)}% per month` : ''}
-
-EXPERIENCE LEVEL CRITERIA:
-- BEGINNER (0-12 months consistent training):
-  * < 50 total workouts OR < 12 weeks training
-  * Simple exercise selection, mostly compounds
-  * Lower volume (< 15 sets per session on average)
-  * Rarely uses supersets
-
-- INTERMEDIATE (1-3 years consistent training):
-  * 50-200 total workouts AND 12-36 weeks training
-  * Mix of compounds and isolation exercises
-  * Moderate volume (15-25 sets per session)
-  * Occasionally uses supersets
-  * Shows exercise variety
-
-- ADVANCED (3+ years consistent training):
-  * > 200 total workouts AND > 36 weeks training
-  * Diverse exercise selection with targeted isolation work
-  * Higher volume (20+ sets per session)
-  * Regular superset usage
-  * Evidence of periodization or structured programming
-
-Return JSON only, no markdown:
-{
-  "inferredLevel": "beginner|intermediate|advanced",
-  "confidence": "low|medium|high",
-  "reasoning": "2-3 sentence explanation",
-  "metrics": {
-    "totalWorkouts": ${workoutHistory.totalWorkouts},
-    "averageVolumePerSession": ${workoutHistory.avgSetsPerSession.toFixed(1)},
-    "exerciseVariety": ${workoutHistory.topExercises.length},
-    "trainingConsistencyWeeks": ${workoutHistory.totalWeeks},
-    "hasProgressiveOverload": true/false
-  }
-}`;
-
-  const response = await openai.responses.create({
-    model: MODEL,
-    input: prompt,
-  });
-
-  return JSON.parse(
-    cleanJsonResponse(response.output_text ?? ''),
-  ) as ExperienceLevelInference;
 }

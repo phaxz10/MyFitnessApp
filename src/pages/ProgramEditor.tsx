@@ -37,11 +37,8 @@ import {
 import { useExercises } from '../hooks/useExercises';
 import { useProfile } from '../hooks/useProfile';
 import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
-import {
-  initOpenAI,
-  isOpenAIInitialized,
-  optimizeWorkoutProgram,
-} from '../services/openai';
+import { getAICapability } from '../services/ai/useAICapability';
+import { optimizeWorkoutProgram } from '../services/coaching/programCoach';
 import type {
   AIProgramOptimizationInput,
   EquipmentType,
@@ -606,15 +603,12 @@ export function ProgramEditor() {
       return;
     }
 
-    // Initialize OpenAI if needed
-    if (!isOpenAIInitialized()) {
-      if (!profile.openai_api_key) {
-        setOptimizeError(
-          'Please add your OpenAI API key in Settings to use AI features.',
-        );
-        return;
-      }
-      initOpenAI(profile.openai_api_key);
+    // Capability check: aiClient reads the key from store on each call.
+    if (!getAICapability().available) {
+      setOptimizeError(
+        'Please add your OpenAI API key in Settings to use AI features.',
+      );
+      return;
     }
 
     setIsOptimizing(true);

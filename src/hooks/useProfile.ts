@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { triggerAutoBackup } from '../services/autoBackup';
 import { getDB } from '../services/db';
 import type { UserProfile } from '../types';
 import { formatDate } from '../utils/date';
@@ -96,7 +95,7 @@ export function useProfile() {
     mutationFn: createProfileFn,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: profileKeys.all });
-      triggerAutoBackup();
+
     },
   });
 
@@ -105,7 +104,7 @@ export function useProfile() {
     mutationFn: updateProfileFn,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: profileKeys.all });
-      triggerAutoBackup();
+
     },
   });
 

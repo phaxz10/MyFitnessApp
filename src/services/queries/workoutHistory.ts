@@ -17,7 +17,7 @@
  * zero sets return an empty array instead of SQL NULL.
  */
 
-import type { PGlite } from '@electric-sql/pglite';
+import type { DB } from '../db';
 import type { WorkoutStatus } from '../../types';
 import type { WorkoutLogWithSets } from './types';
 
@@ -70,7 +70,7 @@ const GROUP_AND_ORDER = `
  * One SQL round-trip regardless of how many logs are returned.
  */
 export async function recent(
-  db: PGlite,
+  db: DB,
   limit: number,
 ): Promise<WorkoutLogWithSets[]> {
   const result = await db.query(
@@ -85,7 +85,7 @@ export async function recent(
  * One SQL round-trip.
  */
 export async function inRange(
-  db: PGlite,
+  db: DB,
   since: string,
   until: string,
 ): Promise<WorkoutLogWithSets[]> {

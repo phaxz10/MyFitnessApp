@@ -1,5 +1,6 @@
 import type { SyncMetadata } from './backup';
 import { DEFAULT_EXPORT_OPTIONS, exportData } from './backup';
+import { onDbWrite } from './db';
 
 const GITHUB_GIST_API = 'https://api.github.com/gists';
 const BACKUP_FILENAME = 'mypersonalfitness-backup.json';
@@ -487,17 +488,10 @@ export function isAutoBackupEnabled(): boolean {
   return !!getGithubToken();
 }
 
-/**
- * Debounce timer for auto-backup triggers
- */
 let backupTimeout: ReturnType<typeof setTimeout> | null = null;
-const BACKUP_DEBOUNCE_MS = 60000; // 1 minute debounce
+const BACKUP_DEBOUNCE_MS = 60000;
 
-/**
- * Trigger an auto-backup if enabled.
- * Uses debouncing to prevent excessive API calls.
- */
-export function triggerAutoBackup(): void {
+onDbWrite(() => {
   if (!isAutoBackupEnabled()) return;
 
   if (backupTimeout) {
@@ -505,7 +499,6 @@ export function triggerAutoBackup(): void {
   }
 
   backupTimeout = setTimeout(async () => {
-    console.log('Auto-backup triggered by change...');
     try {
       const result = await performAutoBackup();
       if (result.success) {
@@ -528,4 +521,4 @@ export function triggerAutoBackup(): void {
       backupTimeout = null;
     }
   }, BACKUP_DEBOUNCE_MS);
-}
+});

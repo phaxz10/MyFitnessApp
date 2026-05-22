@@ -1,4 +1,4 @@
-import type { PGlite } from '@electric-sql/pglite';
+import type { DB } from '../db';
 import type { FoodEntry } from '../../types';
 
 type NewFoodEntry = Omit<FoodEntry, 'id' | 'created_at' | 'updated_at'>;
@@ -45,7 +45,7 @@ function toParams(entry: NewFoodEntry): unknown[] {
  * Replaces the loop-of-single-INSERTs pattern in useCalories.
  */
 export async function addMany(
-  db: PGlite,
+  db: DB,
   entries: NewFoodEntry[],
 ): Promise<FoodEntry[]> {
   if (entries.length === 0) return [];
@@ -75,7 +75,7 @@ export async function addMany(
  * Copied entries are marked as not AI-generated.
  */
 export async function copyFromDate(
-  db: PGlite,
+  db: DB,
   sourceDate: string,
   targetDate: string,
 ): Promise<FoodEntry[]> {

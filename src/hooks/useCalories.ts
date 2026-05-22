@@ -1,5 +1,4 @@
 import { useCallback, useState } from 'react';
-import { triggerAutoBackup } from '../services/autoBackup';
 import { getDB } from '../services/db';
 import * as FoodEntryWriter from '../services/writers/foodEntryWriter';
 import type { DailyCalorieSummary, FoodEntry, MealType } from '../types';
@@ -73,7 +72,7 @@ export function useCalories() {
           ],
         );
         await fetchEntriesByDate(entry.date);
-        triggerAutoBackup();
+
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to add entry');
         throw err;
@@ -96,7 +95,7 @@ export function useCalories() {
         const db = await getDB();
         await FoodEntryWriter.addMany(db, entriesToAdd);
         await fetchEntriesByDate(entriesToAdd[0].date);
-        triggerAutoBackup();
+
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to add entries');
         throw err;
@@ -124,7 +123,7 @@ export function useCalories() {
         }
 
         await fetchEntriesByDate(targetDate);
-        triggerAutoBackup();
+
         return copied.length;
       } catch (err) {
         const errorMessage =
@@ -169,7 +168,7 @@ export function useCalories() {
         );
 
         await fetchEntriesByDate(entry.date);
-        triggerAutoBackup();
+
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : 'Failed to copy entry';
@@ -207,7 +206,7 @@ export function useCalories() {
             `UPDATE food_entries SET ${fields.join(', ')} WHERE id = $${paramIndex}`,
             values,
           );
-          triggerAutoBackup();
+  
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to update entry');
@@ -227,7 +226,7 @@ export function useCalories() {
         const db = await getDB();
         await db.query('DELETE FROM food_entries WHERE id = $1', [id]);
         await fetchEntriesByDate(date);
-        triggerAutoBackup();
+
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to delete entry');
         throw err;

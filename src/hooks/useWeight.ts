@@ -1,5 +1,4 @@
 import { useCallback, useState } from 'react';
-import { triggerAutoBackup } from '../services/autoBackup';
 import { getDB } from '../services/db';
 import type { WeightLog } from '../types';
 
@@ -75,7 +74,7 @@ export function useWeight() {
           ],
         );
         await fetchLogs();
-        triggerAutoBackup();
+
       } catch (err) {
         setError(
           err instanceof Error ? err.message : 'Failed to add weight log',
@@ -114,7 +113,7 @@ export function useWeight() {
             values,
           );
           await fetchLogs();
-          triggerAutoBackup();
+  
         }
       } catch (err) {
         setError(
@@ -136,7 +135,7 @@ export function useWeight() {
         const db = await getDB();
         await db.query('DELETE FROM weight_logs WHERE id = $1', [id]);
         await fetchLogs();
-        triggerAutoBackup();
+
       } catch (err) {
         setError(
           err instanceof Error ? err.message : 'Failed to delete weight log',

@@ -18,7 +18,7 @@
  * each session row in one query, instead of issuing a separate query per log.
  */
 
-import type { PGlite } from '@electric-sql/pglite';
+import type { DB } from '../db';
 import type { WorkoutSet } from '../../types';
 
 // ---------------------------------------------------------------------------
@@ -54,7 +54,7 @@ export interface SessionQueryOptions {
  * if they need chronological order.
  */
 export async function sessions(
-  db: PGlite,
+  db: DB,
   exerciseId: number,
   opts: SessionQueryOptions = {},
 ): Promise<ExerciseSession[]> {

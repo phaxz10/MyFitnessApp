@@ -1,4 +1,4 @@
-import type { PGlite } from '@electric-sql/pglite';
+import type { DB } from '../db';
 import type { WorkoutLogExercise, WorkoutSet } from '../../types';
 
 export interface AddExerciseOpts {
@@ -22,7 +22,7 @@ export interface AddExerciseOpts {
  *    for each exercise based on its target_sets count.
  */
 export async function instantiateSession(
-  db: PGlite,
+  db: DB,
   workoutLogId: number,
   sessionId: number,
 ): Promise<{ exercises: WorkoutLogExercise[]; sets: WorkoutSet[] }> {
@@ -69,7 +69,7 @@ export async function instantiateSession(
  * (1 for the exercise row, N for each target set).
  */
 export async function addExercise(
-  db: PGlite,
+  db: DB,
   workoutLogId: number,
   exerciseId: number,
   opts: AddExerciseOpts,

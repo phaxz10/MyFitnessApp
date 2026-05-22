@@ -90,6 +90,10 @@ The batch-write module for food entries. Produced by [src/services/writers/foodE
 
 The batch-write module for workout exercises and sets. Produced by [src/services/writers/workoutWriter.ts](src/services/writers/workoutWriter.ts) — `instantiateSession(db, workoutLogId, sessionId)` creates exercises + pre-created sets from a program session template in two INSERT-SELECT statements (replaces the ~20 serial INSERTs from the doubly-nested loop), `addExercise(db, workoutLogId, exerciseId, opts)` adds a single exercise mid-workout with its pre-created sets. Both return the created rows via RETURNING *.
 
+## Write Bus
+
+An event seam inside the DB layer. The thin wrapper returned by `getDB()` in [src/services/db.ts](src/services/db.ts) intercepts every `query()` call; when the SQL is a mutation (INSERT, UPDATE, DELETE) it emits a `{ table, op }` event to registered listeners via `onDbWrite()`. The auto-backup module subscribes once at import time and debounces a full-DB backup — no manual `triggerAutoBackup()` calls needed at mutation sites.
+
 ## Program Origin Adapter
 
 A way to *produce* a draft Workout Program. Three envisioned:

@@ -29,8 +29,8 @@ export default defineConfig({
       filename: 'sw.ts',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png'],
       injectManifest: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024 // 3 MiB
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,wasm,data}'],
+        maximumFileSizeToCacheInBytes: 15 * 1024 * 1024 // 15 MiB — fits PGlite wasm (8.3 MB) + data (5 MB)
       },
       manifest: {
         name: 'MyPersonalFitness',

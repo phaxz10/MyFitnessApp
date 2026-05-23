@@ -17,7 +17,6 @@ export default defineConfig({
   // the basic-ssl plugin generates a self-signed cert on first run.
   server: {
     host: '0.0.0.0',
-    https: true,
   },
   plugins: [
     react(),

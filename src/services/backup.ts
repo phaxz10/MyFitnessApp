@@ -206,7 +206,7 @@ export async function exportData(
   const sanitizedProgressPhotos = processRows(progressPhotos.rows);
 
   const backup: BackupData = {
-    version: '1.7', // Bumped version for birthdate field migration
+    version: '0',
     ...(syncMetadata?.syncVersion !== undefined && {
       syncVersion: syncMetadata.syncVersion,
     }),

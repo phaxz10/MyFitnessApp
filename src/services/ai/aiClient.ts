@@ -67,13 +67,19 @@ export async function complete<T = unknown>(
 ): Promise<T> {
   const response = await respond(opts);
   const text = response.output_text ?? '';
-  const cleaned = stripCodeFences(text);
+  const cleaned = extractJson(stripCodeFences(text));
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(cleaned);
-  } catch (err) {
-    throw new AIError('parse_failed', err);
+  } catch {
+    // LLMs sometimes return arithmetic expressions instead of computed values
+    // (e.g. "calories": 242 * 1.5). The result is valid JS, so evaluate it.
+    try {
+      parsed = new Function(`"use strict"; return (${cleaned})`)();
+    } catch (err) {
+      throw new AIError('parse_failed', err);
+    }
   }
 
   if (opts.schema) {
@@ -103,4 +109,13 @@ function stripCodeFences(text: string): string {
     .replace(/```json\n?/g, '')
     .replace(/```\n?/g, '')
     .trim();
+}
+
+function extractJson(text: string): string {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start !== -1 && end > start) {
+    return text.substring(start, end + 1);
+  }
+  return text;
 }

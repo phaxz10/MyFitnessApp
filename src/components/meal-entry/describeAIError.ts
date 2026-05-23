@@ -2,6 +2,7 @@ import { isAIError } from '../../services/ai/AIError';
 
 export function describeAIError(err: unknown, fallback: string): string {
   if (!isAIError(err)) return fallback;
+  console.log(err);
   switch (err.kind) {
     case 'unavailable':
       return 'AI is not configured. Add an OpenAI key in Settings.';

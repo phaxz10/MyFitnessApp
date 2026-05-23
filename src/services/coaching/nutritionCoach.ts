@@ -28,7 +28,7 @@ export async function analyzeFoodText(
   foodDescription: string,
 ): Promise<AIFoodAnalysisResponse> {
   const prompt = `Analyze the following food description and look up on the internet for nutritional information.
-Return JSON format only, no markdown code blocks.
+Return valid JSON only. All numeric values must be pre-computed numbers (e.g. 279, not "1.5 * 186"). No arithmetic expressions. No markdown code blocks.
 
 Food: ${foodDescription}
 

@@ -1,3 +1,5 @@
+import { DEFAULT_EXPORT_OPTIONS, exportData, importData } from './backup';
+import { getDB, onDbWrite } from './db';
 import { isSignedIn } from './googleAuth';
 import {
   downloadBackupJson,
@@ -10,11 +12,14 @@ import {
   uploadBackupJson,
   uploadPhoto,
 } from './googleDrive';
-import { DEFAULT_EXPORT_OPTIONS, exportData, importData } from './backup';
-import { getDB, onDbWrite } from './db';
 
 // Clean up old GitHub backup localStorage keys (one-time migration)
-for (const key of ['mpf-github-token', 'mpf-gist-id', 'mpf-sync-version', 'mpf-device-id']) {
+for (const key of [
+  'mpf-github-token',
+  'mpf-gist-id',
+  'mpf-sync-version',
+  'mpf-device-id',
+]) {
   localStorage.removeItem(key);
 }
 
@@ -23,7 +28,10 @@ for (const key of ['mpf-github-token', 'mpf-gist-id', 'mpf-sync-version', 'mpf-d
 // ---------------------------------------------------------------------------
 
 async function exportForDrive(): Promise<string> {
-  const json = await exportData({ options: DEFAULT_EXPORT_OPTIONS, stripSecrets: false });
+  const json = await exportData({
+    options: DEFAULT_EXPORT_OPTIONS,
+    stripSecrets: false,
+  });
   const backup = JSON.parse(json);
 
   if (Array.isArray(backup.data?.progress_photos)) {
@@ -84,7 +92,10 @@ export async function lazyLoadPhotos(): Promise<void> {
       try {
         const dataUrl = await downloadPhoto(row.id);
         if (dataUrl) {
-          await db.query('UPDATE progress_photos SET photo_data = $1 WHERE id = $2', [dataUrl, row.id]);
+          await db.query(
+            'UPDATE progress_photos SET photo_data = $1 WHERE id = $2',
+            [dataUrl, row.id],
+          );
         }
       } catch (err) {
         console.warn(`Failed to download photo-${row.id}:`, err);
@@ -107,7 +118,10 @@ export async function restoreIfRemoteNewer(): Promise<boolean> {
     if (!remoteExportedAt) return false;
 
     const localRestoredAt = getLastRestoredAt();
-    if (localRestoredAt && new Date(remoteExportedAt) <= new Date(localRestoredAt)) {
+    if (
+      localRestoredAt &&
+      new Date(remoteExportedAt) <= new Date(localRestoredAt)
+    ) {
       return false;
     }
 
@@ -117,7 +131,9 @@ export async function restoreIfRemoteNewer(): Promise<boolean> {
     await importData(json);
     setLastRestoredAt(remoteExportedAt);
 
-    lazyLoadPhotos().catch((err) => console.warn('Photo lazy-load failed:', err));
+    lazyLoadPhotos().catch((err) =>
+      console.warn('Photo lazy-load failed:', err),
+    );
     return true;
   } catch (err) {
     console.warn('Restore-on-load failed:', err);
@@ -135,7 +151,8 @@ export async function restoreFromDrive(): Promise<boolean> {
     if (!json) return false;
 
     const backup = JSON.parse(json);
-    const hasProfile = backup.data?.user_profile && backup.data.user_profile.length > 0;
+    const hasProfile =
+      backup.data?.user_profile && backup.data.user_profile.length > 0;
 
     await importData(json);
 
@@ -143,7 +160,9 @@ export async function restoreFromDrive(): Promise<boolean> {
       setLastRestoredAt(backup.exported_at);
     }
 
-    lazyLoadPhotos().catch((err) => console.warn('Photo lazy-load failed:', err));
+    lazyLoadPhotos().catch((err) =>
+      console.warn('Photo lazy-load failed:', err),
+    );
     return hasProfile;
   } catch (err) {
     console.warn('Restore from Drive failed:', err);

@@ -27,7 +27,10 @@ import { WeightTracker } from './pages/WeightTracker';
 import { Workout } from './pages/Workout';
 import { WorkoutDetail } from './pages/WorkoutDetail';
 import { WorkoutSession } from './pages/WorkoutSession';
-import { isAutoBackupEnabled, restoreIfRemoteNewer } from './services/autoBackup';
+import {
+  isAutoBackupEnabled,
+  restoreIfRemoteNewer,
+} from './services/autoBackup';
 import { getDB, isOnboardingComplete } from './services/db';
 
 function MainLayout() {

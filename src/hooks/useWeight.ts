@@ -74,7 +74,6 @@ export function useWeight() {
           ],
         );
         await fetchLogs();
-
       } catch (err) {
         setError(
           err instanceof Error ? err.message : 'Failed to add weight log',
@@ -113,7 +112,6 @@ export function useWeight() {
             values,
           );
           await fetchLogs();
-  
         }
       } catch (err) {
         setError(
@@ -135,7 +133,6 @@ export function useWeight() {
         const db = await getDB();
         await db.query('DELETE FROM weight_logs WHERE id = $1', [id]);
         await fetchLogs();
-
       } catch (err) {
         setError(
           err instanceof Error ? err.message : 'Failed to delete weight log',

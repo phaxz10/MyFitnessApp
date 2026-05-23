@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { getDB } from '../services/db';
 import type { Exercise } from '../types';
 

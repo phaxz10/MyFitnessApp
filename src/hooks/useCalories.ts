@@ -72,7 +72,6 @@ export function useCalories() {
           ],
         );
         await fetchEntriesByDate(entry.date);
-
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to add entry');
         throw err;
@@ -95,7 +94,6 @@ export function useCalories() {
         const db = await getDB();
         await FoodEntryWriter.addMany(db, entriesToAdd);
         await fetchEntriesByDate(entriesToAdd[0].date);
-
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to add entries');
         throw err;
@@ -168,7 +166,6 @@ export function useCalories() {
         );
 
         await fetchEntriesByDate(entry.date);
-
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : 'Failed to copy entry';
@@ -206,7 +203,6 @@ export function useCalories() {
             `UPDATE food_entries SET ${fields.join(', ')} WHERE id = $${paramIndex}`,
             values,
           );
-  
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to update entry');
@@ -226,7 +222,6 @@ export function useCalories() {
         const db = await getDB();
         await db.query('DELETE FROM food_entries WHERE id = $1', [id]);
         await fetchEntriesByDate(date);
-
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to delete entry');
         throw err;

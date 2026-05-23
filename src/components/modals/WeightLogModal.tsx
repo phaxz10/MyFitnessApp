@@ -1,13 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Modal, Button, Input } from '../ui';
-import { useWeight } from '../../hooks/useWeight';
-import { useProfile } from '../../hooks/useProfile';
+import { useCallback, useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { useAppStore } from '../../hooks/useAppStore';
-import { formatDate, formatDisplayDate } from '../../utils/date';
+import { useProfile } from '../../hooks/useProfile';
+import { useWeight } from '../../hooks/useWeight';
+import { type WeightLogFormData, weightLogSchema } from '../../schemas/forms';
 import { calculateBodyFatPercentage } from '../../utils/calculations';
-import { weightLogSchema, type WeightLogFormData } from '../../schemas/forms';
+import { formatDate, formatDisplayDate } from '../../utils/date';
+import { Button, Input, Modal } from '../ui';
 
 export function WeightLogModal() {
   const { weightLogModal, closeWeightLogModal } = useAppStore();

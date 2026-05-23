@@ -1,5 +1,4 @@
 import { useCallback, useState } from 'react';
-import { getDB } from '../services/db';
 import {
   findDuplicateExercises,
   generateExerciseDetailsBatch,
@@ -10,6 +9,7 @@ import {
   inferExperienceLevel,
   type StreamlinedProgramResult,
 } from '../services/coaching/programCoach';
+import { getDB } from '../services/db';
 import type {
   AIExerciseResponse,
   AIProgramGeneratorInput,

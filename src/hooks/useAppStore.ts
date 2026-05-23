@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { UserProfile, MealType } from '../types';
+import type { MealType, UserProfile } from '../types';
 
 // Modal types for global modal management
 export interface FoodLogModalState {
@@ -39,7 +39,9 @@ interface AppState {
     onSuccess?: () => void;
   }) => void;
   closeFoodLogModal: () => void;
-  setFoodLogModalMode: (mode: 'picker' | 'manual' | 'ai_text' | 'ai_image') => void;
+  setFoodLogModalMode: (
+    mode: 'picker' | 'manual' | 'ai_text' | 'ai_image',
+  ) => void;
 
   openWeightLogModal: (options?: {
     date?: string;

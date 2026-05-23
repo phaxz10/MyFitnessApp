@@ -1,5 +1,5 @@
-import type { DB } from '../db';
 import type { FoodEntry } from '../../types';
+import type { DB } from '../db';
 
 type NewFoodEntry = Omit<FoodEntry, 'id' | 'created_at' | 'updated_at'>;
 

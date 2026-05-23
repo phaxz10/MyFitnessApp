@@ -1,4 +1,4 @@
-import type { EquipmentType, AlwaysAvailableEquipment } from '../types';
+import type { AlwaysAvailableEquipment, EquipmentType } from '../types';
 
 // Equipment that is always available (user doesn't need to select these)
 export const ALWAYS_AVAILABLE_EQUIPMENT: AlwaysAvailableEquipment[] = [

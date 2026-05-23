@@ -17,8 +17,8 @@
  * zero sets return an empty array instead of SQL NULL.
  */
 
-import type { DB } from '../db';
 import type { WorkoutStatus } from '../../types';
+import type { DB } from '../db';
 import type { WorkoutLogWithSets } from './types';
 
 // ---------------------------------------------------------------------------

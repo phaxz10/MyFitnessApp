@@ -1,5 +1,5 @@
-import { Link } from 'react-router-dom';
 import { Settings, Wifi, WifiOff } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useAppStore } from '../../hooks/useAppStore';
 
 export function Header() {

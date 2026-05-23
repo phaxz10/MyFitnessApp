@@ -1,11 +1,11 @@
-import { NavLink } from 'react-router-dom';
 import {
-  Home,
-  Utensils,
   Dumbbell,
-  PersonStanding,
+  Home,
   Library,
+  PersonStanding,
+  Utensils,
 } from 'lucide-react';
+import { NavLink } from 'react-router-dom';
 
 const navItems = [
   { to: '/', icon: Home, label: 'Home' },

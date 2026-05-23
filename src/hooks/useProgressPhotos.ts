@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { getDB } from '../services/db';
-import type { ProgressPhoto, PhotoType } from '../types';
+import type { PhotoType, ProgressPhoto } from '../types';
 
 export function useProgressPhotos() {
   const [photos, setPhotos] = useState<ProgressPhoto[]>([]);

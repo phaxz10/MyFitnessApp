@@ -4,9 +4,7 @@ import type {
   Tool,
 } from 'openai/resources/responses/responses';
 import { z } from 'zod';
-import {
-  ALWAYS_AVAILABLE_EQUIPMENT,
-} from '../../constants/equipment';
+import { ALWAYS_AVAILABLE_EQUIPMENT } from '../../constants/equipment';
 import type {
   AIExerciseResponse,
   AIProgramGeneratorInput,

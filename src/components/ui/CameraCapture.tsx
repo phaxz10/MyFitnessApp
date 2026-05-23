@@ -1,10 +1,10 @@
 import { Camera, ImageIcon, Loader2 } from 'lucide-react';
 import {
+  type ReactNode,
   useCallback,
   useEffect,
   useRef,
   useState,
-  type ReactNode,
 } from 'react';
 import { Button } from './Button';
 

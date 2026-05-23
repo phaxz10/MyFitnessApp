@@ -23,12 +23,18 @@ async function authHeaders(): Promise<HeadersInit> {
 // Folder management
 // ---------------------------------------------------------------------------
 
-async function findFolder(name: string, parentId?: string): Promise<string | null> {
+async function findFolder(
+  name: string,
+  parentId?: string,
+): Promise<string | null> {
   const headers = await authHeaders();
   let q = `name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
   if (parentId) q += ` and '${parentId}' in parents`;
 
-  const res = await fetch(`${DRIVE_API}/files?q=${encodeURIComponent(q)}&fields=files(id)&spaces=drive`, { headers });
+  const res = await fetch(
+    `${DRIVE_API}/files?q=${encodeURIComponent(q)}&fields=files(id)&spaces=drive`,
+    { headers },
+  );
   if (!res.ok) return null;
   const data = await res.json();
   return data.files?.[0]?.id ?? null;
@@ -56,7 +62,10 @@ async function ensureAppFolder(): Promise<string> {
   let folderId = localStorage.getItem(STORAGE_KEYS.APP_FOLDER_ID);
   if (folderId) {
     const headers = await authHeaders();
-    const check = await fetch(`${DRIVE_API}/files/${folderId}?fields=id,trashed`, { headers });
+    const check = await fetch(
+      `${DRIVE_API}/files/${folderId}?fields=id,trashed`,
+      { headers },
+    );
     if (check.ok) {
       const info = await check.json();
       if (!info.trashed) return folderId;
@@ -73,7 +82,10 @@ async function ensurePhotosFolder(): Promise<string> {
   let folderId = localStorage.getItem(STORAGE_KEYS.PHOTOS_FOLDER_ID);
   if (folderId) {
     const headers = await authHeaders();
-    const check = await fetch(`${DRIVE_API}/files/${folderId}?fields=id,trashed`, { headers });
+    const check = await fetch(
+      `${DRIVE_API}/files/${folderId}?fields=id,trashed`,
+      { headers },
+    );
     if (check.ok) {
       const info = await check.json();
       if (!info.trashed) return folderId;
@@ -94,7 +106,10 @@ async function ensurePhotosFolder(): Promise<string> {
 async function findBackupFile(appFolderId: string): Promise<string | null> {
   const headers = await authHeaders();
   const q = `name='${BACKUP_FILENAME}' and '${appFolderId}' in parents and trashed=false`;
-  const res = await fetch(`${DRIVE_API}/files?q=${encodeURIComponent(q)}&fields=files(id)&spaces=drive`, { headers });
+  const res = await fetch(
+    `${DRIVE_API}/files?q=${encodeURIComponent(q)}&fields=files(id)&spaces=drive`,
+    { headers },
+  );
   if (!res.ok) return null;
   const data = await res.json();
   return data.files?.[0]?.id ?? null;
@@ -106,21 +121,29 @@ export async function uploadBackupJson(jsonString: string): Promise<void> {
   const existingId = await findBackupFile(appFolderId);
 
   if (existingId) {
-    const res = await fetch(`${UPLOAD_API}/files/${existingId}?uploadType=media`, {
-      method: 'PATCH',
-      headers: { ...headers, 'Content-Type': 'application/json' },
-      body: jsonString,
-    });
+    const res = await fetch(
+      `${UPLOAD_API}/files/${existingId}?uploadType=media`,
+      {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: jsonString,
+      },
+    );
     if (!res.ok) throw new Error(`Failed to update backup: ${res.status}`);
   } else {
     const metadata = { name: BACKUP_FILENAME, parents: [appFolderId] };
     const form = new FormData();
-    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+    form.append(
+      'metadata',
+      new Blob([JSON.stringify(metadata)], { type: 'application/json' }),
+    );
     form.append('file', new Blob([jsonString], { type: 'application/json' }));
 
     const res = await fetch(`${UPLOAD_API}/files?uploadType=multipart`, {
       method: 'POST',
-      headers: { Authorization: (headers as Record<string, string>).Authorization },
+      headers: {
+        Authorization: (headers as Record<string, string>).Authorization,
+      },
       body: form,
     });
     if (!res.ok) throw new Error(`Failed to create backup: ${res.status}`);
@@ -136,7 +159,9 @@ export async function downloadBackupJson(): Promise<string | null> {
     if (!fileId) return null;
 
     const headers = await authHeaders();
-    const res = await fetch(`${DRIVE_API}/files/${fileId}?alt=media`, { headers });
+    const res = await fetch(`${DRIVE_API}/files/${fileId}?alt=media`, {
+      headers,
+    });
     if (!res.ok) return null;
     return res.text();
   } catch {
@@ -181,7 +206,10 @@ export async function listRemotePhotos(): Promise<string[]> {
   return ids;
 }
 
-export async function uploadPhoto(photoId: number, dataUrl: string): Promise<void> {
+export async function uploadPhoto(
+  photoId: number,
+  dataUrl: string,
+): Promise<void> {
   const photosFolderId = await ensurePhotosFolder();
   const headers = await authHeaders();
 
@@ -193,15 +221,21 @@ export async function uploadPhoto(photoId: number, dataUrl: string): Promise<voi
 
   const metadata = { name: `photo-${photoId}.jpg`, parents: [photosFolderId] };
   const form = new FormData();
-  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+  form.append(
+    'metadata',
+    new Blob([JSON.stringify(metadata)], { type: 'application/json' }),
+  );
   form.append('file', blob);
 
   const res = await fetch(`${UPLOAD_API}/files?uploadType=multipart`, {
     method: 'POST',
-    headers: { Authorization: (headers as Record<string, string>).Authorization },
+    headers: {
+      Authorization: (headers as Record<string, string>).Authorization,
+    },
     body: form,
   });
-  if (!res.ok) throw new Error(`Failed to upload photo-${photoId}: ${res.status}`);
+  if (!res.ok)
+    throw new Error(`Failed to upload photo-${photoId}: ${res.status}`);
 }
 
 export async function downloadPhoto(photoId: number): Promise<string | null> {
@@ -209,19 +243,25 @@ export async function downloadPhoto(photoId: number): Promise<string | null> {
   const headers = await authHeaders();
   const q = `name='photo-${photoId}.jpg' and '${photosFolderId}' in parents and trashed=false`;
 
-  const listRes = await fetch(`${DRIVE_API}/files?q=${encodeURIComponent(q)}&fields=files(id)&spaces=drive`, { headers });
+  const listRes = await fetch(
+    `${DRIVE_API}/files?q=${encodeURIComponent(q)}&fields=files(id)&spaces=drive`,
+    { headers },
+  );
   if (!listRes.ok) return null;
   const listData = await listRes.json();
   const fileId = listData.files?.[0]?.id;
   if (!fileId) return null;
 
-  const dlRes = await fetch(`${DRIVE_API}/files/${fileId}?alt=media`, { headers });
+  const dlRes = await fetch(`${DRIVE_API}/files/${fileId}?alt=media`, {
+    headers,
+  });
   if (!dlRes.ok) return null;
 
   const arrayBuffer = await dlRes.arrayBuffer();
   const bytes = new Uint8Array(arrayBuffer);
   let binaryStr = '';
-  for (let i = 0; i < bytes.length; i++) binaryStr += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < bytes.length; i++)
+    binaryStr += String.fromCharCode(bytes[i]);
   return `data:image/jpeg;base64,${btoa(binaryStr)}`;
 }
 
@@ -239,6 +279,21 @@ export function getLastRestoredAt(): string | null {
 
 export function setLastRestoredAt(ts: string): void {
   localStorage.setItem(STORAGE_KEYS.LAST_RESTORED, ts);
+}
+
+export async function deleteAppFolder(): Promise<void> {
+  const headers = await authHeaders();
+  const folderId =
+    localStorage.getItem(STORAGE_KEYS.APP_FOLDER_ID) ??
+    (await findFolder(APP_FOLDER_NAME));
+  if (!folderId) return;
+  const res = await fetch(`${DRIVE_API}/files/${folderId}`, {
+    method: 'DELETE',
+    headers,
+  });
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`Failed to delete Drive backup: ${res.status}`);
+  }
 }
 
 export function clearDriveState(): void {

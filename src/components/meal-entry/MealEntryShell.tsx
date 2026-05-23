@@ -23,10 +23,7 @@ export function MealEntryShell() {
     return list;
   }, [aiAvailable]);
 
-  const adapterToRender = resolveAdapter(
-    foodLogModal.mode,
-    availableAdapters,
-  );
+  const adapterToRender = resolveAdapter(foodLogModal.mode, availableAdapters);
 
   const handleSubmitted = () => {
     foodLogModal.onSuccess?.();
@@ -39,7 +36,8 @@ export function MealEntryShell() {
       : undefined;
 
   const title = titleFor(adapterToRender, foodLogModal.date);
-  const isResultsSize = adapterToRender === 'ai_text' || adapterToRender === 'ai_image';
+  const isResultsSize =
+    adapterToRender === 'ai_text' || adapterToRender === 'ai_image';
 
   return (
     <Modal
@@ -49,10 +47,7 @@ export function MealEntryShell() {
       size={isResultsSize ? 'md' : 'sm'}
     >
       {adapterToRender === 'picker' && (
-        <PickerView
-          aiAvailable={aiAvailable}
-          onPick={setFoodLogModalMode}
-        />
+        <PickerView aiAvailable={aiAvailable} onPick={setFoodLogModalMode} />
       )}
       {adapterToRender === 'manual' && (
         <ManualEntryAdapter
@@ -94,10 +89,7 @@ function resolveAdapter(
   return available[0];
 }
 
-function titleFor(
-  adapter: 'picker' | AdapterId,
-  date: string,
-): string {
+function titleFor(adapter: 'picker' | AdapterId, date: string): string {
   const dateStr = formatDisplayDate(date);
   switch (adapter) {
     case 'manual':

@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
-import { ClipboardCheck, ChevronRight } from 'lucide-react';
-import { Card, CardContent } from '../ui';
+import { ChevronRight, ClipboardCheck } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useWeeklyReview } from '../../hooks/useWeeklyReview';
 import type { UserProfile, WeeklyReviewSufficiency } from '../../types';
+import { Card, CardContent } from '../ui';
 
 interface WeeklyReviewButtonProps {
   profile: UserProfile | null;

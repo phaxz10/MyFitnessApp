@@ -1,14 +1,14 @@
 import {
-  LineChart,
   Line,
-  XAxis,
-  YAxis,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
+  XAxis,
+  YAxis,
 } from 'recharts';
-import { Card, CardContent } from '../ui';
 import type { ExerciseSessionData } from '../../types';
 import { formatShortDate } from '../../utils/date';
+import { Card, CardContent } from '../ui';
 
 interface OneRMChartProps {
   data: ExerciseSessionData[];

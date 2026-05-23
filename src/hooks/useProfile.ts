@@ -95,7 +95,6 @@ export function useProfile() {
     mutationFn: createProfileFn,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: profileKeys.all });
-
     },
   });
 
@@ -104,7 +103,6 @@ export function useProfile() {
     mutationFn: updateProfileFn,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: profileKeys.all });
-
     },
   });
 

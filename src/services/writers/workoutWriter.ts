@@ -1,5 +1,5 @@
-import type { DB } from '../db';
 import type { WorkoutLogExercise, WorkoutSet } from '../../types';
+import type { DB } from '../db';
 
 export interface AddExerciseOpts {
   orderIndex: number;

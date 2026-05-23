@@ -18,8 +18,8 @@
  * each session row in one query, instead of issuing a separate query per log.
  */
 
-import type { DB } from '../db';
 import type { WorkoutSet } from '../../types';
+import type { DB } from '../db';
 
 // ---------------------------------------------------------------------------
 // Public types

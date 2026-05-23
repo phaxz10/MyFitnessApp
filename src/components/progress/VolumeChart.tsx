@@ -1,14 +1,14 @@
 import {
-  AreaChart,
   Area,
-  XAxis,
-  YAxis,
+  AreaChart,
   ResponsiveContainer,
   Tooltip,
+  XAxis,
+  YAxis,
 } from 'recharts';
-import { Card, CardContent } from '../ui';
 import type { VolumeChartData } from '../../types';
 import { formatShortDate } from '../../utils/date';
+import { Card, CardContent } from '../ui';
 
 interface VolumeChartProps {
   data: VolumeChartData[];
@@ -75,7 +75,9 @@ export function VolumeChart({
                   }}
                   labelStyle={{ color: '#94a3b8' }}
                   formatter={(value) => [
-                    typeof value === 'number' ? `${formatVolume(value)} lbs` : '--',
+                    typeof value === 'number'
+                      ? `${formatVolume(value)} lbs`
+                      : '--',
                     'Volume',
                   ]}
                 />

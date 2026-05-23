@@ -25,7 +25,8 @@ function loadGisScript(): Promise<void> {
     script.async = true;
     script.defer = true;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Failed to load Google Identity Services'));
+    script.onerror = () =>
+      reject(new Error('Failed to load Google Identity Services'));
     document.head.appendChild(script);
   });
 }
@@ -83,7 +84,9 @@ export async function getAccessToken(): Promise<string | null> {
 
 async function validateToken(token: string): Promise<boolean> {
   try {
-    const res = await fetch(`https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${token}`);
+    const res = await fetch(
+      `https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${token}`,
+    );
     return res.ok;
   } catch {
     return false;

@@ -1,13 +1,17 @@
-// Calculate body fat percentage using US Navy method
+// US Navy body fat estimation method (Hodgdon & Beckett, 1984).
+// Uses circumference measurements as a proxy for body density, then converts
+// to body fat percentage via the Siri equation (495/density - 450).
+// Accuracy: +/- 3-4% vs DEXA scan. Good enough for tracking trends over time.
+// Male formula uses waist and neck; female adds hip circumference.
 export function calculateBodyFatPercentage(
   gender: 'male' | 'female',
   waist_cm: number,
   neck_cm: number,
   height_cm: number,
-  hip_cm?: number, // Required for females, optional for males
+  hip_cm?: number,
 ): number {
   if (gender === 'male') {
-    // Male formula: 495 / (1.0324 - 0.19077 * log10(waist - neck) + 0.15456 * log10(height)) - 450
+    // BF% = 495 / (1.0324 - 0.19077*log10(waist-neck) + 0.15456*log10(height)) - 450
     const bodyFat =
       495 /
         (1.0324 -
@@ -16,9 +20,8 @@ export function calculateBodyFatPercentage(
       450;
     return Math.max(0, Math.round(bodyFat * 10) / 10);
   } else {
-    // Female formula: 495 / (1.29579 - 0.35004 * log10(waist + hip - neck) + 0.22100 * log10(height)) - 450
-    // If hip not provided, use simplified calculation
-    const hipValue = hip_cm || waist_cm * 1.05; // Rough estimate if not provided
+    // BF% = 495 / (1.29579 - 0.35004*log10(waist+hip-neck) + 0.22100*log10(height)) - 450
+    const hipValue = hip_cm || waist_cm * 1.05; // rough estimate if hip not measured
     const bodyFat =
       495 /
         (1.29579 -
@@ -92,13 +95,16 @@ export function isOnTrackWithGoal(
   }
 }
 
-// Calculate weekly weight change
+// Projects a weekly weight change rate from a set of weight measurements.
+// With < 3 days of data, returns the raw change instead of extrapolating,
+// because daily water/food fluctuations (0.5-1kg) would produce misleading
+// weekly projections (e.g. a 0.7kg daily swing -> "4.9 kg/week").
+// With 3+ days, extrapolates: (totalChange / days) * 7.
 export function calculateWeeklyWeightChange(
   weights: { date: string | Date; weight_kg: number }[],
 ): number {
   if (weights.length < 2) return 0;
 
-  // Get first and last weights
   const sortedWeights = [...weights].sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
   );
@@ -106,11 +112,9 @@ export function calculateWeeklyWeightChange(
   const firstWeight = sortedWeights[0].weight_kg;
   const lastWeight = sortedWeights[sortedWeights.length - 1].weight_kg;
 
-  // Calculate days difference more accurately
   const firstDate = new Date(sortedWeights[0].date);
   const lastDate = new Date(sortedWeights[sortedWeights.length - 1].date);
 
-  // Reset time to midnight to get accurate day difference
   firstDate.setHours(0, 0, 0, 0);
   lastDate.setHours(0, 0, 0, 0);
 
@@ -118,16 +122,11 @@ export function calculateWeeklyWeightChange(
     (lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24),
   );
 
-  // Need at least 3 days of data for a meaningful weekly projection
-  // Otherwise, daily fluctuations get amplified unrealistically
   if (daysDiff < 3) {
-    // For less than 3 days, just return the raw daily change (not extrapolated)
-    // This prevents showing misleading -4.9 kg/week from a 0.7kg daily fluctuation
     const totalChange = lastWeight - firstWeight;
     return Math.round(totalChange * 100) / 100;
   }
 
-  // Calculate weekly rate
   const totalChange = lastWeight - firstWeight;
   const weeklyChange = (totalChange / daysDiff) * 7;
 

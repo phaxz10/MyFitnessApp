@@ -29,6 +29,7 @@ import {
 } from '../components/ui';
 import { useAppStore } from '../hooks/useAppStore';
 import { useProfile } from '../hooks/useProfile';
+import { useWeight } from '../hooks/useWeight';
 import {
   type ApiKeyFormData,
   apiKeyFormSchema,
@@ -55,6 +56,7 @@ import {
   type GoogleUser,
   getStoredUser,
   signOut as googleSignOut,
+  requestGoogleAccessToken,
   signIn,
 } from '../services/googleAuth';
 import {
@@ -83,10 +85,10 @@ export function Settings() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { profile, updateProfile } = useProfile();
+  const { getLatestLog } = useWeight();
   const setOnboardingComplete = useAppStore(
     (state) => state.setOnboardingComplete,
   );
-  const isOnline = useAppStore((state) => state.isOnline);
 
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -200,8 +202,8 @@ export function Settings() {
   };
 
   const handleRecalculateTargets = async () => {
-    if (!profile || !isOnline || !profile.openai_api_key) {
-      setError('Requires internet connection and API key');
+    if (!profile) {
+      setError('Please set up your profile first');
       return;
     }
 
@@ -209,11 +211,17 @@ export function Settings() {
     setError(null);
     try {
       const values = goalsForm.getValues();
+      const latestWeight = await getLatestLog();
+      if (!latestWeight) {
+        setError('Add a current weight log before recalculating targets');
+        return;
+      }
+
       const result = await calculateTargets({
         age: calculateAgeFromBirthdate(profileForm.getValues().birthdate),
         gender: profile.gender,
         height_cm: parseFloat(profileForm.getValues().heightCm),
-        weight_kg: 70, // Would need to get latest weight
+        weight_kg: latestWeight.weight_kg,
         activity_level: profileForm.getValues().activityLevel as
           | 'sedentary'
           | 'light'
@@ -362,6 +370,7 @@ export function Settings() {
     setError(null);
 
     try {
+      await requestGoogleAccessToken();
       const result = await performAutoBackup();
       if (result.success) {
         setBackupStatus(getBackupStatus());
@@ -521,7 +530,7 @@ export function Settings() {
                   variant="secondary"
                   onClick={handleRecalculateTargets}
                   isLoading={isLoading}
-                  disabled={!isOnline || !profile?.openai_api_key}
+                  disabled={isLoading}
                 >
                   <RefreshCw size={16} />
                 </Button>

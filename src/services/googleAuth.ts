@@ -17,7 +17,6 @@ let tokenClient: google.accounts.oauth2.TokenClient | null = null;
 let currentAccessToken: string | null = localStorage.getItem(
   STORAGE_KEYS.ACCESS_TOKEN,
 );
-let silentReauthFailed = false;
 
 function persistToken(token: string, expiresIn: number): void {
   currentAccessToken = token;
@@ -55,12 +54,11 @@ function loadGisScript(): Promise<void> {
   });
 }
 
-function initTokenClient(prompt: 'consent' | 'none'): Promise<string> {
+function requestToken(prompt?: 'consent'): Promise<string> {
   return new Promise((resolve, reject) => {
-    tokenClient = google.accounts.oauth2.initTokenClient({
+    const config: google.accounts.oauth2.TokenClientConfig = {
       client_id: CLIENT_ID,
       scope: SCOPES,
-      prompt,
       callback: (response) => {
         if (response.error) {
           reject(new Error(response.error));
@@ -75,34 +73,30 @@ function initTokenClient(prompt: 'consent' | 'none'): Promise<string> {
       error_callback: (err) => {
         reject(new Error(err.message || 'Token request failed'));
       },
-    });
+    };
+    if (prompt) config.prompt = prompt;
+
+    tokenClient = google.accounts.oauth2.initTokenClient(config);
     tokenClient.requestAccessToken();
   });
 }
 
 export async function signIn(): Promise<{ token: string; user: GoogleUser }> {
   await loadGisScript();
-  silentReauthFailed = false;
-  const token = await initTokenClient('consent');
+  const token = await requestToken('consent');
   const user = await fetchUserInfo(token);
   localStorage.setItem(STORAGE_KEYS.GOOGLE_USER, JSON.stringify(user));
   return { token, user };
 }
 
-export async function silentReauth(): Promise<string | null> {
-  if (silentReauthFailed) return null;
-
-  const stored = localStorage.getItem(STORAGE_KEYS.GOOGLE_USER);
-  if (!stored) return null;
-
-  try {
-    await loadGisScript();
-    const token = await initTokenClient('none');
-    return token;
-  } catch {
-    silentReauthFailed = true;
-    return null;
+export async function requestGoogleAccessToken(): Promise<string> {
+  if (currentAccessToken && !isTokenExpired()) {
+    return currentAccessToken;
   }
+
+  clearPersistedToken();
+  await loadGisScript();
+  return requestToken();
 }
 
 export async function getAccessToken(): Promise<string | null> {
@@ -110,22 +104,9 @@ export async function getAccessToken(): Promise<string | null> {
     return currentAccessToken;
   }
   if (currentAccessToken) {
-    const valid = await validateToken(currentAccessToken);
-    if (valid) return currentAccessToken;
     clearPersistedToken();
   }
-  return silentReauth();
-}
-
-async function validateToken(token: string): Promise<boolean> {
-  try {
-    const res = await fetch(
-      `https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${token}`,
-    );
-    return res.ok;
-  } catch {
-    return false;
-  }
+  return null;
 }
 
 async function fetchUserInfo(token: string): Promise<GoogleUser> {

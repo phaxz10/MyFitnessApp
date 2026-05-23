@@ -33,14 +33,6 @@ export interface WeeklyMuscleStats {
   totalVolume: number;
 }
 
-export interface WeeklyMuscleStats {
-  weekStart: string;
-  weekEnd: string;
-  breakdown: MuscleGroupBreakdown[];
-  totalSets: number;
-  totalVolume: number;
-}
-
 // Query keys
 export const strengthProgressKeys = {
   all: ['strengthProgress'] as const,
@@ -57,7 +49,9 @@ export const strengthProgressKeys = {
     [...strengthProgressKeys.all, 'exercisePRs', exerciseId] as const,
 };
 
-// Calculate estimated 1RM using Epley formula
+// Epley formula: 1RM = weight * (1 + reps / 30)
+// Industry-standard estimate, most accurate in the 1-10 rep range.
+// Returns null for invalid inputs (zero weight or reps).
 export function calculateEstimated1RM(
   weight: number,
   reps: number,
@@ -67,7 +61,11 @@ export function calculateEstimated1RM(
   return Math.round(weight * (1 + reps / 30));
 }
 
-// Get date range based on filter
+// Converts a UI time range filter into SQL-ready date strings.
+// "7d" aligns to the current week start (Sunday) for consistency with the
+// weekly view. "30d" and "90d" use rolling windows. "all" returns null
+// startDate, which callers handle with conditional SQL (PGlite can't optimize
+// WHERE ($1 IS NULL OR date >= $1) into an index scan).
 function getDateRange(range: TimeRange): {
   startDate: string | null;
   endDate: string;
@@ -186,7 +184,11 @@ async function fetchExercisePRs(exerciseId: number): Promise<ExercisePR> {
   }
 }
 
-// Calculate exercise trend
+// Compares the average estimated 1RM of the last 4 sessions against the
+// preceding 4 sessions. A >5% increase = "progressing", >5% decrease =
+// "regressing", otherwise "plateau". Requires at least 6 sessions (4 recent
+// + 2 older) for a meaningful comparison; defaults to "plateau" with less data.
+// The 5% threshold filters out normal session-to-session noise.
 async function fetchExerciseTrend(exerciseId: number): Promise<ProgressTrend> {
   try {
     const db = await getDB();
@@ -227,7 +229,10 @@ async function fetchExerciseTrend(exerciseId: number): Promise<ProgressTrend> {
   }
 }
 
-// Fetch recent personal records
+// Detects new personal records by comparing recent maxes (within `days`)
+// against all-time maxes from before that window. Uses a CTE to compute
+// both windows in a single query, then filters for exercises where the
+// recent max exceeds the historical max (weight PR or estimated 1RM PR).
 async function fetchRecentPersonalRecords(
   days: number,
 ): Promise<PersonalRecord[]> {
@@ -756,7 +761,9 @@ async function fetchExerciseSessionData(
   return Array.from(sessionMap.values());
 }
 
-// Normalize muscle group names for consistency
+// Maps AI-generated or user-entered muscle group names to a canonical set
+// for consistent aggregation in analytics. The AI may return "Pectorals",
+// "Deltoids", etc. while the UI displays standardized names like "Chest".
 function normalizeMuscleGroup(muscle: string): string {
   const normalized = muscle.toLowerCase().trim();
 

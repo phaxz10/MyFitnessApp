@@ -1,0 +1,168 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
+import { complete } from './aiClient';
+
+const mocks = vi.hoisted(() => ({
+  create: vi.fn(),
+  OpenAI: vi.fn(),
+}));
+
+vi.mock('openai', () => ({
+  default: mocks.OpenAI,
+}));
+
+vi.mock('../../hooks/useAppStore', () => ({
+  useAppStore: {
+    getState: vi.fn(() => ({
+      userProfile: {
+        openai_api_key: 'sk-test',
+        openai_proxy_url: '',
+      },
+    })),
+  },
+}));
+
+const foodAnalysisSchema = z.object({
+  items: z.array(
+    z.object({
+      name: z.string(),
+      portion_grams: z.number(),
+      calories: z.number(),
+      protein_g: z.number(),
+      carbs_g: z.number(),
+      fat_g: z.number(),
+    }),
+  ),
+  total: z.object({
+    calories: z.number(),
+    protein_g: z.number(),
+    carbs_g: z.number(),
+    fat_g: z.number(),
+  }),
+});
+
+const foodAnalysis = {
+  items: [
+    {
+      name: 'white rice (cooked)',
+      portion_grams: 150,
+      calories: 195,
+      protein_g: 4.1,
+      carbs_g: 42,
+      fat_g: 0.5,
+    },
+  ],
+  total: {
+    calories: 195,
+    protein_g: 4.1,
+    carbs_g: 42,
+    fat_g: 0.5,
+  },
+};
+
+describe('aiClient.complete', () => {
+  beforeEach(() => {
+    mocks.create.mockReset();
+    mocks.OpenAI.mockReset();
+    mocks.OpenAI.mockImplementation(function OpenAIMock() {
+      return {
+        responses: {
+          create: mocks.create,
+        },
+      };
+    });
+  });
+
+  it('parses Responses API output text when the SDK helper field is absent', async () => {
+    mocks.create.mockResolvedValue({
+      object: 'response',
+      output: [
+        {
+          type: 'web_search_call',
+          status: 'completed',
+        },
+        {
+          type: 'message',
+          status: 'completed',
+          content: [
+            {
+              type: 'output_text',
+              text: `Here is the nutritional breakdown:\n\n${JSON.stringify(
+                foodAnalysis,
+                null,
+                2,
+              )}\n\nDetails: [source](https://example.com)`,
+            },
+          ],
+          role: 'assistant',
+        },
+      ],
+    });
+
+    await expect(
+      complete({
+        prompt: '150g white rice',
+        schema: foodAnalysisSchema,
+        schemaName: 'food_analysis',
+      }),
+    ).resolves.toEqual(foodAnalysis);
+  });
+
+  it('does not mistake markdown citation brackets before JSON for the JSON payload', async () => {
+    mocks.create.mockResolvedValue({
+      output_text: `Using [nutrition data](https://example.com), here is the result:\n\n${JSON.stringify(
+        foodAnalysis,
+      )}`,
+      output: [],
+    });
+
+    await expect(
+      complete({
+        prompt: '150g white rice',
+        schema: foodAnalysisSchema,
+        schemaName: 'food_analysis',
+      }),
+    ).resolves.toEqual(foodAnalysis);
+  });
+
+  it('skips parseable citation footnotes that do not match the schema', async () => {
+    mocks.create.mockResolvedValue({
+      output_text: `Using source [1], here is the result:\n\n${JSON.stringify(
+        foodAnalysis,
+      )}`,
+      output: [],
+    });
+
+    await expect(
+      complete({
+        prompt: '150g white rice',
+        schema: foodAnalysisSchema,
+        schemaName: 'food_analysis',
+      }),
+    ).resolves.toEqual(foodAnalysis);
+  });
+
+  it('requests structured JSON when a schema is provided', async () => {
+    mocks.create.mockResolvedValue({
+      output_text: JSON.stringify(foodAnalysis),
+      output: [],
+    });
+
+    await complete({
+      prompt: '150g white rice',
+      schema: foodAnalysisSchema,
+      schemaName: 'food_analysis',
+    });
+
+    expect(mocks.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.objectContaining({
+          format: expect.objectContaining({
+            name: 'food_analysis',
+            type: 'json_schema',
+          }),
+        }),
+      }),
+    );
+  });
+});

@@ -19,32 +19,33 @@ import { complete, respond } from '../ai/aiClient';
 
 const WEB_SEARCH_TOOL: Tool = { type: 'web_search' };
 
-// ============================================================================
-// SCHEMAS — programs are high-stakes (saved to DB, drive workout sessions)
-// ============================================================================
+const GOAL_DESCRIPTIONS: Record<string, string> = {
+  bulk: 'Building muscle mass (caloric surplus)',
+  lean_bulk: 'Building lean muscle with minimal fat gain',
+  recomp: 'Simultaneously building muscle and losing fat',
+  cut: 'Losing body fat while preserving muscle',
+  maintain: 'Maintaining current physique and strength',
+};
 
-// Optional rather than nullable: the AIGeneratedExercise type uses
-// `number | undefined` (no null), and the AI's null values get coerced to
-// undefined in the transform below.
-const generatedExerciseSchema = z
-  .object({
-    name: z.string(),
-    targetSets: z.number(),
-    targetRepMin: z.number(),
-    targetRepMax: z.number(),
-    targetDurationSeconds: z.number().nullable().optional(),
-    notes: z.string().nullable().optional(),
-    supersetWith: z.string().nullable().optional(),
-  })
-  .transform((ex) => ({
-    name: ex.name,
-    targetSets: ex.targetSets,
-    targetRepMin: ex.targetRepMin,
-    targetRepMax: ex.targetRepMax,
-    targetDurationSeconds: ex.targetDurationSeconds ?? undefined,
-    notes: ex.notes ?? undefined,
-    supersetWith: ex.supersetWith ?? undefined,
-  }));
+function formatSplitPreference(split: string | undefined): string {
+  return split === 'auto'
+    ? 'Choose the most appropriate training split based on the frequency'
+    : `Use a ${split?.replace(/_/g, ' ')} split`;
+}
+
+// SCHEMAS — programs are high-stakes: they're saved to the DB and drive every
+// future workout session. Zod validation here catches AI hallucinations (e.g.
+// missing fields, wrong types) before they corrupt the program structure.
+
+const generatedExerciseSchema = z.object({
+  name: z.string(),
+  targetSets: z.number(),
+  targetRepMin: z.number(),
+  targetRepMax: z.number(),
+  targetDurationSeconds: z.number().nullable(),
+  notes: z.string().nullable(),
+  supersetWith: z.string().nullable(),
+});
 
 const generatedSessionSchema = z.object({
   name: z.string(),
@@ -61,12 +62,54 @@ const programResponseSchema = z.object({
     muscleGroupBreakdown: z.record(z.string(), z.number()),
   }),
   recommendations: z.array(z.string()),
-  experienceLevel: z.enum(['beginner', 'intermediate', 'advanced']).optional(),
-}) satisfies z.ZodType<AIProgramGeneratorResponse>;
+  experienceLevel: z.enum(['beginner', 'intermediate', 'advanced']).nullable(),
+});
 
-// ============================================================================
-// FUNCTION TOOLS for multi-turn program generation
-// ============================================================================
+const experienceLevelInferenceSchema = z.object({
+  inferredLevel: z.enum(['beginner', 'intermediate', 'advanced']),
+  confidence: z.enum(['low', 'medium', 'high']),
+  reasoning: z.string(),
+  metrics: z.object({
+    totalWorkouts: z.number(),
+    averageVolumePerSession: z.number(),
+    exerciseVariety: z.number(),
+    trainingConsistencyWeeks: z.number(),
+    hasProgressiveOverload: z.boolean(),
+  }),
+}) satisfies z.ZodType<ExperienceLevelInference>;
+
+type RawProgramResponse = z.infer<typeof programResponseSchema>;
+
+function normalizeProgramResponse(
+  response: RawProgramResponse,
+): AIProgramGeneratorResponse {
+  return {
+    programName: response.programName,
+    programDescription: response.programDescription,
+    sessions: response.sessions.map((session) => ({
+      ...session,
+      exercises: session.exercises.map((exercise) => ({
+        name: exercise.name,
+        targetSets: exercise.targetSets,
+        targetRepMin: exercise.targetRepMin,
+        targetRepMax: exercise.targetRepMax,
+        targetDurationSeconds: exercise.targetDurationSeconds ?? undefined,
+        notes: exercise.notes ?? undefined,
+        supersetWith: exercise.supersetWith ?? undefined,
+      })),
+    })),
+    weeklyVolumeSummary: response.weeklyVolumeSummary,
+    recommendations: response.recommendations,
+    experienceLevel: response.experienceLevel ?? undefined,
+  };
+}
+
+// FUNCTION TOOLS for multi-turn program generation.
+// The AI uses these tools to: (1) infer experience level from history,
+// (2) select exercises from the user's existing library, (3) create new
+// exercises that don't exist yet, and (4) assemble the final program.
+// This approach lets the AI handle exercise resolution in a single
+// conversation instead of requiring a separate post-processing step.
 
 const createExercisesFunctionTool: FunctionTool = {
   type: 'function',
@@ -327,18 +370,7 @@ export async function generateWorkoutProgram(
     .map((ex) => `- ${ex.name} (${ex.muscle_groups}, ${ex.equipment})`)
     .join('\n');
 
-  const goalDescriptions: Record<string, string> = {
-    bulk: 'Building muscle mass (caloric surplus)',
-    lean_bulk: 'Building lean muscle with minimal fat gain',
-    recomp: 'Simultaneously building muscle and losing fat',
-    cut: 'Losing body fat while preserving muscle',
-    maintain: 'Maintaining current physique and strength',
-  };
-
-  const splitPreference =
-    input.preferredTrainingSplit === 'auto'
-      ? 'Choose the most appropriate training split based on the frequency'
-      : `Use a ${input.preferredTrainingSplit?.replace(/_/g, ' ')} split`;
+  const splitPreference = formatSplitPreference(input.preferredTrainingSplit);
 
   const prompt = `You are an expert strength and conditioning coach using evidence-based programming principles. Create a complete workout program based on these specifications. Use BuiltWithScience-style programming as your primary reference if possible.
 
@@ -347,7 +379,7 @@ USER PREFERENCES:
 - Training frequency: ${input.trainingDaysPerWeek} days per week
 - Session duration: ${input.sessionDurationMinutes} minutes per session (HARD CAP)
 - Experience level: ${input.experienceLevel}
-- Goal: ${input.goal} - ${goalDescriptions[input.goal] || input.goal}
+- Goal: ${input.goal} - ${GOAL_DESCRIPTIONS[input.goal] || input.goal}
 - Split preference: ${splitPreference}
 ${input.focusAreas?.length ? `- Focus areas (prioritize): ${input.focusAreas.join(', ')}` : ''}
 ${input.injuries ? `- Injuries/limitations: ${input.injuries}` : ''}
@@ -743,11 +775,14 @@ CRITICAL RULES:
 - If possible, prioritize builtwithscience.com publicly available routines to align with evidence-based practices
 - Infer "experienceLevel" from the exercise selection, volume, and superset use; if input.experienceLevel seems mismatched, return the best-fit level`;
 
-  return complete({
+  const response = await complete({
     prompt,
     schema: programResponseSchema,
+    schemaName: 'workout_program',
     tools: [WEB_SEARCH_TOOL],
   });
+
+  return normalizeProgramResponse(response);
 }
 
 // ============================================================================
@@ -869,14 +904,18 @@ Return JSON only (no markdown):
       "Core": number
     }
   },
-  "recommendations": ["string"]
+  "recommendations": ["string"],
+  "experienceLevel": "beginner|intermediate|advanced"
 }`;
 
-  return complete({
+  const response = await complete({
     prompt,
     schema: programResponseSchema,
+    schemaName: 'workout_program',
     tools: [WEB_SEARCH_TOOL],
   });
+
+  return normalizeProgramResponse(response);
 }
 
 // ============================================================================
@@ -946,12 +985,32 @@ Return JSON only, no markdown:
   }
 }`;
 
-  return complete<ExperienceLevelInference>({ prompt });
+  return complete({
+    prompt,
+    schema: experienceLevelInferenceSchema,
+    schemaName: 'experience_level_inference',
+  });
 }
 
 // ============================================================================
-// generateWorkoutProgramWithFunctionCalling — multi-turn orchestration
-// ============================================================================
+// MULTI-TURN ORCHESTRATION via OpenAI function calling.
+//
+// Instead of generating a program in one shot and then post-processing exercise
+// names (the legacy flow), this approach gives the AI 4 tools and lets it
+// orchestrate the workflow itself:
+//   1. infer_experience_level (if not provided)
+//   2. select_exercises (from existing library — prefer reuse)
+//   3. create_exercises (only for gaps)
+//   4. generate_program (final assembly with supersets)
+//
+// The conversation loop runs up to 10 turns. Each turn:
+//   - AI calls one or more tools
+//   - We extract the structured data from tool arguments
+//   - We feed back a confirmation message as the tool output
+//   - Loop continues until the AI calls generate_program or stops calling tools
+//
+// This eliminates the separate duplicate-detection and batch-detail-generation
+// steps from the legacy flow, cutting total AI round-trips from 4-5 to 1-3.
 
 export interface StreamlinedProgramResult {
   program: AIProgramGeneratorResponse;
@@ -983,18 +1042,7 @@ export async function generateWorkoutProgramWithFunctionCalling(
     )
     .join('\n');
 
-  const goalDescriptions: Record<string, string> = {
-    bulk: 'Building muscle mass (caloric surplus)',
-    lean_bulk: 'Building lean muscle with minimal fat gain',
-    recomp: 'Simultaneously building muscle and losing fat',
-    cut: 'Losing body fat while preserving muscle',
-    maintain: 'Maintaining current physique and strength',
-  };
-
-  const splitPreference =
-    input.preferredTrainingSplit === 'auto'
-      ? 'Choose the most appropriate training split based on the frequency'
-      : `Use a ${input.preferredTrainingSplit?.replace(/_/g, ' ')} split`;
+  const splitPreference = formatSplitPreference(input.preferredTrainingSplit);
 
   let experienceContext = '';
   if (input.experienceLevel) {
@@ -1106,7 +1154,7 @@ USER PREFERENCES:
 - Training frequency: ${input.trainingDaysPerWeek} days per week
 - Session duration: ${input.sessionDurationMinutes} minutes per session (HARD CAP)
 - ${experienceContext}
-- Goal: ${input.goal} - ${goalDescriptions[input.goal] || input.goal}
+- Goal: ${input.goal} - ${GOAL_DESCRIPTIONS[input.goal] || input.goal}
 - Split preference: ${splitPreference}
 ${input.focusAreas?.length ? `- Focus areas (prioritize): ${input.focusAreas.join(', ')}` : ''}
 ${input.injuries ? `- Injuries/limitations: ${input.injuries}` : ''}

@@ -10,12 +10,13 @@ import type {
 import { calculateAgeFromBirthdate } from '../../utils/date';
 import { complete } from '../ai/aiClient';
 
+// web_search enables the AI to reference current nutrition science and
+// metabolic adaptation research for evidence-based recommendations.
 const WEB_SEARCH_TOOL: Tool = { type: 'web_search' };
 
-// ============================================================================
 // SCHEMAS — review responses drive UI modals that adjust user targets,
-// so validating shape catches regressions before they corrupt state.
-// ============================================================================
+// so validating shape catches regressions before they corrupt the Profile.
+// Every nullable field is intentional: null means "no change recommended."
 
 const goalReviewSchema = z.object({
   assessment: z.string(),

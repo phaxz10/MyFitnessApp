@@ -19,9 +19,20 @@ import type {
   ExperienceLevelInference,
 } from '../types';
 
+// State machine for the program generation pipeline.
+// Two generation paths share these states:
+//
+// LEGACY (generateProgram): idle -> generating_program -> checking_exercises
+//   -> generating_exercise_details -> complete -> saving_exercises -> saving_program -> complete
+//
+// STREAMLINED (generateProgramStreamlined): idle -> inferring_experience
+//   -> generating_program -> complete (AI handles exercise selection/creation internally
+//   via function calling, so checking/generating steps are skipped)
+//
+// Both paths: any step can transition to 'error'; resetState() returns to 'idle'.
 export type GeneratorStep =
   | 'idle'
-  | 'inferring_experience' // New: inferring experience level
+  | 'inferring_experience'
   | 'generating_program'
   | 'checking_exercises'
   | 'generating_exercise_details'
@@ -30,11 +41,16 @@ export type GeneratorStep =
   | 'complete'
   | 'error';
 
+// Maps an AI-generated exercise name to an existing library entry or marks it
+// for creation. The resolution order is:
+//   1. Exact match (case-insensitive) -> status: 'matched'
+//   2. AI-detected duplicate (fuzzy) -> status: 'duplicate_found' (user can override)
+//   3. No match -> status: 'needs_creation' -> AI generates details -> 'created'
 export interface ExerciseMapping {
   originalName: string;
-  exerciseId: number | null; // null if needs to be created
+  exerciseId: number | null;
   existingExercise: Exercise | null;
-  duplicateOf: Exercise | null; // if AI found a duplicate
+  duplicateOf: Exercise | null;
   aiDetails: AIExerciseResponse | null;
   status:
     | 'pending'

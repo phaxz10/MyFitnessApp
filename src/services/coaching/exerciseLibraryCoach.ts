@@ -4,6 +4,8 @@ import { MUSCLE_GROUPS } from '../../constants/equipment';
 import type { AIExerciseResponse, Exercise } from '../../types';
 import { complete, respond } from '../ai/aiClient';
 
+// web_search lets the AI look up correct form descriptions, muscle group
+// classifications, and exercise variations from authoritative sources.
 const WEB_SEARCH_TOOL: Tool = { type: 'web_search' };
 
 const exerciseTypeEnum = z.enum([

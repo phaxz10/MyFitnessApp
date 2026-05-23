@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getDB } from '../services/db';
 import { sessions as exerciseSessions } from '../services/queries/exerciseHistory';
 import type {
@@ -66,6 +66,25 @@ function parseDuration(value: string | undefined | null): number | null {
   return isNaN(parsed) ? null : parsed;
 }
 
+// Manages the full lifecycle of an active workout session.
+//
+// STATE MACHINE:
+//   Mounting -> Loading -> (InitFromTemplate | InitFromLegacy | Empty) -> Active -> (Completed | Cancelled)
+//
+// KEY PATTERNS:
+//   - exercisesRef: a ref mirror of exercisesWithSets state. Callbacks passed to child
+//     components capture stale closures; the ref always holds the latest snapshot.
+//   - hasInitializedExercises: one-time gate. After the first DB load, local React state
+//     becomes the source of truth — we never re-read from DB mid-session.
+//   - pendingSaves: Map<string, Promise> that serializes concurrent saves to the same set,
+//     preventing race conditions when the user types fast and the debounce fires.
+//   - Sets are PRE-CREATED in the DB (via generate_series) when a workout starts.
+//     All set operations are UPDATEs, never INSERTs. This simplifies the save logic:
+//     every set already has a DB ID.
+//
+// SUPERSET MODEL:
+//   Exercises sharing a superset_group_id are rendered together. "Rounds" map to set
+//   indices: round 0 = each exercise's set[0], round 1 = set[1], etc.
 export function useWorkoutSession(dateOverride?: string) {
   const {
     activeWorkout,
@@ -351,7 +370,10 @@ export function useWorkoutSession(dateOverride?: string) {
     isInitialized,
   ]);
 
-  // Core save function - UPDATES existing set in DB (no create, sets are pre-created)
+  // UPDATES an existing set row in the DB. Sets are pre-created when a workout starts
+  // (via generate_series), so this is always an UPDATE, never an INSERT.
+  // Uses a pendingSaves map to serialize concurrent writes to the same set ID,
+  // preventing a fast typer's debounced saves from racing each other.
   const saveSetToDb = useCallback(
     async (setId: number, exerciseType: ExerciseType, setData: SetData) => {
       if (!activeWorkout) return;
@@ -403,7 +425,9 @@ export function useWorkoutSession(dateOverride?: string) {
     debouncedSaveRef.current = debounce(saveSetToDb, 500);
   }, [saveSetToDb]);
 
-  // Handle set field change with auto-save
+  // Optimistic update: writes to local state immediately for responsive UI,
+  // then triggers a debounced (500ms) save to DB. The debounce batches rapid
+  // keystrokes into a single DB write.
   const handleSetChange = useCallback(
     (
       exerciseIndex: number,
@@ -1132,8 +1156,10 @@ export function useWorkoutSession(dateOverride?: string) {
     await cancelWorkout(activeWorkout.id);
   }, [activeWorkout, cancelWorkout]);
 
-  // Group exercises by superset
-  const groupedExercises = (() => {
+  // Groups exercises for rendering: standalone exercises stay as-is, superset
+  // exercises are collected into arrays. Uses a processedIndices set to avoid
+  // double-counting exercises that share a superset_group_id.
+  const groupedExercises = useMemo(() => {
     const result: (ExerciseWithSets | ExerciseWithSets[])[] = [];
     const processedIndices = new Set<number>();
 
@@ -1163,12 +1189,15 @@ export function useWorkoutSession(dateOverride?: string) {
     });
 
     return result;
-  })();
+  }, [exercisesWithSets]);
 
-  // Calculate total completed sets
-  const totalCompletedSets = exercisesWithSets.reduce(
-    (sum, ex) => sum + ex.sets.filter((s) => s.completed).length,
-    0,
+  const totalCompletedSets = useMemo(
+    () =>
+      exercisesWithSets.reduce(
+        (sum, ex) => sum + ex.sets.filter((s) => s.completed).length,
+        0,
+      ),
+    [exercisesWithSets],
   );
 
   // Helper to get exercise ID (for compatibility with components)

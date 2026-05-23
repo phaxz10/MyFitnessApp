@@ -1,6 +1,6 @@
 import { DEFAULT_EXPORT_OPTIONS, exportData, importData } from './backup';
 import { getDB, onDbWrite } from './db';
-import { isSignedIn } from './googleAuth';
+import { getAccessToken, isSignedIn } from './googleAuth';
 import {
   downloadBackupJson,
   downloadPhoto,
@@ -110,6 +110,10 @@ export async function lazyLoadPhotos(): Promise<void> {
 // Restore-on-load: pull remote if newer than local
 // ---------------------------------------------------------------------------
 
+// Called on app startup. Compares remote backup's exported_at timestamp
+// against the local last-restored-at marker. If remote is newer (e.g. user
+// restored on another device), pulls and imports the remote backup, then
+// kicks off a background photo download for any photos with NULL photo_data.
 export async function restoreIfRemoteNewer(): Promise<boolean> {
   if (!isSignedIn()) return false;
 
@@ -183,6 +187,13 @@ export async function performAutoBackup(): Promise<AutoBackupResult> {
   if (!isSignedIn()) {
     return { success: false, error: 'Not signed in with Google' };
   }
+  if (!(await getAccessToken())) {
+    return {
+      success: false,
+      error:
+        'Google session expired. Reconnect Google Drive to resume backups.',
+    };
+  }
 
   try {
     const jsonString = await exportForDrive();
@@ -222,6 +233,12 @@ export function isAutoBackupEnabled(): boolean {
 // Write Bus debounce — 60-second debounce triggers backup on any mutation
 // ---------------------------------------------------------------------------
 
+// MODULE SIDE EFFECT: subscribes to the Write Bus at import time.
+// This is intentional — the backup listener must capture ALL database mutations
+// (from any UI path), not just writes triggered by specific components.
+// The 60-second debounce batches rapid writes (e.g. logging 5 sets in a row)
+// into a single backup upload. Failures are logged but never block the user —
+// backup is best-effort and should never interrupt a workout.
 let backupTimeout: ReturnType<typeof setTimeout> | null = null;
 const BACKUP_DEBOUNCE_MS = 60_000;
 

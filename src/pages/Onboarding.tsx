@@ -10,7 +10,10 @@ import { useProfile } from '../hooks/useProfile';
 import { useWeight } from '../hooks/useWeight';
 import { type OnboardingFormData, onboardingSchema } from '../schemas/forms';
 import { restoreFromDrive } from '../services/autoBackup';
-import { calculateTargets } from '../services/coaching/nutritionCoach';
+import {
+  calculateDeterministicTargets,
+  calculateTargets,
+} from '../services/coaching/nutritionCoach';
 import { signIn } from '../services/googleAuth';
 import { hasRemoteBackup } from '../services/googleDrive';
 import { calculateAgeFromBirthdate, formatDate } from '../utils/date';
@@ -126,8 +129,35 @@ export function Onboarding() {
     }
   };
 
+  const buildTargetProfile = () => {
+    const values = getValues();
+    return {
+      age: calculateAgeFromBirthdate(values.birthdate),
+      gender: values.gender,
+      height_cm: parseFloat(values.heightCm),
+      weight_kg: parseFloat(values.weightKg),
+      activity_level: values.activityLevel,
+      goal: values.goal,
+    };
+  };
+
+  const applyTargets = (result: {
+    calorie_target: number;
+    protein_g: number;
+    carbs_g: number;
+    fat_g: number;
+  }) => {
+    setValue('targets', {
+      calories: result.calorie_target,
+      protein: result.protein_g,
+      carbs: result.carbs_g,
+      fat: result.fat_g,
+    });
+  };
+
   const calculateUserTargets = async () => {
     const values = getValues();
+    const profile = buildTargetProfile();
     try {
       if (values.apiKey) {
         // Seed the API key in the store so the stateless aiClient can read it.
@@ -150,63 +180,14 @@ export function Onboarding() {
             updated_at: '',
           },
         });
-        const result = await calculateTargets({
-          age: calculateAgeFromBirthdate(values.birthdate),
-          gender: values.gender,
-          height_cm: parseFloat(values.heightCm),
-          weight_kg: parseFloat(values.weightKg),
-          activity_level: values.activityLevel,
-          goal: values.goal,
-        });
-        setValue('targets', {
-          calories: result.calorie_target,
-          protein: result.protein_g,
-          carbs: result.carbs_g,
-          fat: result.fat_g,
-        });
+        applyTargets(await calculateTargets(profile));
       } else {
-        // Fallback calculation without AI
-        const weight = parseFloat(values.weightKg);
-        const multipliers = {
-          sedentary: 1.2,
-          light: 1.375,
-          moderate: 1.55,
-          active: 1.725,
-        };
-        const age = calculateAgeFromBirthdate(values.birthdate);
-        const bmr =
-          values.gender === 'male'
-            ? 10 * weight + 6.25 * parseFloat(values.heightCm) - 5 * age + 5
-            : 10 * weight + 6.25 * parseFloat(values.heightCm) - 5 * age - 161;
-
-        const tdee = bmr * multipliers[values.activityLevel];
-
-        const goalAdjustments: Record<string, number> = {
-          bulk: 500,
-          lean_bulk: 250,
-          recomp: 0,
-          cut: -500,
-          maintain: 0,
-        };
-
-        const calories = Math.round(tdee + goalAdjustments[values.goal]);
-        const protein = Math.round(weight * 2); // 2g per kg
-        const fat = Math.round((calories * 0.25) / 9);
-        const carbs = Math.round((calories - protein * 4 - fat * 9) / 4);
-
-        setValue('targets', { calories, protein, carbs, fat });
+        applyTargets(calculateDeterministicTargets(profile));
       }
       setStep('targets');
     } catch (_err) {
       setError('Failed to calculate targets. Using default values.');
-      // Set fallback values
-      const weight = parseFloat(values.weightKg);
-      setValue('targets', {
-        calories: Math.round(weight * 30),
-        protein: Math.round(weight * 2),
-        carbs: Math.round(weight * 3),
-        fat: Math.round(weight * 1),
-      });
+      applyTargets(calculateDeterministicTargets(profile));
       setStep('targets');
     }
   };
@@ -308,7 +289,11 @@ export function Onboarding() {
                 className="w-full"
                 isLoading={isSigningIn}
               >
-                <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
+                <svg
+                  aria-hidden="true"
+                  className="w-5 h-5 mr-2"
+                  viewBox="0 0 24 24"
+                >
                   <path
                     fill="#4285F4"
                     d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"

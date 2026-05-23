@@ -130,11 +130,10 @@ function compareExercises(
   return changes;
 }
 
-/**
- * Normalize superset group IDs for comparison
- * Since workout sessions generate new UUIDs for supersets, we need to compare
- * by the grouping pattern rather than the actual IDs
- */
+// Superset group IDs are UUIDs generated at session instantiation time, so the
+// same program session produces different IDs each workout. To detect whether
+// superset *groupings* changed (not just IDs), we compare the sets of exercise
+// IDs within each group — ignoring the group IDs themselves.
 function getSupersetGroups(
   exercises: NormalizedExercise[],
 ): Map<string, number[]> {

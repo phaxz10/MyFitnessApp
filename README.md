@@ -124,9 +124,25 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 ### Configure Google Drive Backup
 
-1. Go to Settings > Cloud Backup
-2. Sign in with Google (uses `drive.file` scope — can only access files it created)
-3. Auto-backup starts automatically after any data change
+Google sign-in and Drive backup require a Google OAuth client ID. The app reads it from a Vite environment variable at build time, so you'll need a `.env` file in the project root before running `pnpm dev` or `pnpm build`.
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and create (or select) a project
+2. Enable the **Google Drive API** under *APIs & Services > Library*
+3. Under *APIs & Services > Credentials*, create an **OAuth 2.0 Client ID** of type **Web application**
+4. Add your dev and prod URLs to **Authorized JavaScript origins** — e.g. `http://localhost:5173` and your deployed origin (e.g. `https://your-app.vercel.app`). No redirect URI is needed (the app uses the implicit token flow).
+5. Configure the OAuth consent screen with the `.../auth/drive.file`, `email`, and `profile` scopes
+6. Copy the generated client ID into a `.env` file at the project root:
+
+   ```bash
+   # .env
+   VITE_GOOGLE_CLIENT_ID=your-client-id-here.apps.googleusercontent.com
+   ```
+
+7. Restart `pnpm dev` so Vite picks up the new variable
+8. In the app, go to Settings > Cloud Backup and sign in with Google (uses `drive.file` scope — can only access files it created)
+9. Auto-backup starts automatically after any data change
+
+When deploying (e.g. to Vercel), set `VITE_GOOGLE_CLIENT_ID` in the host's environment variables so the production build includes it.
 
 ## Project Structure
 

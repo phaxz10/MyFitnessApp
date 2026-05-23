@@ -1,8 +1,12 @@
 /// <reference lib="webworker" />
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 import { ExpirationPlugin } from 'workbox-expiration';
-import { type PrecacheEntry, precacheAndRoute } from 'workbox-precaching';
-import { registerRoute } from 'workbox-routing';
+import {
+  createHandlerBoundToURL,
+  type PrecacheEntry,
+  precacheAndRoute,
+} from 'workbox-precaching';
+import { NavigationRoute, registerRoute } from 'workbox-routing';
 import { NetworkFirst } from 'workbox-strategies';
 
 declare const self: ServiceWorkerGlobalScope & {
@@ -10,6 +14,9 @@ declare const self: ServiceWorkerGlobalScope & {
 };
 
 precacheAndRoute(self.__WB_MANIFEST || []);
+
+const navigationHandler = createHandlerBoundToURL('/index.html');
+registerRoute(new NavigationRoute(navigationHandler));
 
 registerRoute(
   ({ url }: { url: URL }) => url.origin === 'https://api.openai.com',
@@ -21,6 +28,37 @@ registerRoute(
     ],
   }),
 );
+
+let notificationTimeout: ReturnType<typeof setTimeout> | null = null;
+
+self.addEventListener('message', (event) => {
+  const msg = event.data as { type: string; endAt?: number };
+
+  if (msg.type === 'schedule-notification' && msg.endAt) {
+    if (notificationTimeout) clearTimeout(notificationTimeout);
+
+    const delay = msg.endAt - Date.now();
+    if (delay <= 0) return;
+
+    notificationTimeout = setTimeout(async () => {
+      notificationTimeout = null;
+      await self.registration.showNotification('Rest timer finished', {
+        body: 'Tap to return to your workout.',
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
+        tag: 'rest-timer-finished',
+        data: { type: 'rest-timer' },
+      });
+    }, delay);
+  }
+
+  if (msg.type === 'cancel-notification') {
+    if (notificationTimeout) {
+      clearTimeout(notificationTimeout);
+      notificationTimeout = null;
+    }
+  }
+});
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();

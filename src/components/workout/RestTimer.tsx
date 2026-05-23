@@ -15,7 +15,6 @@ import { Button } from '../ui';
 interface RestTimerProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  // External state control
   seconds: number;
   setSeconds: (seconds: number | ((prev: number) => number)) => void;
   isRunning: boolean;
@@ -25,6 +24,12 @@ interface RestTimerProps {
 }
 
 const PRESET_TIMES = [30, 60, 90, 120, 180];
+
+function sendToSW(message: { type: string; endAt?: number }) {
+  navigator.serviceWorker?.ready.then((reg) => {
+    reg.active?.postMessage(message);
+  });
+}
 
 export function RestTimer({
   isOpen,
@@ -39,14 +44,17 @@ export function RestTimer({
   const [soundEnabled, setSoundEnabled] = useState(true);
   const { isAlarming, startAlarm, stopAlarm } = useAlarmTone();
 
+  const workerRef = useRef<Worker | null>(null);
   const endAtRef = useRef<number | null>(null);
-  const notificationTimeoutRef = useRef<number | null>(null);
 
-  const clearNotificationTimeout = useCallback(() => {
-    if (notificationTimeoutRef.current) {
-      clearTimeout(notificationTimeoutRef.current);
-      notificationTimeoutRef.current = null;
+  const getWorker = useCallback(() => {
+    if (!workerRef.current) {
+      workerRef.current = new Worker(
+        new URL('../../workers/timerWorker.ts', import.meta.url),
+        { type: 'module' },
+      );
     }
+    return workerRef.current;
   }, []);
 
   const requestNotificationPermission = useCallback(async () => {
@@ -56,63 +64,69 @@ export function RestTimer({
     }
   }, []);
 
-  const scheduleFinishNotification = useCallback(
-    (endAt: number) => {
-      if (!('Notification' in window) || !('serviceWorker' in navigator)) {
-        return;
-      }
+  const scheduleNotification = useCallback((endAt: number) => {
+    sendToSW({ type: 'schedule-notification', endAt });
+  }, []);
 
-      const delay = endAt - Date.now();
-      if (delay <= 0) return;
+  const cancelNotification = useCallback(() => {
+    sendToSW({ type: 'cancel-notification' });
+  }, []);
 
-      clearNotificationTimeout();
-      notificationTimeoutRef.current = window.setTimeout(async () => {
-        if (document.visibilityState !== 'hidden') return;
+  const startCountdown = useCallback(
+    (durationSeconds: number) => {
+      const endAt = Date.now() + durationSeconds * 1000;
+      endAtRef.current = endAt;
 
-        let permission = Notification.permission;
-        if (permission === 'default') {
-          permission = await Notification.requestPermission();
-        }
-        if (permission !== 'granted') return;
+      requestNotificationPermission();
+      scheduleNotification(endAt);
 
-        const registration = await navigator.serviceWorker.ready;
-        registration.showNotification('Rest timer finished', {
-          body: 'Tap to return to your workout.',
-          icon: '/icon-192.png',
-          badge: '/icon-192.png',
-          tag: 'rest-timer-finished',
-          data: { type: 'rest-timer' },
-        });
-
-        if (navigator.vibrate) {
-          navigator.vibrate([200, 100, 200, 100, 300]);
-        }
-
-        endAtRef.current = null;
-        startTimeRef.current = null;
-        setIsRunning(false);
-        setSeconds(0);
-        notificationTimeoutRef.current = null;
-      }, delay);
+      const worker = getWorker();
+      worker.postMessage({ type: 'start', endAt });
     },
-    [clearNotificationTimeout, setIsRunning, setSeconds],
+    [getWorker, requestNotificationPermission, scheduleNotification],
   );
 
-  // Use timestamp-based timing to handle background/sleep
-  const startTimeRef = useRef<number | null>(null);
-  const remainingAtStartRef = useRef<number>(seconds);
+  const stopCountdown = useCallback(() => {
+    endAtRef.current = null;
+    cancelNotification();
+    workerRef.current?.postMessage({ type: 'stop' });
+  }, [cancelNotification]);
 
+  // Handle worker messages
   useEffect(() => {
-    if (isRunning && startTimeRef.current === null) {
-      // Timer just started
-      startTimeRef.current = Date.now();
-      remainingAtStartRef.current = seconds;
-    } else if (!isRunning) {
-      // Timer paused/stopped
-      startTimeRef.current = null;
-    }
-  }, [isRunning, seconds]);
+    const worker = getWorker();
 
+    const onMessage = (e: MessageEvent) => {
+      if (e.data.type === 'tick') {
+        setSeconds(e.data.remaining);
+      }
+
+      if (e.data.type === 'finished') {
+        endAtRef.current = null;
+        cancelNotification();
+        setIsRunning(false);
+        setSeconds(0);
+
+        if (soundEnabled) {
+          startAlarm();
+        } else if (navigator.vibrate) {
+          navigator.vibrate([200, 100, 200, 100, 200]);
+        }
+      }
+    };
+
+    worker.addEventListener('message', onMessage);
+    return () => worker.removeEventListener('message', onMessage);
+  }, [
+    cancelNotification,
+    getWorker,
+    setIsRunning,
+    setSeconds,
+    soundEnabled,
+    startAlarm,
+  ]);
+
+  // Handle SW notification click → ring in-app
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
 
@@ -132,14 +146,14 @@ export function RestTimer({
     };
   }, [onOpenChange, soundEnabled, startAlarm]);
 
+  // Catch up when returning from background
   useEffect(() => {
     const handleVisibility = () => {
       if (!endAtRef.current) return;
       if (document.visibilityState !== 'visible') return;
 
       if (Date.now() >= endAtRef.current && seconds > 0) {
-        endAtRef.current = null;
-        clearNotificationTimeout();
+        stopCountdown();
         setIsRunning(false);
         setSeconds(0);
         if (soundEnabled) {
@@ -153,116 +167,51 @@ export function RestTimer({
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [
-    clearNotificationTimeout,
     seconds,
     setIsRunning,
     setSeconds,
     soundEnabled,
     startAlarm,
+    stopCountdown,
   ]);
 
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      clearNotificationTimeout();
+      workerRef.current?.terminate();
+      workerRef.current = null;
     };
-  }, [clearNotificationTimeout]);
-
-  useEffect(() => {
-    let animationFrame: number;
-    let lastUpdate = Date.now();
-
-    const tick = () => {
-      if (!isRunning || startTimeRef.current === null) return;
-
-      const now = Date.now();
-      const elapsed = Math.floor((now - startTimeRef.current) / 1000);
-      const newSeconds = Math.max(0, remainingAtStartRef.current - elapsed);
-
-      // Only update if second changed (avoid unnecessary renders)
-      if (now - lastUpdate >= 1000 || newSeconds === 0) {
-        lastUpdate = now;
-        setSeconds(newSeconds);
-
-        if (newSeconds === 0) {
-          setIsRunning(false);
-          startTimeRef.current = null;
-          endAtRef.current = null;
-          clearNotificationTimeout();
-          // Start looping alarm sound
-          if (soundEnabled) {
-            startAlarm();
-          } else if (navigator.vibrate) {
-            // Even without sound, vibrate once
-            navigator.vibrate([200, 100, 200, 100, 200]);
-          }
-          return;
-        }
-      }
-
-      animationFrame = requestAnimationFrame(tick);
-    };
-
-    if (isRunning) {
-      animationFrame = requestAnimationFrame(tick);
-    }
-
-    return () => {
-      if (animationFrame) cancelAnimationFrame(animationFrame);
-    };
-  }, [
-    clearNotificationTimeout,
-    isRunning,
-    setSeconds,
-    setIsRunning,
-    soundEnabled,
-    startAlarm,
-  ]);
+  }, []);
 
   const toggleTimer = () => {
     if (!isRunning) {
-      // Starting timer - set new start time
-      startTimeRef.current = Date.now();
-      remainingAtStartRef.current = seconds;
-      const endAt = Date.now() + seconds * 1000;
-      endAtRef.current = endAt;
-      requestNotificationPermission();
-      scheduleFinishNotification(endAt);
+      startCountdown(seconds);
     } else {
-      endAtRef.current = null;
-      clearNotificationTimeout();
+      stopCountdown();
     }
     setIsRunning(!isRunning);
   };
 
   const resetTimer = () => {
     stopAlarm();
-    clearNotificationTimeout();
-    endAtRef.current = null;
+    stopCountdown();
     setIsRunning(false);
     setSeconds(initialSeconds);
-    startTimeRef.current = null;
   };
 
   const setPresetTime = (time: number) => {
-    stopAlarm(); // Stop alarm if user selects a new time
-    const endAt = Date.now() + time * 1000;
-    endAtRef.current = endAt;
-    requestNotificationPermission();
-    scheduleFinishNotification(endAt);
+    stopAlarm();
     setSeconds(time);
     setInitialSeconds(time);
-    startTimeRef.current = Date.now();
-    remainingAtStartRef.current = time;
     setIsRunning(true);
+    startCountdown(time);
   };
 
   const dismissTimer = () => {
-    stopAlarm(); // Stop the looping alarm
-    clearNotificationTimeout();
-    endAtRef.current = null;
+    stopAlarm();
+    stopCountdown();
     setIsRunning(false);
     setSeconds(initialSeconds);
-    startTimeRef.current = null;
     onOpenChange(false);
   };
 
@@ -270,12 +219,10 @@ export function RestTimer({
   const isFinished = seconds === 0 && !isRunning;
   const isActive = isRunning || (seconds !== initialSeconds && seconds > 0);
 
-  // Calculate stroke dasharray for circular progress
   const radius = 24;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference * (1 - progress / 100);
 
-  // Handle FAB click - if alarming, stop alarm and dismiss
   const handleFabClick = () => {
     if (isAlarming) {
       dismissTimer();
@@ -303,10 +250,8 @@ export function RestTimer({
         }`}
       >
         {isAlarming ? (
-          // Show "TAP" when alarm is ringing
           <span className="text-white font-bold text-xs">TAP</span>
         ) : isRunning || isActive ? (
-          // Show timer countdown with circular progress
           <div className="relative w-12 h-12 flex items-center justify-center">
             <svg
               className="absolute inset-0 w-12 h-12 -rotate-90"
@@ -314,7 +259,6 @@ export function RestTimer({
               role="img"
               aria-label={`Rest timer: ${formatTimerDisplay(seconds)} remaining`}
             >
-              {/* Background circle */}
               <circle
                 cx="24"
                 cy="24"
@@ -323,7 +267,6 @@ export function RestTimer({
                 stroke="rgba(255,255,255,0.2)"
                 strokeWidth="3"
               />
-              {/* Progress circle */}
               <circle
                 cx="24"
                 cy="24"
@@ -342,7 +285,6 @@ export function RestTimer({
             </span>
           </div>
         ) : (
-          // Show timer icon when idle
           <Timer size={24} className="text-white" />
         )}
       </button>
@@ -379,7 +321,6 @@ export function RestTimer({
                 className={`relative flex items-center justify-center mb-4 ${isFinished ? 'animate-pulse' : ''}`}
               >
                 <div className="w-32 h-32 relative">
-                  {/* Background circle */}
                   <svg
                     className="w-full h-full transform -rotate-90"
                     viewBox="0 0 128 128"
@@ -394,7 +335,6 @@ export function RestTimer({
                       stroke="#334155"
                       strokeWidth="8"
                     />
-                    {/* Progress circle */}
                     <circle
                       cx="64"
                       cy="64"

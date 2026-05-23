@@ -18,7 +18,7 @@ const migrations: Migration[] = [
     version: 1,
     up: async (db) => {
       await db.exec(`
-        CREATE TABLE user_profile (
+        CREATE TABLE IF NOT EXISTS user_profile (
           id INTEGER PRIMARY KEY DEFAULT 1,
           birthdate DATE NOT NULL,
           gender TEXT NOT NULL CHECK (gender IN ('male', 'female')),
@@ -35,7 +35,7 @@ const migrations: Migration[] = [
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
-        CREATE TABLE weight_logs (
+        CREATE TABLE IF NOT EXISTS weight_logs (
           id SERIAL PRIMARY KEY,
           date DATE NOT NULL UNIQUE,
           weight_kg REAL NOT NULL,
@@ -47,7 +47,7 @@ const migrations: Migration[] = [
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
-        CREATE TABLE food_entries (
+        CREATE TABLE IF NOT EXISTS food_entries (
           id SERIAL PRIMARY KEY,
           date DATE NOT NULL,
           meal_type TEXT NOT NULL CHECK (meal_type IN ('breakfast', 'lunch', 'dinner', 'snack')),
@@ -62,7 +62,7 @@ const migrations: Migration[] = [
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
-        CREATE TABLE exercises (
+        CREATE TABLE IF NOT EXISTS exercises (
           id SERIAL PRIMARY KEY,
           name TEXT NOT NULL,
           description TEXT,
@@ -75,7 +75,7 @@ const migrations: Migration[] = [
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
-        CREATE TABLE workout_programs (
+        CREATE TABLE IF NOT EXISTS workout_programs (
           id SERIAL PRIMARY KEY,
           name TEXT NOT NULL,
           description TEXT,
@@ -85,7 +85,7 @@ const migrations: Migration[] = [
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
-        CREATE TABLE program_sessions (
+        CREATE TABLE IF NOT EXISTS program_sessions (
           id SERIAL PRIMARY KEY,
           program_id INTEGER NOT NULL REFERENCES workout_programs(id) ON DELETE CASCADE,
           name TEXT NOT NULL,
@@ -94,7 +94,7 @@ const migrations: Migration[] = [
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
-        CREATE TABLE program_exercises (
+        CREATE TABLE IF NOT EXISTS program_exercises (
           id SERIAL PRIMARY KEY,
           session_id INTEGER NOT NULL REFERENCES program_sessions(id) ON DELETE CASCADE,
           exercise_id INTEGER NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
@@ -107,7 +107,7 @@ const migrations: Migration[] = [
           notes TEXT
         );
 
-        CREATE TABLE workout_logs (
+        CREATE TABLE IF NOT EXISTS workout_logs (
           id SERIAL PRIMARY KEY,
           program_id INTEGER REFERENCES workout_programs(id) ON DELETE SET NULL,
           session_id INTEGER REFERENCES program_sessions(id) ON DELETE SET NULL,
@@ -120,7 +120,7 @@ const migrations: Migration[] = [
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
-        CREATE TABLE workout_log_exercises (
+        CREATE TABLE IF NOT EXISTS workout_log_exercises (
           id SERIAL PRIMARY KEY,
           workout_log_id INTEGER NOT NULL REFERENCES workout_logs(id) ON DELETE CASCADE,
           exercise_id INTEGER NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
@@ -134,7 +134,7 @@ const migrations: Migration[] = [
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
-        CREATE TABLE workout_sets (
+        CREATE TABLE IF NOT EXISTS workout_sets (
           id SERIAL PRIMARY KEY,
           workout_log_id INTEGER NOT NULL REFERENCES workout_logs(id) ON DELETE CASCADE,
           exercise_id INTEGER NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
@@ -148,14 +148,14 @@ const migrations: Migration[] = [
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
-        CREATE TABLE exercise_notes (
+        CREATE TABLE IF NOT EXISTS exercise_notes (
           id SERIAL PRIMARY KEY,
           exercise_id INTEGER NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
           content TEXT NOT NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
-        CREATE TABLE ai_goal_reviews (
+        CREATE TABLE IF NOT EXISTS ai_goal_reviews (
           id SERIAL PRIMARY KEY,
           review_date DATE NOT NULL,
           previous_calorie_target INTEGER NOT NULL,
@@ -167,7 +167,7 @@ const migrations: Migration[] = [
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
-        CREATE TABLE weekly_reviews (
+        CREATE TABLE IF NOT EXISTS weekly_reviews (
           id SERIAL PRIMARY KEY,
           week_start DATE NOT NULL,
           week_end DATE NOT NULL,
@@ -188,7 +188,7 @@ const migrations: Migration[] = [
           UNIQUE(week_start, week_end)
         );
 
-        CREATE TABLE progress_photos (
+        CREATE TABLE IF NOT EXISTS progress_photos (
           id SERIAL PRIMARY KEY,
           date DATE NOT NULL,
           photo_data TEXT NOT NULL,
@@ -198,19 +198,19 @@ const migrations: Migration[] = [
         );
 
         -- Indexes
-        CREATE INDEX idx_food_entries_date ON food_entries(date);
-        CREATE INDEX idx_weight_logs_date ON weight_logs(date);
-        CREATE INDEX idx_workout_logs_date ON workout_logs(date);
-        CREATE INDEX idx_program_sessions_program ON program_sessions(program_id);
-        CREATE INDEX idx_program_exercises_session ON program_exercises(session_id);
-        CREATE INDEX idx_workout_sets_log ON workout_sets(workout_log_id);
-        CREATE INDEX idx_progress_photos_date ON progress_photos(date);
-        CREATE INDEX idx_exercise_notes_exercise ON exercise_notes(exercise_id);
-        CREATE INDEX idx_workout_log_exercises_log ON workout_log_exercises(workout_log_id);
-        CREATE INDEX idx_workout_sets_exercise ON workout_sets(exercise_id);
-        CREATE INDEX idx_workout_sets_wle ON workout_sets(workout_log_exercise_id);
-        CREATE INDEX idx_workout_logs_completed ON workout_logs(status) WHERE status = 'completed';
-        CREATE INDEX idx_workout_sets_completed_at ON workout_sets(completed_at);
+        CREATE INDEX IF NOT EXISTS idx_food_entries_date ON food_entries(date);
+        CREATE INDEX IF NOT EXISTS idx_weight_logs_date ON weight_logs(date);
+        CREATE INDEX IF NOT EXISTS idx_workout_logs_date ON workout_logs(date);
+        CREATE INDEX IF NOT EXISTS idx_program_sessions_program ON program_sessions(program_id);
+        CREATE INDEX IF NOT EXISTS idx_program_exercises_session ON program_exercises(session_id);
+        CREATE INDEX IF NOT EXISTS idx_workout_sets_log ON workout_sets(workout_log_id);
+        CREATE INDEX IF NOT EXISTS idx_progress_photos_date ON progress_photos(date);
+        CREATE INDEX IF NOT EXISTS idx_exercise_notes_exercise ON exercise_notes(exercise_id);
+        CREATE INDEX IF NOT EXISTS idx_workout_log_exercises_log ON workout_log_exercises(workout_log_id);
+        CREATE INDEX IF NOT EXISTS idx_workout_sets_exercise ON workout_sets(exercise_id);
+        CREATE INDEX IF NOT EXISTS idx_workout_sets_wle ON workout_sets(workout_log_exercise_id);
+        CREATE INDEX IF NOT EXISTS idx_workout_logs_completed ON workout_logs(status) WHERE status = 'completed';
+        CREATE INDEX IF NOT EXISTS idx_workout_sets_completed_at ON workout_sets(completed_at);
       `);
     },
   },

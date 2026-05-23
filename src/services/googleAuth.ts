@@ -3,6 +3,8 @@ const SCOPES = 'https://www.googleapis.com/auth/drive.file email profile';
 
 const STORAGE_KEYS = {
   GOOGLE_USER: 'mpf-google-user',
+  ACCESS_TOKEN: 'mpf-access-token',
+  TOKEN_EXPIRY: 'mpf-token-expiry',
 } as const;
 
 export interface GoogleUser {
@@ -12,7 +14,29 @@ export interface GoogleUser {
 }
 
 let tokenClient: google.accounts.oauth2.TokenClient | null = null;
-let currentAccessToken: string | null = null;
+let currentAccessToken: string | null = localStorage.getItem(
+  STORAGE_KEYS.ACCESS_TOKEN,
+);
+let silentReauthFailed = false;
+
+function persistToken(token: string, expiresIn: number): void {
+  currentAccessToken = token;
+  const expiry = Date.now() + expiresIn * 1000;
+  localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, token);
+  localStorage.setItem(STORAGE_KEYS.TOKEN_EXPIRY, String(expiry));
+}
+
+function clearPersistedToken(): void {
+  currentAccessToken = null;
+  localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+  localStorage.removeItem(STORAGE_KEYS.TOKEN_EXPIRY);
+}
+
+function isTokenExpired(): boolean {
+  const expiry = localStorage.getItem(STORAGE_KEYS.TOKEN_EXPIRY);
+  if (!expiry) return true;
+  return Date.now() >= Number(expiry);
+}
 
 function loadGisScript(): Promise<void> {
   if (document.getElementById('gis-script')) {
@@ -42,7 +66,10 @@ function initTokenClient(prompt: 'consent' | 'none'): Promise<string> {
           reject(new Error(response.error));
           return;
         }
-        currentAccessToken = response.access_token;
+        persistToken(
+          response.access_token,
+          Number(response.expires_in) || 3600,
+        );
         resolve(response.access_token);
       },
       error_callback: (err) => {
@@ -55,6 +82,7 @@ function initTokenClient(prompt: 'consent' | 'none'): Promise<string> {
 
 export async function signIn(): Promise<{ token: string; user: GoogleUser }> {
   await loadGisScript();
+  silentReauthFailed = false;
   const token = await initTokenClient('consent');
   const user = await fetchUserInfo(token);
   localStorage.setItem(STORAGE_KEYS.GOOGLE_USER, JSON.stringify(user));
@@ -62,6 +90,8 @@ export async function signIn(): Promise<{ token: string; user: GoogleUser }> {
 }
 
 export async function silentReauth(): Promise<string | null> {
+  if (silentReauthFailed) return null;
+
   const stored = localStorage.getItem(STORAGE_KEYS.GOOGLE_USER);
   if (!stored) return null;
 
@@ -70,14 +100,19 @@ export async function silentReauth(): Promise<string | null> {
     const token = await initTokenClient('none');
     return token;
   } catch {
+    silentReauthFailed = true;
     return null;
   }
 }
 
 export async function getAccessToken(): Promise<string | null> {
+  if (currentAccessToken && !isTokenExpired()) {
+    return currentAccessToken;
+  }
   if (currentAccessToken) {
     const valid = await validateToken(currentAccessToken);
     if (valid) return currentAccessToken;
+    clearPersistedToken();
   }
   return silentReauth();
 }
@@ -119,8 +154,8 @@ export function isSignedIn(): boolean {
 export function signOut(): void {
   if (currentAccessToken) {
     google.accounts.oauth2.revoke(currentAccessToken, () => {});
-    currentAccessToken = null;
   }
+  clearPersistedToken();
   tokenClient = null;
   localStorage.removeItem(STORAGE_KEYS.GOOGLE_USER);
 }

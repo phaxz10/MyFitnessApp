@@ -1,5 +1,6 @@
 export { BottomNav } from './BottomNav';
 export { Button } from './Button';
+export { CameraCapture } from './CameraCapture';
 export { Card, CardContent, CardHeader, CardTitle } from './Card';
 export { Header } from './Header';
 export { Input } from './Input';

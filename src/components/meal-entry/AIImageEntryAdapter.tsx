@@ -1,19 +1,11 @@
-import {
-  Camera,
-  ChevronLeft,
-  ImageIcon,
-  Loader2,
-  Minus,
-  Plus,
-  X,
-} from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronLeft, Loader2, Minus, Plus, X } from 'lucide-react';
+import { useCallback, useState } from 'react';
 import { mealTypes } from '../../constants/options';
 import { useCalories } from '../../hooks/useCalories';
 import { analyzeFoodImage } from '../../services/coaching/nutritionCoach';
 import type { AIFoodItem, MealType } from '../../types';
 import { recalculateMacros } from '../../utils/calculations';
-import { Button, Select, TextArea } from '../ui';
+import { Button, CameraCapture, Select, TextArea } from '../ui';
 import { describeAIError } from './describeAIError';
 
 interface EditableFoodItem extends AIFoodItem {
@@ -28,7 +20,6 @@ interface AIImageEntryAdapterProps {
 }
 
 type Step = 'capture' | 'analyzing' | 'results';
-type CameraPermission = 'pending' | 'granted' | 'denied';
 
 export function AIImageEntryAdapter({
   date,
@@ -38,16 +29,7 @@ export function AIImageEntryAdapter({
 }: AIImageEntryAdapterProps) {
   const { addEntriesBatch } = useCalories();
 
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-
   const [step, setStep] = useState<Step>('capture');
-  const [cameraPermission, setCameraPermission] =
-    useState<CameraPermission>('pending');
-  const [cameraActive, setCameraActive] = useState(false);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageData, setImageData] = useState<{
     base64: string;
     mimeType: string;
@@ -60,88 +42,12 @@ export function AIImageEntryAdapter({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const stopCamera = useCallback(() => {
-    if (streamRef.current) {
-      for (const track of streamRef.current.getTracks()) {
-        track.stop();
-      }
-      streamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    setCameraActive(false);
-  }, []);
-
-  const startCamera = useCallback(async () => {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraPermission('denied');
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        setCameraActive(true);
-      }
-      setCameraPermission('granted');
-    } catch (err) {
-      console.error('Camera permission error:', err);
-      setCameraPermission('denied');
-      setCameraActive(false);
-    }
-  }, []);
-
-  const captureFrame = useCallback(() => {
-    if (!videoRef.current || !canvasRef.current) return;
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-    const base64 = dataUrl.split(',')[1];
-    setImagePreview(dataUrl);
-    setImageData({ base64, mimeType: 'image/jpeg' });
-    stopCamera();
-  }, [stopCamera]);
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      setError('Please select an image file');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      setImagePreview(result);
-      const base64 = result.split(',')[1];
-      setImageData({ base64, mimeType: file.type });
-      stopCamera();
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
-  };
-
-  const clearImage = () => {
-    setImagePreview(null);
-    setImageData(null);
-    if (cameraPermission === 'granted') {
-      startCamera();
-    }
-  };
+  const handleCapture = useCallback(
+    (data: { base64: string; mimeType: string }) => {
+      setImageData(data);
+    },
+    [],
+  );
 
   const handleAnalyze = async () => {
     if (!imageData) {
@@ -228,14 +134,6 @@ export function AIImageEntryAdapter({
     }
   };
 
-  // Auto-start camera on mount. This fires the browser permission prompt
-  // immediately — no intermediate "Enable Camera" button.
-  // Release the stream when the adapter unmounts.
-  useEffect(() => {
-    startCamera();
-    return () => stopCamera();
-  }, [startCamera, stopCamera]);
-
   if (step === 'analyzing') {
     return (
       <div className="flex flex-col items-center justify-center py-12">
@@ -257,13 +155,16 @@ export function AIImageEntryAdapter({
       { calories: 0, protein: 0, carbs: 0, fat: 0 },
     );
 
+    const previewUrl = imageData
+      ? `data:${imageData.mimeType};base64,${imageData.base64}`
+      : null;
+
     return (
       <div className="space-y-4">
         <button
           type="button"
           onClick={() => {
             setStep('capture');
-            setImagePreview(null);
             setImageData(null);
             setResults([]);
           }}
@@ -273,9 +174,9 @@ export function AIImageEntryAdapter({
           Scan another
         </button>
 
-        {imagePreview && (
+        {previewUrl && (
           <img
-            src={imagePreview}
+            src={previewUrl}
             alt="Meal"
             className="w-full h-32 object-cover rounded-lg"
           />
@@ -378,15 +279,6 @@ export function AIImageEntryAdapter({
         </button>
       )}
 
-      <canvas ref={canvasRef} className="hidden" />
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-        onChange={handleFileSelect}
-        className="hidden"
-      />
-
       <Select
         label="Meal Type"
         options={mealTypes}
@@ -394,99 +286,27 @@ export function AIImageEntryAdapter({
         onChange={(e) => setMealType(e.target.value as MealType)}
       />
 
-      {/* Viewfinder / captured-frame area. The <video> element stays mounted
-          even before getUserMedia resolves so that videoRef.current is
-          available when startCamera assigns srcObject. */}
-      <div className="rounded-lg overflow-hidden">
-        <div className="relative aspect-[4/3] bg-black">
-          {imagePreview ? (
-            <>
-              <img
-                src={imagePreview}
-                alt="Captured meal"
-                className="w-full h-full object-cover"
-              />
-              <button
-                type="button"
-                onClick={clearImage}
-                className="absolute top-2 right-2 p-2 bg-black/50 rounded-full text-white hover:bg-black/70"
-                aria-label="Discard photo"
-              >
-                <X size={18} />
-              </button>
-            </>
-          ) : (
-            <>
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className={`w-full h-full object-cover ${cameraActive ? '' : 'invisible'}`}
-              />
-              {!cameraActive && cameraPermission === 'pending' && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 text-center p-4">
-                  <Loader2
-                    size={32}
-                    className="text-blue-400 animate-spin mb-3"
-                  />
-                  <p className="text-slate-300 text-sm">
-                    Waiting for camera permission…
-                  </p>
-                </div>
-              )}
-              {!cameraActive && cameraPermission === 'denied' && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 text-center p-4">
-                  <Camera size={32} className="text-slate-500 mb-3" />
-                  <p className="text-slate-300 text-sm font-medium mb-1">
-                    Camera unavailable
-                  </p>
-                  <p className="text-slate-400 text-xs">
-                    Permission denied or device has no camera. Upload a photo
-                    below.
-                  </p>
-                </div>
-              )}
-            </>
-          )}
+      {imageData ? (
+        <div className="rounded-lg overflow-hidden">
+          <div className="relative aspect-[5/7] bg-black">
+            <img
+              src={`data:${imageData.mimeType};base64,${imageData.base64}`}
+              alt="Captured meal"
+              className="w-full h-full object-cover"
+            />
+            <button
+              type="button"
+              onClick={() => setImageData(null)}
+              className="absolute top-2 right-2 p-2 bg-black/50 rounded-full text-white hover:bg-black/70"
+              aria-label="Discard photo"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
-
-        {/* Action row below the viewfinder. */}
-        {!imagePreview && cameraActive && (
-          <Button
-            onClick={captureFrame}
-            className="w-full mt-2"
-            aria-label="Capture photo"
-          >
-            <Camera size={16} className="mr-2" />
-            Capture
-          </Button>
-        )}
-
-        {!imagePreview && (
-          <Button
-            variant="secondary"
-            onClick={() => fileInputRef.current?.click()}
-            className="w-full mt-2"
-          >
-            <ImageIcon size={16} className="mr-2" />
-            {cameraActive
-              ? 'Upload from gallery instead'
-              : 'Upload from gallery'}
-          </Button>
-        )}
-
-        {cameraPermission === 'denied' && !imagePreview && (
-          <Button
-            variant="secondary"
-            onClick={startCamera}
-            className="w-full mt-2"
-          >
-            <Camera size={16} className="mr-2" />
-            Retry camera
-          </Button>
-        )}
-      </div>
+      ) : (
+        <CameraCapture onCapture={handleCapture} />
+      )}
 
       <TextArea
         label="Additional context (optional)"

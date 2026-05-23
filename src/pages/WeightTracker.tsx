@@ -9,7 +9,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -22,6 +22,7 @@ import {
 } from 'recharts';
 import {
   Button,
+  CameraCapture,
   Card,
   CardContent,
   getTrendDirection,
@@ -75,7 +76,6 @@ export function WeightTracker() {
   const [photoNotes, setPhotoNotes] = useState('');
   const [isPhotoLoading, setIsPhotoLoading] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // React Hook Form
   const {
@@ -230,93 +230,35 @@ export function WeightTracker() {
     setIsPhotoModalOpen(false);
     setPhotoNotes('');
     setPhotoError(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
   };
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      setPhotoError('Please select an image file');
-      return;
-    }
-
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      setPhotoError('Image must be less than 5MB');
-      return;
-    }
-
-    setIsPhotoLoading(true);
-    setPhotoError(null);
-
-    try {
-      // Compress and convert to base64
-      const base64 = await compressAndConvertToBase64(file);
-
-      await addPhoto({
-        date: formatDate(new Date()),
-        photo_data: base64,
-        photo_type: selectedPhotoType,
-        notes: photoNotes || undefined,
-      });
-
-      await fetchAllPhotos();
-      handleClosePhotoModal();
-    } catch (err) {
-      setPhotoError(
-        err instanceof Error ? err.message : 'Failed to save photo',
-      );
-    } finally {
-      setIsPhotoLoading(false);
-    }
-  };
-
-  const compressAndConvertToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      const img = document.createElement('img');
-
-      img.onload = () => {
-        // Max dimensions
-        const maxWidth = 1200;
-        const maxHeight = 1200;
-
-        let { width, height } = img;
-
-        // Calculate new dimensions
-        if (width > maxWidth || height > maxHeight) {
-          const ratio = Math.min(maxWidth / width, maxHeight / height);
-          width *= ratio;
-          height *= ratio;
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-
-        ctx?.drawImage(img, 0, 0, width, height);
-
-        // Convert to JPEG with 0.8 quality
-        const base64 = canvas.toDataURL('image/jpeg', 0.8);
-        resolve(base64);
-      };
-
-      img.onerror = () => reject(new Error('Failed to load image'));
-
-      // Read file as data URL
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        img.src = e.target?.result as string;
-      };
-      reader.onerror = () => reject(new Error('Failed to read file'));
-      reader.readAsDataURL(file);
-    });
-  };
+  const handlePhotoCapture = useCallback(
+    async (data: { base64: string; mimeType: string }) => {
+      setIsPhotoLoading(true);
+      setPhotoError(null);
+      try {
+        const compressed = await compressBase64Image(
+          data.base64,
+          data.mimeType,
+        );
+        await addPhoto({
+          date: formatDate(new Date()),
+          photo_data: compressed,
+          photo_type: selectedPhotoType,
+          notes: photoNotes || undefined,
+        });
+        await fetchAllPhotos();
+        handleClosePhotoModal();
+      } catch (err) {
+        setPhotoError(
+          err instanceof Error ? err.message : 'Failed to save photo',
+        );
+      } finally {
+        setIsPhotoLoading(false);
+      }
+    },
+    [addPhoto, fetchAllPhotos, photoNotes, selectedPhotoType],
+  );
 
   const handleViewPhoto = (photo: ProgressPhoto) => {
     setSelectedPhoto(photo);
@@ -685,79 +627,44 @@ export function WeightTracker() {
         title="Add Progress Photo"
       >
         <div className="space-y-4">
-          <p className="text-slate-400 text-sm">
-            Take a photo to track your visual progress over time.
-          </p>
+          <CameraCapture
+            onCapture={handlePhotoCapture}
+            overlay={
+              <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between pointer-events-auto">
+                <div className="flex gap-1.5">
+                  {(['front', 'side', 'back'] as const).map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => setSelectedPhotoType(type)}
+                      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                        selectedPhotoType === type
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-black/50 text-white/80 hover:bg-black/70'
+                      }`}
+                    >
+                      {photoTypeLabels[type]}
+                    </button>
+                  ))}
+                </div>
+                {isPhotoLoading && (
+                  <span className="text-xs text-white bg-black/50 px-2 py-1 rounded">
+                    Saving…
+                  </span>
+                )}
+              </div>
+            }
+          />
 
-          {/* Photo Type Selection */}
-          <div>
-            <p className="block text-sm font-medium text-slate-300 mb-2">
-              Photo Type
-            </p>
-            <div className="flex gap-2">
-              {(['front', 'side', 'back'] as const).map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => setSelectedPhotoType(type)}
-                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
-                    selectedPhotoType === type
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                  }`}
-                >
-                  {photoTypeLabels[type]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Notes */}
-          <div>
-            <p className="block text-sm font-medium text-slate-300 mb-2">
-              Notes (optional)
-            </p>
-            <textarea
-              value={photoNotes}
-              onChange={(e) => setPhotoNotes(e.target.value)}
-              placeholder="E.g., morning, flexed, after workout..."
-              className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-              rows={2}
-            />
-          </div>
-
-          {/* File Input */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={handleFileSelect}
-            className="hidden"
+          <textarea
+            value={photoNotes}
+            onChange={(e) => setPhotoNotes(e.target.value)}
+            placeholder="Notes (optional) — e.g., morning, flexed, after workout..."
+            className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"
+            rows={2}
           />
 
           {photoError && <p className="text-red-400 text-sm">{photoError}</p>}
-
-          <div className="flex gap-2 pt-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={handleClosePhotoModal}
-              className="flex-1"
-              disabled={isPhotoLoading}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex-1"
-              isLoading={isPhotoLoading}
-            >
-              <Camera size={18} className="mr-1" />
-              Take Photo
-            </Button>
-          </div>
         </div>
       </Modal>
 
@@ -841,4 +748,29 @@ export function WeightTracker() {
       )}
     </div>
   );
+}
+
+function compressBase64Image(
+  base64: string,
+  mimeType: string,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = document.createElement('img');
+    img.onload = () => {
+      const maxDim = 1200;
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        const ratio = Math.min(maxDim / width, maxDim / height);
+        width *= ratio;
+        height *= ratio;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d')?.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = () => reject(new Error('Failed to process image'));
+    img.src = `data:${mimeType};base64,${base64}`;
+  });
 }

@@ -32,6 +32,7 @@ import {
   restoreIfRemoteNewer,
 } from './services/autoBackup';
 import { getDB, isOnboardingComplete } from './services/db';
+import { attemptSilentTokenRefresh, isSignedIn } from './services/googleAuth';
 
 function MainLayout() {
   return (
@@ -80,6 +81,13 @@ function AppRoutes() {
         if (complete) {
           // Process any stale in_progress workouts from previous days
           await processStaleWorkouts();
+
+          // Refresh the Google access token silently if the user's session is
+          // still valid — keeps auto-backup alive across page reloads without
+          // forcing the user back through a Reconnect prompt.
+          if (isSignedIn()) {
+            await attemptSilentTokenRefresh();
+          }
 
           if (isAutoBackupEnabled()) {
             restoreIfRemoteNewer()

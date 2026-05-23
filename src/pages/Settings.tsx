@@ -53,8 +53,7 @@ import {
 import { calculateTargets } from '../services/coaching/nutritionCoach';
 import { resetDatabase } from '../services/db';
 import {
-  type GoogleUser,
-  getStoredUser,
+  getGoogleAuthStatus,
   signOut as googleSignOut,
   requestGoogleAccessToken,
   signIn,
@@ -98,12 +97,25 @@ export function Settings() {
   const [showClearDataModal, setShowClearDataModal] = useState(false);
   const [clearDataConfirmText, setClearDataConfirmText] = useState('');
 
-  // Auto-backup state
-  const [googleUser, setGoogleUser] = useState<GoogleUser | null>(
-    getStoredUser(),
-  );
+  // Auto-backup state — auth and backup metadata refresh together via
+  // refreshBackupState() to avoid drift between the user record and the
+  // valid-token signal.
+  const [authStatus, setAuthStatus] = useState(getGoogleAuthStatus());
   const [backupStatus, setBackupStatus] = useState(getBackupStatus());
   const [isBackupLoading, setIsBackupLoading] = useState(false);
+  const googleUser = authStatus.user;
+  const driveNeedsReconnect = authStatus.needsReconnect;
+  const isDriveReady = !!googleUser && authStatus.hasValidAccessToken;
+  const backupSummary = driveNeedsReconnect
+    ? 'Reconnect Google Drive to resume'
+    : isDriveReady
+      ? 'Backing up to Google Drive'
+      : 'Not configured';
+
+  const refreshBackupState = () => {
+    setAuthStatus(getGoogleAuthStatus());
+    setBackupStatus(getBackupStatus());
+  };
 
   // Profile form
   const profileForm = useForm<ProfileFormData>({
@@ -310,7 +322,7 @@ export function Settings() {
         }
         googleSignOut();
         clearDriveState();
-        setGoogleUser(null);
+        refreshBackupState();
       }
       await resetDatabase();
       setOnboardingComplete(false);
@@ -329,8 +341,7 @@ export function Settings() {
     setError(null);
 
     try {
-      const { user } = await signIn();
-      setGoogleUser(user);
+      await signIn();
 
       const backupExists = await hasRemoteBackup();
       if (backupExists) {
@@ -346,13 +357,13 @@ export function Settings() {
         }
       }
 
-      setBackupStatus(getBackupStatus());
       setActiveSection(null);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Failed to sign in with Google',
       );
     } finally {
+      refreshBackupState();
       setIsBackupLoading(false);
     }
   };
@@ -360,9 +371,32 @@ export function Settings() {
   const handleDisconnectGoogle = () => {
     googleSignOut();
     clearDriveState();
-    setGoogleUser(null);
-    setBackupStatus(getBackupStatus());
+    refreshBackupState();
     setSuccess('Google Drive backup disconnected');
+  };
+
+  const handleReconnectGoogle = async () => {
+    setIsBackupLoading(true);
+    setError(null);
+
+    try {
+      await requestGoogleAccessToken();
+      const result = await performAutoBackup();
+      if (result.success) {
+        setSuccess('Google Drive reconnected and backup resumed.');
+      } else {
+        setError(
+          `Google Drive reconnected, but backup failed: ${result.error}`,
+        );
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to reconnect Google Drive',
+      );
+    } finally {
+      refreshBackupState();
+      setIsBackupLoading(false);
+    }
   };
 
   const handleManualBackup = async () => {
@@ -373,14 +407,14 @@ export function Settings() {
       await requestGoogleAccessToken();
       const result = await performAutoBackup();
       if (result.success) {
-        setBackupStatus(getBackupStatus());
         setSuccess('Backup completed successfully!');
       } else {
         setError(`Backup failed: ${result.error}`);
       }
-    } catch (_err) {
-      setError('Failed to backup');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to backup');
     } finally {
+      refreshBackupState();
       setIsBackupLoading(false);
     }
   };
@@ -615,17 +649,19 @@ export function Settings() {
             className="w-full p-4 flex items-center justify-between text-left"
           >
             <div className="flex items-center gap-3">
-              {backupStatus.isConfigured ? (
+              {driveNeedsReconnect ? (
+                <AlertTriangle size={20} className="text-amber-300" />
+              ) : isDriveReady ? (
                 <Cloud size={20} className="text-green-400" />
               ) : (
                 <CloudOff size={20} className="text-slate-400" />
               )}
               <div>
                 <p className="text-white font-medium">Auto Backup</p>
-                <p className="text-slate-400 text-sm">
-                  {backupStatus.isConfigured
-                    ? 'Backing up to Google Drive'
-                    : 'Not configured'}
+                <p
+                  className={`text-sm ${driveNeedsReconnect ? 'text-amber-300' : 'text-slate-400'}`}
+                >
+                  {backupSummary}
                 </p>
               </div>
             </div>
@@ -639,7 +675,13 @@ export function Settings() {
             <div className="px-4 pb-4 space-y-4 border-t border-slate-700 pt-4">
               {googleUser ? (
                 <>
-                  <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3">
+                  <div
+                    className={`rounded-lg border p-3 ${
+                      driveNeedsReconnect
+                        ? 'border-amber-500/40 bg-amber-500/10'
+                        : 'border-green-500/30 bg-green-500/10'
+                    }`}
+                  >
                     <div className="flex items-center gap-3 mb-2">
                       <img
                         src={googleUser.picture}
@@ -649,12 +691,27 @@ export function Settings() {
                       />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <Check
-                            size={14}
-                            className="text-green-400 flex-shrink-0"
-                          />
-                          <span className="text-green-400 font-medium text-sm">
-                            Connected
+                          {driveNeedsReconnect ? (
+                            <AlertTriangle
+                              size={14}
+                              className="flex-shrink-0 text-amber-300"
+                            />
+                          ) : (
+                            <Check
+                              size={14}
+                              className="text-green-400 flex-shrink-0"
+                            />
+                          )}
+                          <span
+                            className={`text-sm font-medium ${
+                              driveNeedsReconnect
+                                ? 'text-amber-300'
+                                : 'text-green-400'
+                            }`}
+                          >
+                            {driveNeedsReconnect
+                              ? 'Reconnect required'
+                              : 'Connected'}
                           </span>
                         </div>
                         <p className="text-slate-400 text-sm truncate">
@@ -671,15 +728,26 @@ export function Settings() {
                   </div>
 
                   <div className="space-y-2">
-                    <Button
-                      variant="secondary"
-                      onClick={handleManualBackup}
-                      isLoading={isBackupLoading}
-                      className="w-full justify-center"
-                    >
-                      <RefreshCw size={16} className="mr-2" />
-                      Backup Now
-                    </Button>
+                    {driveNeedsReconnect ? (
+                      <Button
+                        onClick={handleReconnectGoogle}
+                        isLoading={isBackupLoading}
+                        className="w-full justify-center"
+                      >
+                        <RefreshCw size={16} className="mr-2" />
+                        Reconnect Google Drive
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="secondary"
+                        onClick={handleManualBackup}
+                        isLoading={isBackupLoading}
+                        className="w-full justify-center"
+                      >
+                        <RefreshCw size={16} className="mr-2" />
+                        Backup Now
+                      </Button>
+                    )}
                     <Button
                       variant="danger"
                       onClick={handleDisconnectGoogle}

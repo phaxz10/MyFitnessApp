@@ -13,6 +13,12 @@ export interface GoogleUser {
   picture: string;
 }
 
+export interface GoogleAuthStatus {
+  user: GoogleUser | null;
+  hasValidAccessToken: boolean;
+  needsReconnect: boolean;
+}
+
 let tokenClient: google.accounts.oauth2.TokenClient | null = null;
 let currentAccessToken: string | null = localStorage.getItem(
   STORAGE_KEYS.ACCESS_TOKEN,
@@ -34,7 +40,12 @@ function clearPersistedToken(): void {
 function isTokenExpired(): boolean {
   const expiry = localStorage.getItem(STORAGE_KEYS.TOKEN_EXPIRY);
   if (!expiry) return true;
-  return Date.now() >= Number(expiry);
+  const expiryMs = Number(expiry);
+  return !Number.isFinite(expiryMs) || Date.now() >= expiryMs;
+}
+
+export function hasValidGoogleAccessToken(): boolean {
+  return !!currentAccessToken && !isTokenExpired();
 }
 
 function loadGisScript(): Promise<void> {
@@ -54,7 +65,7 @@ function loadGisScript(): Promise<void> {
   });
 }
 
-function requestToken(prompt?: 'consent'): Promise<string> {
+function requestToken(prompt?: 'consent' | 'none'): Promise<string> {
   return new Promise((resolve, reject) => {
     const config: google.accounts.oauth2.TokenClientConfig = {
       client_id: CLIENT_ID,
@@ -74,11 +85,26 @@ function requestToken(prompt?: 'consent'): Promise<string> {
         reject(new Error(err.message || 'Token request failed'));
       },
     };
-    if (prompt) config.prompt = prompt;
+    if (prompt !== undefined) config.prompt = prompt;
 
     tokenClient = google.accounts.oauth2.initTokenClient(config);
     tokenClient.requestAccessToken();
   });
+}
+
+// Attempts a silent token refresh. Succeeds only if the user still has an
+// active Google session — no popup, no consent screen. Falls back to false on
+// any failure so callers can surface a Reconnect prompt.
+export async function attemptSilentTokenRefresh(): Promise<boolean> {
+  if (!isSignedIn()) return false;
+  if (hasValidGoogleAccessToken()) return true;
+  try {
+    await loadGisScript();
+    await requestToken('none');
+    return hasValidGoogleAccessToken();
+  } catch {
+    return false;
+  }
 }
 
 export async function signIn(): Promise<{ token: string; user: GoogleUser }> {
@@ -90,23 +116,52 @@ export async function signIn(): Promise<{ token: string; user: GoogleUser }> {
 }
 
 export async function requestGoogleAccessToken(): Promise<string> {
-  if (currentAccessToken && !isTokenExpired()) {
+  if (hasValidGoogleAccessToken() && currentAccessToken) {
     return currentAccessToken;
   }
 
+  // Try silent first — if the user's Google session is still valid, this
+  // refreshes the token without any UI.
+  if ((await attemptSilentTokenRefresh()) && currentAccessToken) {
+    return currentAccessToken;
+  }
+
+  // Fall back to interactive. If a user is already stored, verify the new
+  // token belongs to the same account — otherwise we'd silently start writing
+  // account A's data to account B's Drive.
+  const storedUser = getStoredUser();
   clearPersistedToken();
   await loadGisScript();
-  return requestToken();
+  const token = await requestToken();
+
+  if (storedUser) {
+    const newUser = await fetchUserInfo(token);
+    if (newUser.email !== storedUser.email) {
+      revokeAccessToken();
+      throw new Error(
+        `Signed in as ${newUser.email}, but the connected account is ${storedUser.email}. Disconnect Drive first to switch accounts.`,
+      );
+    }
+  }
+
+  return token;
 }
 
 export async function getAccessToken(): Promise<string | null> {
-  if (currentAccessToken && !isTokenExpired()) {
+  if (hasValidGoogleAccessToken() && currentAccessToken) {
     return currentAccessToken;
   }
   if (currentAccessToken) {
     clearPersistedToken();
   }
   return null;
+}
+
+function revokeAccessToken(): void {
+  if (currentAccessToken) {
+    google.accounts.oauth2.revoke(currentAccessToken, () => {});
+  }
+  clearPersistedToken();
 }
 
 async function fetchUserInfo(token: string): Promise<GoogleUser> {
@@ -128,15 +183,23 @@ export function getStoredUser(): GoogleUser | null {
   }
 }
 
+export function getGoogleAuthStatus(): GoogleAuthStatus {
+  const user = getStoredUser();
+  const hasValidAccessToken = hasValidGoogleAccessToken();
+
+  return {
+    user,
+    hasValidAccessToken,
+    needsReconnect: !!user && !hasValidAccessToken,
+  };
+}
+
 export function isSignedIn(): boolean {
-  return !!localStorage.getItem(STORAGE_KEYS.GOOGLE_USER);
+  return !!getStoredUser();
 }
 
 export function signOut(): void {
-  if (currentAccessToken) {
-    google.accounts.oauth2.revoke(currentAccessToken, () => {});
-  }
-  clearPersistedToken();
+  revokeAccessToken();
   tokenClient = null;
   localStorage.removeItem(STORAGE_KEYS.GOOGLE_USER);
 }

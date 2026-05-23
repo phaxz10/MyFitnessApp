@@ -71,6 +71,58 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('getGoogleAuthStatus', () => {
+  it('marks a stored Google user with no valid token as needing reconnect', async () => {
+    vi.stubGlobal(
+      'localStorage',
+      createStorage({
+        [STORAGE_KEYS.ACCESS_TOKEN]: 'expired-token',
+        [STORAGE_KEYS.GOOGLE_USER]: JSON.stringify({
+          email: 'test@example.com',
+          name: 'Test User',
+          picture: '',
+        }),
+        [STORAGE_KEYS.TOKEN_EXPIRY]: String(Date.now() - 1_000),
+      }),
+    );
+
+    const { getGoogleAuthStatus } = await import('./googleAuth');
+
+    expect(getGoogleAuthStatus()).toMatchObject({
+      hasValidAccessToken: false,
+      needsReconnect: true,
+      user: {
+        email: 'test@example.com',
+      },
+    });
+  });
+
+  it('marks a stored Google user with a valid token as connected', async () => {
+    vi.stubGlobal(
+      'localStorage',
+      createStorage({
+        [STORAGE_KEYS.ACCESS_TOKEN]: 'fresh-token',
+        [STORAGE_KEYS.GOOGLE_USER]: JSON.stringify({
+          email: 'test@example.com',
+          name: 'Test User',
+          picture: '',
+        }),
+        [STORAGE_KEYS.TOKEN_EXPIRY]: String(Date.now() + 60_000),
+      }),
+    );
+
+    const { getGoogleAuthStatus } = await import('./googleAuth');
+
+    expect(getGoogleAuthStatus()).toMatchObject({
+      hasValidAccessToken: true,
+      needsReconnect: false,
+      user: {
+        email: 'test@example.com',
+      },
+    });
+  });
+});
+
 describe('getAccessToken', () => {
   it('does not trigger the GIS popup flow for an expired stored token', async () => {
     vi.stubGlobal(

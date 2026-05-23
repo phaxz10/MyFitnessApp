@@ -1,6 +1,6 @@
 import { DEFAULT_EXPORT_OPTIONS, exportData, importData } from './backup';
 import { getDB, onDbWrite } from './db';
-import { getAccessToken, isSignedIn } from './googleAuth';
+import { getAccessToken, getGoogleAuthStatus, isSignedIn } from './googleAuth';
 import {
   downloadBackupJson,
   downloadPhoto,
@@ -215,18 +215,22 @@ export async function performAutoBackup(): Promise<AutoBackupResult> {
 
 export interface BackupStatus {
   lastBackup: string | null;
-  isConfigured: boolean;
+  isReady: boolean;
+  needsReconnect: boolean;
 }
 
 export function getBackupStatus(): BackupStatus {
+  const authStatus = getGoogleAuthStatus();
   return {
     lastBackup: getLastBackupTime(),
-    isConfigured: isSignedIn(),
+    isReady: !!authStatus.user && authStatus.hasValidAccessToken,
+    needsReconnect: authStatus.needsReconnect,
   };
 }
 
 export function isAutoBackupEnabled(): boolean {
-  return isSignedIn();
+  const authStatus = getGoogleAuthStatus();
+  return !!authStatus.user && authStatus.hasValidAccessToken;
 }
 
 // ---------------------------------------------------------------------------

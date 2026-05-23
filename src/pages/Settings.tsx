@@ -7,9 +7,8 @@ import {
   Cloud,
   CloudOff,
   Download,
-  ExternalLink,
-  HelpCircle,
   Key,
+  LogOut,
   RefreshCw,
   Target,
   Trash2,
@@ -39,15 +38,12 @@ import {
   profileFormSchema,
 } from '../schemas/forms';
 import {
-  fetchBackupFromGist,
-  findExistingBackupGist,
   getBackupStatus,
   performAutoBackup,
-  removeGithubToken,
-  saveGistId,
-  saveGithubToken,
-  validateGithubToken,
+  restoreFromDrive,
 } from '../services/autoBackup';
+import { signIn, getStoredUser, signOut as googleSignOut, type GoogleUser } from '../services/googleAuth';
+import { clearDriveState, hasRemoteBackup } from '../services/googleDrive';
 import {
   downloadBackup,
   type ExportOptions,
@@ -92,12 +88,9 @@ export function Settings() {
   const [clearDataConfirmText, setClearDataConfirmText] = useState('');
 
   // Auto-backup state
-  const [githubToken, setGithubToken] = useState('');
+  const [googleUser, setGoogleUser] = useState<GoogleUser | null>(getStoredUser());
   const [backupStatus, setBackupStatus] = useState(getBackupStatus());
   const [isBackupLoading, setIsBackupLoading] = useState(false);
-  const [showRestoreModal, setShowRestoreModal] = useState(false);
-  const [showBackupHelpModal, setShowBackupHelpModal] = useState(false);
-  const [foundGistId, setFoundGistId] = useState<string | null>(null);
 
   // Profile form
   const profileForm = useForm<ProfileFormData>({
@@ -301,109 +294,44 @@ export function Settings() {
     }
   };
 
-  // Auto-backup handlers
-  const handleSaveGithubToken = async () => {
-    if (!githubToken.trim()) {
-      setError('Please enter a GitHub token');
-      return;
-    }
-
+  // Google backup handlers
+  const handleGoogleSignIn = async () => {
     setIsBackupLoading(true);
     setError(null);
 
     try {
-      const isValid = await validateGithubToken(githubToken);
-      if (!isValid) {
-        setError('Invalid GitHub token. Please check and try again.');
-        setIsBackupLoading(false);
-        return;
-      }
+      const { user } = await signIn();
+      setGoogleUser(user);
 
-      // Check for existing backup BEFORE saving token completely or creating new backup
-      const existingGistId = await findExistingBackupGist(githubToken);
-
-      if (existingGistId) {
-        setFoundGistId(existingGistId);
-        setShowRestoreModal(true);
-        setIsBackupLoading(false);
-        return;
-      }
-
-      // No existing backup, proceed as new
-      saveGithubToken(githubToken);
-      await performInitialBackup();
-    } catch (_err) {
-      setError('Failed to configure backup');
-      setIsBackupLoading(false);
-    }
-  };
-
-  const performInitialBackup = async () => {
-    try {
-      const result = await performAutoBackup();
-      if (result.success) {
-        setBackupStatus(getBackupStatus());
-        setSuccess('GitHub backup configured! Initial backup created.');
-        setGithubToken('');
-        setActiveSection(null);
-      } else {
-        setError(`Backup failed: ${result.error}`);
-      }
-    } catch (_err) {
-      setError('Failed to create initial backup');
-    } finally {
-      setIsBackupLoading(false);
-    }
-  };
-
-  const handleRestoreFoundBackup = async () => {
-    if (!foundGistId) return;
-
-    setIsBackupLoading(true);
-    setShowRestoreModal(false);
-
-    try {
-      saveGithubToken(githubToken);
-      saveGistId(foundGistId);
-
-      const backupData = await fetchBackupFromGist(githubToken, foundGistId);
-      if (backupData) {
-        await importData(backupData);
+      const backupExists = await hasRemoteBackup();
+      if (backupExists) {
+        await restoreFromDrive();
         await queryClient.invalidateQueries({ queryKey: ['profile'] });
-        setSuccess('Backup found and restored successfully!');
-        setBackupStatus(getBackupStatus());
-        setGithubToken('');
-        setActiveSection(null);
+        setSuccess('Google Drive backup connected and restored!');
       } else {
-        setError('Failed to fetch backup data');
+        const result = await performAutoBackup();
+        if (result.success) {
+          setSuccess('Google Drive backup enabled! Initial backup created.');
+        } else {
+          setSuccess('Google Drive backup enabled!');
+        }
       }
-    } catch (_err) {
-      setError('Failed to restore backup');
+
+      setBackupStatus(getBackupStatus());
+      setActiveSection(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to sign in with Google');
     } finally {
       setIsBackupLoading(false);
-      setFoundGistId(null);
     }
   };
 
-  const handleSkipRestore = async () => {
-    setShowRestoreModal(false);
-    setFoundGistId(null);
-    setIsBackupLoading(true);
-
-    try {
-      saveGithubToken(githubToken);
-      // This will create a NEW gist since we didn't save the found Gist ID
-      await performInitialBackup();
-    } catch (_err) {
-      setError('Failed to configure backup');
-      setIsBackupLoading(false);
-    }
-  };
-
-  const handleRemoveGithubToken = () => {
-    removeGithubToken();
+  const handleDisconnectGoogle = () => {
+    googleSignOut();
+    clearDriveState();
+    setGoogleUser(null);
     setBackupStatus(getBackupStatus());
-    setSuccess('Auto-backup disabled');
+    setSuccess('Google Drive backup disconnected');
   };
 
   const handleManualBackup = async () => {
@@ -420,28 +348,6 @@ export function Settings() {
       }
     } catch (_err) {
       setError('Failed to backup');
-    } finally {
-      setIsBackupLoading(false);
-    }
-  };
-
-  const handleRestoreFromGist = async () => {
-    setIsBackupLoading(true);
-    setError(null);
-
-    try {
-      const backupData = await fetchBackupFromGist();
-      if (!backupData) {
-        setError('No backup found or failed to fetch');
-        setIsBackupLoading(false);
-        return;
-      }
-
-      await importData(backupData);
-      await queryClient.invalidateQueries({ queryKey: ['profile'] });
-      setSuccess('Data restored from backup!');
-    } catch (_err) {
-      setError('Failed to restore from backup');
     } finally {
       setIsBackupLoading(false);
     }
@@ -686,7 +592,7 @@ export function Settings() {
                 <p className="text-white font-medium">Auto Backup</p>
                 <p className="text-slate-400 text-sm">
                   {backupStatus.isConfigured
-                    ? 'Backing up to GitHub Gist'
+                    ? 'Backing up to Google Drive'
                     : 'Not configured'}
                 </p>
               </div>
@@ -699,35 +605,31 @@ export function Settings() {
 
           {activeSection === 'backup' && (
             <div className="px-4 pb-4 space-y-4 border-t border-slate-700 pt-4">
-              {backupStatus.isConfigured ? (
+              {googleUser ? (
                 <>
-                  {/* Backup Status */}
                   <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Check size={16} className="text-green-400" />
-                      <span className="text-green-400 font-medium">
-                        Auto-backup enabled
-                      </span>
+                    <div className="flex items-center gap-3 mb-2">
+                      <img
+                        src={googleUser.picture}
+                        alt=""
+                        className="w-8 h-8 rounded-full"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <Check size={14} className="text-green-400 flex-shrink-0" />
+                          <span className="text-green-400 font-medium text-sm">Connected</span>
+                        </div>
+                        <p className="text-slate-400 text-sm truncate">{googleUser.email}</p>
+                      </div>
                     </div>
                     {backupStatus.lastBackup && (
-                      <p className="text-slate-400 text-sm">
-                        Last backup:{' '}
-                        {new Date(backupStatus.lastBackup).toLocaleString()}
+                      <p className="text-slate-400 text-xs">
+                        Last backup: {new Date(backupStatus.lastBackup).toLocaleString()}
                       </p>
-                    )}
-                    {backupStatus.gistUrl && (
-                      <a
-                        href={backupStatus.gistUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-400 text-sm hover:underline flex items-center gap-1 mt-1"
-                      >
-                        View Gist <ExternalLink size={12} />
-                      </a>
                     )}
                   </div>
 
-                  {/* Actions */}
                   <div className="space-y-2">
                     <Button
                       variant="secondary"
@@ -739,66 +641,36 @@ export function Settings() {
                       Backup Now
                     </Button>
                     <Button
-                      variant="secondary"
-                      onClick={handleRestoreFromGist}
-                      isLoading={isBackupLoading}
-                      className="w-full justify-center"
-                    >
-                      <Download size={16} className="mr-2" />
-                      Restore from Backup
-                    </Button>
-                    <Button
                       variant="danger"
-                      onClick={handleRemoveGithubToken}
+                      onClick={handleDisconnectGoogle}
                       className="w-full justify-center"
                     >
-                      Disable Auto-backup
+                      <LogOut size={16} className="mr-2" />
+                      Disconnect Google Drive
                     </Button>
                   </div>
                 </>
               ) : (
                 <>
-                  {/* Setup Instructions */}
                   <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
-                    <div className="flex justify-between items-start mb-2">
-                      <p className="text-blue-400 text-sm">
-                        Enable auto-backup to save your data to a private GitHub
-                        Gist every time you open the app.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setShowBackupHelpModal(true)}
-                        className="text-blue-400 p-1 hover:bg-blue-400/10 rounded-full transition-colors"
-                        title="Help"
-                      >
-                        <HelpCircle size={18} />
-                      </button>
-                    </div>
-                    <a
-                      href="https://github.com/settings/tokens/new?scopes=gist&description=MyPersonalFitness%20Backup"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-400 text-sm hover:underline flex items-center gap-1"
-                    >
-                      Create a GitHub token with 'gist' scope{' '}
-                      <ExternalLink size={12} />
-                    </a>
+                    <p className="text-blue-400 text-sm">
+                      Sign in with Google to automatically back up your data to
+                      Google Drive. Your data stays in your own Drive account.
+                    </p>
                   </div>
 
-                  <Input
-                    label="GitHub Personal Access Token"
-                    type="password"
-                    value={githubToken}
-                    onChange={(e) => setGithubToken(e.target.value)}
-                    placeholder="ghp_xxxxxxxxxxxx"
-                  />
-
                   <Button
-                    onClick={handleSaveGithubToken}
+                    onClick={handleGoogleSignIn}
                     isLoading={isBackupLoading}
                     className="w-full"
                   >
-                    Enable Auto-backup
+                    <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
+                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                    </svg>
+                    Sign in with Google
                   </Button>
                 </>
               )}
@@ -849,8 +721,8 @@ export function Settings() {
               Data Recovery
             </h4>
             <p className="text-slate-400 text-sm mb-3">
-              Lost your data? If you had Auto Backup enabled, you can recover it
-              by re-entering your GitHub token in the Auto Backup section above.
+              Lost your data? If you had Auto Backup enabled, sign in with Google
+              in the Auto Backup section above to restore from Google Drive.
             </p>
           </div>
         </CardContent>
@@ -924,119 +796,6 @@ export function Settings() {
               className="flex-1"
             >
               Clear All Data
-            </Button>
-          </div>
-        </div>
-      </Modal>
-      {/* Backup Help Modal */}
-      <Modal
-        isOpen={showBackupHelpModal}
-        onClose={() => setShowBackupHelpModal(false)}
-        title="How to Create a Token"
-      >
-        <div className="space-y-4 text-slate-300 text-sm">
-          <p>
-            To back up to Gists, you need a <strong>Classic</strong> Personal
-            Access Token.
-          </p>
-
-          <div className="bg-slate-800 p-3 rounded-lg border border-slate-700">
-            <h4 className="text-white font-medium mb-2">
-              Option 1: The Easy Way
-            </h4>
-            <ol className="list-decimal pl-4 space-y-1">
-              <li>
-                Click the{' '}
-                <span className="text-blue-400">
-                  "Create a GitHub token with 'gist' scope"
-                </span>{' '}
-                link below.
-              </li>
-              <li>It will open GitHub with all settings pre-filled.</li>
-              <li>
-                Scroll to the bottom and click <strong>Generate token</strong>.
-              </li>
-            </ol>
-          </div>
-
-          <div className="bg-slate-800 p-3 rounded-lg border border-slate-700">
-            <h4 className="text-white font-medium mb-2">
-              Option 2: The Manual Way
-            </h4>
-            <ol className="list-decimal pl-4 space-y-1">
-              <li>
-                Go to GitHub Settings &gt; Developer settings &gt; Personal
-                access tokens &gt; <strong>Tokens (classic)</strong>.
-              </li>
-              <li>
-                Click <strong>Generate new token (classic)</strong>.
-              </li>
-              <li>
-                Select the <strong>gist</strong> checkbox scope.
-              </li>
-              <li>
-                Click <strong>Generate token</strong>.
-              </li>
-            </ol>
-          </div>
-
-          <div className="bg-yellow-500/10 border border-yellow-500/30 p-3 rounded-lg">
-            <p className="text-yellow-400 text-xs">
-              <strong>Note:</strong> Copy the token immediately (it starts with{' '}
-              <code className="bg-black/20 px-1 rounded">ghp_</code>). You won't
-              be able to see it again!
-            </p>
-          </div>
-
-          <Button
-            onClick={() => setShowBackupHelpModal(false)}
-            className="w-full"
-          >
-            Got it
-          </Button>
-        </div>
-      </Modal>
-
-      {/* Restore Found Backup Modal */}
-      <Modal
-        isOpen={showRestoreModal}
-        onClose={() => setShowRestoreModal(false)}
-        title="Found Existing Backup"
-      >
-        <div className="space-y-4">
-          <div className="flex items-start gap-3 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-            <Cloud className="text-blue-400 mt-0.5 flex-shrink-0" size={20} />
-            <div>
-              <p className="text-blue-400 font-medium">Backup Found!</p>
-              <p className="text-slate-400 text-sm mt-1">
-                We found an existing MyPersonalFitness backup associated with
-                this GitHub token. Would you like to restore this data?
-              </p>
-            </div>
-          </div>
-
-          <p className="text-slate-300 text-sm">
-            <strong className="text-white">Restore:</strong> Overwrites current
-            app data with backup data.
-            <br />
-            <strong className="text-white">Start Fresh:</strong> Creates a new
-            backup file (keeps old backup safe).
-          </p>
-
-          <div className="flex gap-3 pt-2">
-            <Button
-              variant="secondary"
-              onClick={handleSkipRestore}
-              className="flex-1"
-            >
-              Start Fresh
-            </Button>
-            <Button
-              onClick={handleRestoreFoundBackup}
-              isLoading={isLoading}
-              className="flex-1"
-            >
-              Restore Data
             </Button>
           </div>
         </div>

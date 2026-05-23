@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQueryClient } from '@tanstack/react-query';
-import { Dumbbell, Upload } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { Dumbbell } from 'lucide-react';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { Button, Input } from '../components/ui';
@@ -9,7 +9,9 @@ import { useAppStore } from '../hooks/useAppStore';
 import { useProfile } from '../hooks/useProfile';
 import { useWeight } from '../hooks/useWeight';
 import { type OnboardingFormData, onboardingSchema } from '../schemas/forms';
-import { importData, readBackupFile } from '../services/backup';
+import { restoreFromDrive } from '../services/autoBackup';
+import { signIn } from '../services/googleAuth';
+import { hasRemoteBackup } from '../services/googleDrive';
 import { calculateTargets } from '../services/coaching/nutritionCoach';
 import { calculateAgeFromBirthdate, formatDate } from '../utils/date';
 
@@ -50,8 +52,7 @@ export function Onboarding() {
 
   const [step, setStep] = useState<Step>('welcome');
   const [error, setError] = useState<string | null>(null);
-  const [isImporting, setIsImporting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isSigningIn, setIsSigningIn] = useState(false);
 
   // Use React Hook Form for form state management
   const {
@@ -248,49 +249,31 @@ export function Onboarding() {
     navigate('/');
   };
 
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsImporting(true);
+  const handleGoogleSignIn = async () => {
+    setIsSigningIn(true);
     setError(null);
 
     try {
-      const jsonString = await readBackupFile(file);
-      const backup = JSON.parse(jsonString);
+      await signIn();
 
-      // Check if backup contains profile data
-      const hasProfile =
-        backup.data?.user_profile && backup.data.user_profile.length > 0;
-
-      // Import the data
-      await importData(jsonString);
-
-      if (hasProfile) {
-        // Profile exists in backup, skip onboarding
-        setOnboardingComplete(true);
-        // Invalidate profile query to trigger refetch
-        await queryClient.invalidateQueries({ queryKey: ['profile'] });
-        navigate('/');
-      } else {
-        // No profile in backup, continue with onboarding
-        setError('Data imported, but no profile found. Please complete setup.');
-        setStep('basic');
+      const backupExists = await hasRemoteBackup();
+      if (backupExists) {
+        const hasProfile = await restoreFromDrive();
+        if (hasProfile) {
+          setOnboardingComplete(true);
+          await queryClient.invalidateQueries({ queryKey: ['profile'] });
+          navigate('/');
+          return;
+        }
       }
+
+      setStep('basic');
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'Failed to import backup file',
+        err instanceof Error ? err.message : 'Failed to sign in with Google',
       );
     } finally {
-      setIsImporting(false);
-      // Reset file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+      setIsSigningIn(false);
     }
   };
 
@@ -313,27 +296,25 @@ export function Onboarding() {
               Get Started
             </Button>
 
-            {/* Import option */}
+            {/* Google Sign-In for backup */}
             <div className="mt-6 pt-6 border-t border-slate-700">
               <p className="text-slate-500 text-sm mb-3">
-                Already have a backup?
+                Sign in to sync your data
               </p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json"
-                onChange={handleFileSelect}
-                className="hidden"
-              />
               <Button
                 variant="secondary"
-                onClick={handleImportClick}
+                onClick={handleGoogleSignIn}
                 size="lg"
                 className="w-full"
-                isLoading={isImporting}
+                isLoading={isSigningIn}
               >
-                <Upload size={18} className="mr-2" />
-                Import Backup
+                <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                </svg>
+                Sign in with Google
               </Button>
               {error && <p className="text-red-400 text-sm mt-3">{error}</p>}
             </div>

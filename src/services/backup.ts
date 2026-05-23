@@ -89,10 +89,34 @@ export interface SyncMetadata {
   deviceId?: string;
 }
 
+export interface ExportDataOptions {
+  options?: ExportOptions;
+  syncMetadata?: SyncMetadata;
+  /** When true, strip sensitive fields (api keys). Defaults to true for manual exports, false for Drive backups. */
+  stripSecrets?: boolean;
+}
+
 export async function exportData(
-  options: ExportOptions = DEFAULT_EXPORT_OPTIONS,
+  optionsOrConfig: ExportOptions | ExportDataOptions = DEFAULT_EXPORT_OPTIONS,
   syncMetadata?: SyncMetadata,
 ): Promise<string> {
+  // Support both old signature (options, syncMetadata) and new config object
+  let options: ExportOptions;
+  let stripSecrets: boolean;
+  if ('userProfile' in optionsOrConfig) {
+    // Old call signature: exportData(ExportOptions, SyncMetadata?)
+    options = optionsOrConfig;
+    stripSecrets = true;
+  } else {
+    // New call signature: exportData(ExportDataOptions)
+    options = optionsOrConfig.options ?? DEFAULT_EXPORT_OPTIONS;
+    syncMetadata = optionsOrConfig.syncMetadata ?? syncMetadata;
+    stripSecrets = optionsOrConfig.stripSecrets ?? true;
+  }
+
+  const processRows = (rows: unknown[]): unknown[] =>
+    stripSecrets ? sanitizeRows(rows) : rows;
+
   const db = await getDB();
 
   // Only query tables that are selected for export
@@ -166,20 +190,20 @@ export async function exportData(
       : Promise.resolve({ rows: [] }),
   ]);
 
-  const sanitizedUserProfile = sanitizeRows(userProfile.rows);
-  const sanitizedWeightLogs = sanitizeRows(weightLogs.rows);
-  const sanitizedFoodEntries = sanitizeRows(foodEntries.rows);
-  const sanitizedExercises = sanitizeRows(exercises.rows);
-  const sanitizedWorkoutPrograms = sanitizeRows(workoutPrograms.rows);
-  const sanitizedProgramSessions = sanitizeRows(programSessions.rows);
-  const sanitizedProgramExercises = sanitizeRows(programExercises.rows);
-  const sanitizedWorkoutLogs = sanitizeRows(workoutLogs.rows);
-  const sanitizedWorkoutLogExercises = sanitizeRows(workoutLogExercises.rows);
-  const sanitizedWorkoutSets = sanitizeRows(workoutSets.rows);
-  const sanitizedExerciseNotes = sanitizeRows(exerciseNotes.rows);
-  const sanitizedAiGoalReviews = sanitizeRows(aiGoalReviews.rows);
-  const sanitizedWeeklyReviews = sanitizeRows(weeklyReviews.rows);
-  const sanitizedProgressPhotos = sanitizeRows(progressPhotos.rows);
+  const sanitizedUserProfile = processRows(userProfile.rows);
+  const sanitizedWeightLogs = processRows(weightLogs.rows);
+  const sanitizedFoodEntries = processRows(foodEntries.rows);
+  const sanitizedExercises = processRows(exercises.rows);
+  const sanitizedWorkoutPrograms = processRows(workoutPrograms.rows);
+  const sanitizedProgramSessions = processRows(programSessions.rows);
+  const sanitizedProgramExercises = processRows(programExercises.rows);
+  const sanitizedWorkoutLogs = processRows(workoutLogs.rows);
+  const sanitizedWorkoutLogExercises = processRows(workoutLogExercises.rows);
+  const sanitizedWorkoutSets = processRows(workoutSets.rows);
+  const sanitizedExerciseNotes = processRows(exerciseNotes.rows);
+  const sanitizedAiGoalReviews = processRows(aiGoalReviews.rows);
+  const sanitizedWeeklyReviews = processRows(weeklyReviews.rows);
+  const sanitizedProgressPhotos = processRows(progressPhotos.rows);
 
   const backup: BackupData = {
     version: '1.7', // Bumped version for birthdate field migration
@@ -261,8 +285,8 @@ export async function importData(jsonString: string): Promise<void> {
   if (hasData(data.user_profile)) {
     for (const row of data.user_profile as Record<string, unknown>[]) {
       await db.query(
-        `INSERT INTO user_profile (id, birthdate, gender, height_cm, activity_level, goal, calorie_target, protein_target_g, carbs_target_g, fat_target_g, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        `INSERT INTO user_profile (id, birthdate, gender, height_cm, activity_level, goal, calorie_target, protein_target_g, carbs_target_g, fat_target_g, openai_api_key, openai_proxy_url, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
         [
           row.id,
           row.birthdate ?? getLocalDateString(),
@@ -274,6 +298,8 @@ export async function importData(jsonString: string): Promise<void> {
           row.protein_target_g,
           row.carbs_target_g,
           row.fat_target_g,
+          row.openai_api_key ?? null,
+          row.openai_proxy_url ?? null,
           row.created_at,
           row.updated_at,
         ],
@@ -537,7 +563,7 @@ export async function importData(jsonString: string): Promise<void> {
     }
   }
 
-  // Progress photos
+  // Progress photos (photo_data may be null when restoring from Google Drive)
   if (hasData(data.progress_photos)) {
     for (const row of data.progress_photos as Record<string, unknown>[]) {
       await db.query(
@@ -546,7 +572,7 @@ export async function importData(jsonString: string): Promise<void> {
         [
           row.id,
           row.date,
-          row.photo_data,
+          row.photo_data ?? null,
           row.photo_type,
           row.notes,
           row.created_at,

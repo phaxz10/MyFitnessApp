@@ -214,6 +214,13 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    // Allow NULL photo_data for lazy-loading photos from Google Drive backup.
+    version: 2,
+    up: async (db) => {
+      await db.exec(`ALTER TABLE progress_photos ALTER COLUMN photo_data DROP NOT NULL`);
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------

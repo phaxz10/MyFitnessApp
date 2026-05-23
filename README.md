@@ -4,7 +4,7 @@ A free, open-source, offline-first fitness tracker with AI-powered coaching. Bui
 
 **BYOK (Bring Your Own Key)** — This app uses your own OpenAI API key for AI features. No accounts, no subscriptions, no data collection. You pay OpenAI directly for what you use (typically $0.01-0.05 per AI interaction).
 
-[Live Demo](https://mypersonalfitness.vercel.app) | [Report a Bug](https://github.com/phaxz10/MyFitnessApp/issues)
+[Live Demo](https://my-fitness-app-opal.vercel.app) | [Report a Bug](https://github.com/phaxz10/MyFitnessApp/issues)
 
 ---
 

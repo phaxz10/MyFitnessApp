@@ -1,6 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { runPendingMigrations } from '../migrator';
+import { runPendingMigrations } from './migrator';
 
 // ---------------------------------------------------------------------------
 // Helpers

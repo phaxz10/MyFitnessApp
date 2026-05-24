@@ -1,6 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { sessions } from '../exerciseHistory';
+import { sessions } from './exerciseHistory';
 
 // ---------------------------------------------------------------------------
 // Test-only schema (subset needed by the queries)

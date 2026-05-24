@@ -16,7 +16,7 @@ import {
   Utensils,
   Zap,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../../hooks/useAppStore';
 import { useProfile } from '../../hooks/useProfile';
 import { useWeeklyReview } from '../../hooks/useWeeklyReview';
@@ -29,6 +29,7 @@ import type {
 } from '../../types';
 import { calculateBodyFatPercentage } from '../../utils/calculations';
 import { formatDate, formatDisplayDate } from '../../utils/date';
+import { MACRO_PALETTE, MacroLegend, NutritionRings } from '../nutrition';
 import { Button, Card, CardContent, Modal } from '../ui';
 
 type ReviewStep =
@@ -301,6 +302,29 @@ export function WeeklyReviewModal({
 
   const weekRange = getPastWeekRange();
 
+  // Daily-average macros across the past week. Divides by 7 (not days-logged)
+  // so skipped days drag the average down — the metric captures both portion
+  // discipline AND logging consistency, which is what a weekly review wants.
+  const weeklyAvg = useMemo(() => {
+    if (!weeklyData) return null;
+    const total = weeklyData.calorieEntries.reduce(
+      (acc, entry) => ({
+        calories: acc.calories + entry.calories,
+        protein: acc.protein + entry.protein_g,
+        carbs: acc.carbs + entry.carbs_g,
+        fat: acc.fat + entry.fat_g,
+      }),
+      { calories: 0, protein: 0, carbs: 0, fat: 0 },
+    );
+    const days = 7;
+    return {
+      calories: total.calories / days,
+      protein: total.protein / days,
+      carbs: total.carbs / days,
+      fat: total.fat / days,
+    };
+  }, [weeklyData]);
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Weekly Check-In" size="lg">
       <div className="min-h-[400px]">
@@ -366,6 +390,41 @@ export function WeeklyReviewModal({
                 </CardContent>
               </Card>
             </div>
+
+            {/* Weekly-average rings — same visual language as Dashboard +
+                CalorieLog, but averaged across 7 days. Helps the user spot
+                under/over-eating patterns the stat-grid percentages can't. */}
+            {weeklyAvg && (
+              <div className="bg-slate-800/60 rounded-2xl p-4">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500 mb-3 text-center">
+                  Daily Average · This Week
+                </p>
+                <div className="flex items-center gap-4 justify-center">
+                  <NutritionRings
+                    consumed={weeklyAvg}
+                    targets={{
+                      calories: profile.calorie_target,
+                      protein: profile.protein_target_g,
+                      carbs: profile.carbs_target_g,
+                      fat: profile.fat_target_g,
+                    }}
+                    size={128}
+                    title="Weekly average nutrition rings"
+                  />
+                  <div className="flex-1">
+                    <MacroLegend
+                      consumed={weeklyAvg}
+                      targets={{
+                        calories: profile.calorie_target,
+                        protein: profile.protein_target_g,
+                        carbs: profile.carbs_target_g,
+                        fat: profile.fat_target_g,
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* AI Summary */}
             {aiReview && (
@@ -739,6 +798,8 @@ export function WeeklyReviewModal({
               )}
             </div>
 
+            {/* Each macro input carries a MACRO_PALETTE left-border accent
+                so users see the same color identity here as on the rings. */}
             <div className="space-y-3">
               <div>
                 <label
@@ -757,6 +818,10 @@ export function WeeklyReviewModal({
                       calories: e.target.value,
                     }))
                   }
+                  style={{
+                    borderLeftColor: MACRO_PALETTE.calories.hex,
+                    borderLeftWidth: 4,
+                  }}
                   className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white"
                 />
               </div>
@@ -779,6 +844,10 @@ export function WeeklyReviewModal({
                         protein: e.target.value,
                       }))
                     }
+                    style={{
+                      borderLeftColor: MACRO_PALETTE.protein.hex,
+                      borderLeftWidth: 4,
+                    }}
                     className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white"
                   />
                 </div>
@@ -799,6 +868,10 @@ export function WeeklyReviewModal({
                         carbs: e.target.value,
                       }))
                     }
+                    style={{
+                      borderLeftColor: MACRO_PALETTE.carbs.hex,
+                      borderLeftWidth: 4,
+                    }}
                     className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white"
                   />
                 </div>
@@ -819,6 +892,10 @@ export function WeeklyReviewModal({
                         fat: e.target.value,
                       }))
                     }
+                    style={{
+                      borderLeftColor: MACRO_PALETTE.fat.hex,
+                      borderLeftWidth: 4,
+                    }}
                     className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white"
                   />
                 </div>

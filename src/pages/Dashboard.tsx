@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { MACRO_PALETTE, NutritionRings } from '../components/nutrition';
+import { MacroLegend, NutritionRings } from '../components/nutrition';
 import {
   Button,
   Card,
@@ -238,35 +238,20 @@ export function Dashboard() {
                 </>
               }
             />
-            <div className="flex-1 space-y-2">
-              <DashboardMacroLine
-                label="Protein"
-                consumed={summary.total_protein_g}
-                target={profile?.protein_target_g ?? 0}
-                color={MACRO_PALETTE.protein.text}
-                dot={MACRO_PALETTE.protein.hex}
-              />
-              <DashboardMacroLine
-                label="Carbs"
-                consumed={summary.total_carbs_g}
-                target={profile?.carbs_target_g ?? 0}
-                color={MACRO_PALETTE.carbs.text}
-                dot={MACRO_PALETTE.carbs.hex}
-              />
-              <DashboardMacroLine
-                label="Fat"
-                consumed={summary.total_fat_g}
-                target={profile?.fat_target_g ?? 0}
-                color={MACRO_PALETTE.fat.text}
-                dot={MACRO_PALETTE.fat.hex}
-              />
-              <DashboardMacroLine
-                label="Calories"
-                consumed={caloriesConsumed}
-                target={calorieTarget}
-                color={MACRO_PALETTE.calories.text}
-                dot={MACRO_PALETTE.calories.hex}
-                suffix=""
+            <div className="flex-1">
+              <MacroLegend
+                consumed={{
+                  calories: caloriesConsumed,
+                  protein: summary.total_protein_g,
+                  carbs: summary.total_carbs_g,
+                  fat: summary.total_fat_g,
+                }}
+                targets={{
+                  calories: calorieTarget,
+                  protein: profile?.protein_target_g ?? 0,
+                  carbs: profile?.carbs_target_g ?? 0,
+                  fat: profile?.fat_target_g ?? 0,
+                }}
               />
             </div>
           </div>
@@ -644,47 +629,6 @@ export function Dashboard() {
           </div>
         )}
       </Modal>
-    </div>
-  );
-}
-
-// Single-line "dot + label + consumed / target" legend row used beside the
-// nutrition rings on Dashboard. Mirrors the legend rows inside
-// components/nutrition/DailySummaryCard but kept inline here because
-// Dashboard wants no copy-yesterday button and a slightly different layout.
-interface DashboardMacroLineProps {
-  label: string;
-  consumed: number;
-  target: number;
-  color: string;
-  dot: string;
-  suffix?: string;
-}
-
-function DashboardMacroLine({
-  label,
-  consumed,
-  target,
-  color,
-  dot,
-  suffix = 'g',
-}: DashboardMacroLineProps) {
-  return (
-    <div className="flex items-center gap-2">
-      <span
-        className="w-2 h-2 rounded-full flex-shrink-0"
-        style={{ background: dot }}
-      />
-      <span className="text-[10px] uppercase tracking-widest text-slate-500 w-20 flex-shrink-0">
-        {label}
-      </span>
-      <span className={`text-xs tabular-nums font-semibold ${color}`}>
-        {Math.round(consumed)}
-      </span>
-      <span className="text-xs text-slate-600 tabular-nums">
-        / {Math.round(target)}
-        {suffix}
-      </span>
     </div>
   );
 }

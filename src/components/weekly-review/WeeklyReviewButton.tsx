@@ -43,8 +43,15 @@ export function WeeklyReviewButton({
     };
   }, [profile, shouldShowReviewButton]);
 
+  // ?forceReview=true is documented as a debug shortcut — honor it fully
+  // (the existing isReviewDay check already respects it, but the data
+  // sufficiency gate did not, blocking the documented testing path).
+  const forceReview =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('forceReview') === 'true';
+
   // Don't render anything while checking or if shouldn't show
-  if (checking || loading || !showButton) {
+  if (!forceReview && (checking || loading || !showButton)) {
     return null;
   }
 

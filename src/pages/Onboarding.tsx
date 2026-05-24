@@ -4,6 +4,7 @@ import { Dumbbell } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
+import { MACRO_PALETTE } from '../components/nutrition';
 import { Button, Input } from '../components/ui';
 import { useAppStore } from '../hooks/useAppStore';
 import { useProfile } from '../hooks/useProfile';
@@ -518,62 +519,34 @@ export function Onboarding() {
           <div>
             <h2 className="text-2xl font-bold text-white mb-6">Your Targets</h2>
             <div className="bg-slate-800 rounded-xl p-4 space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-400">Daily Calories</span>
-                <Input
-                  type="number"
-                  value={targets.calories}
-                  onChange={(e) =>
-                    setValue('targets', {
-                      ...targets,
-                      calories: parseInt(e.target.value, 10) || 0,
-                    })
-                  }
-                  className="w-24 text-right"
-                />
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-400">Protein (g)</span>
-                <Input
-                  type="number"
-                  value={targets.protein}
-                  onChange={(e) =>
-                    setValue('targets', {
-                      ...targets,
-                      protein: parseInt(e.target.value, 10) || 0,
-                    })
-                  }
-                  className="w-24 text-right"
-                />
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-400">Carbs (g)</span>
-                <Input
-                  type="number"
-                  value={targets.carbs}
-                  onChange={(e) =>
-                    setValue('targets', {
-                      ...targets,
-                      carbs: parseInt(e.target.value, 10) || 0,
-                    })
-                  }
-                  className="w-24 text-right"
-                />
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-400">Fat (g)</span>
-                <Input
-                  type="number"
-                  value={targets.fat}
-                  onChange={(e) =>
-                    setValue('targets', {
-                      ...targets,
-                      fat: parseInt(e.target.value, 10) || 0,
-                    })
-                  }
-                  className="w-24 text-right"
-                />
-              </div>
+              <TargetRow
+                label="Daily Calories"
+                value={targets.calories}
+                onChange={(v) =>
+                  setValue('targets', { ...targets, calories: v })
+                }
+                dotColor={MACRO_PALETTE.calories.hex}
+              />
+              <TargetRow
+                label="Protein (g)"
+                value={targets.protein}
+                onChange={(v) =>
+                  setValue('targets', { ...targets, protein: v })
+                }
+                dotColor={MACRO_PALETTE.protein.hex}
+              />
+              <TargetRow
+                label="Carbs (g)"
+                value={targets.carbs}
+                onChange={(v) => setValue('targets', { ...targets, carbs: v })}
+                dotColor={MACRO_PALETTE.carbs.hex}
+              />
+              <TargetRow
+                label="Fat (g)"
+                value={targets.fat}
+                onChange={(v) => setValue('targets', { ...targets, fat: v })}
+                dotColor={MACRO_PALETTE.fat.hex}
+              />
             </div>
             <p className="text-slate-500 text-sm mt-4">
               You can adjust these values or change them later in Settings.
@@ -617,6 +590,35 @@ export function Onboarding() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// Macro target row with a color dot from MACRO_PALETTE so each line carries
+// the same color identity as the rings on CalorieLog.
+interface TargetRowProps {
+  label: string;
+  value: number;
+  onChange: (next: number) => void;
+  dotColor: string;
+}
+
+function TargetRow({ label, value, onChange, dotColor }: TargetRowProps) {
+  return (
+    <div className="flex justify-between items-center">
+      <div className="flex items-center gap-2">
+        <span
+          className="w-2 h-2 rounded-full flex-shrink-0"
+          style={{ background: dotColor }}
+        />
+        <span className="text-slate-300">{label}</span>
+      </div>
+      <Input
+        type="number"
+        value={value}
+        onChange={(e) => onChange(parseInt(e.target.value, 10) || 0)}
+        className="w-24 text-right"
+      />
     </div>
   );
 }

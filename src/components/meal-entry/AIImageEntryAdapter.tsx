@@ -1,10 +1,12 @@
 import { ChevronLeft, Loader2, Minus, Plus, X } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { mealTypes } from '../../constants/options';
 import { useCalories } from '../../hooks/useCalories';
+import { useProfile } from '../../hooks/useProfile';
 import { analyzeFoodImage } from '../../services/coaching/nutritionCoach';
 import type { AIFoodItem, MealType } from '../../types';
 import { recalculateMacros } from '../../utils/calculations';
+import { MealImpactPreview, mapSummaryToMacros } from '../nutrition';
 import { Button, CameraCapture, Select, TextArea } from '../ui';
 import { describeAIError } from './describeAIError';
 
@@ -27,7 +29,16 @@ export function AIImageEntryAdapter({
   onSubmitted,
   onBack,
 }: AIImageEntryAdapterProps) {
-  const { addEntriesBatch } = useCalories();
+  const { addEntriesBatch, fetchEntriesByDate, getDailySummary } =
+    useCalories();
+  const { profile } = useProfile();
+
+  // Ensure today's existing entries are loaded so MealImpactPreview can show
+  // an accurate "after saving" projection. Best-effort: if it fails, the
+  // preview falls back to showing only this meal's contribution.
+  useEffect(() => {
+    void fetchEntriesByDate(date);
+  }, [date, fetchEntriesByDate]);
 
   const [step, setStep] = useState<Step>('capture');
   const [imageData, setImageData] = useState<{
@@ -62,6 +73,19 @@ export function AIImageEntryAdapter({
         imageData.mimeType,
         description || undefined,
       );
+      // The analyzer explicitly returns empty items + not_food_reason when
+      // the photo isn't food (a pet, a landscape, a blurry shot). Surface
+      // that as a friendly message rather than dropping the user into an
+      // empty results screen.
+      if (result.items.length === 0) {
+        setError(
+          result.not_food_reason
+            ? `No food detected: ${result.not_food_reason}`
+            : 'No food detected in this image. Please try a clearer photo of your meal.',
+        );
+        setStep('capture');
+        return;
+      }
       setResults(
         result.items.map((item) => ({
           ...item,
@@ -236,18 +260,16 @@ export function AIImageEntryAdapter({
         </div>
 
         {results.length > 0 && (
-          <div className="bg-slate-700 rounded-lg p-3">
-            <p className="text-slate-400 text-xs mb-2">Total</p>
-            <div className="flex justify-between text-sm">
-              <span className="text-white font-medium">
-                {Math.round(totals.calories)} kcal
-              </span>
-              <span className="text-slate-400">
-                P: {Math.round(totals.protein)}g | C: {Math.round(totals.carbs)}
-                g | F: {Math.round(totals.fat)}g
-              </span>
-            </div>
-          </div>
+          <MealImpactPreview
+            meal={totals}
+            todayBefore={mapSummaryToMacros(getDailySummary(date))}
+            targets={{
+              calories: profile?.calorie_target ?? 0,
+              protein: profile?.protein_target_g ?? 0,
+              carbs: profile?.carbs_target_g ?? 0,
+              fat: profile?.fat_target_g ?? 0,
+            }}
+          />
         )}
 
         {error && <p className="text-red-400 text-sm text-center">{error}</p>}

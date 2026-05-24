@@ -1,10 +1,12 @@
 import { ChevronLeft, Loader2, Minus, Plus, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { mealTypes } from '../../constants/options';
 import { useCalories } from '../../hooks/useCalories';
+import { useProfile } from '../../hooks/useProfile';
 import { analyzeFoodText } from '../../services/coaching/nutritionCoach';
 import type { AIFoodItem, MealType } from '../../types';
 import { recalculateMacros } from '../../utils/calculations';
+import { MealImpactPreview, mapSummaryToMacros } from '../nutrition';
 import { Button, Select, TextArea } from '../ui';
 import { describeAIError } from './describeAIError';
 
@@ -27,7 +29,15 @@ export function AITextEntryAdapter({
   onSubmitted,
   onBack,
 }: AITextEntryAdapterProps) {
-  const { addEntriesBatch } = useCalories();
+  const { addEntriesBatch, fetchEntriesByDate, getDailySummary } =
+    useCalories();
+  const { profile } = useProfile();
+
+  // Load today's existing entries so the impact preview can show an accurate
+  // "after saving" projection.
+  useEffect(() => {
+    void fetchEntriesByDate(date);
+  }, [date, fetchEntriesByDate]);
 
   const [step, setStep] = useState<Step>('input');
   const [mealType, setMealType] = useState<MealType>(
@@ -49,6 +59,18 @@ export function AITextEntryAdapter({
 
     try {
       const result = await analyzeFoodText(description);
+      // The analyzer explicitly returns empty items + not_food_reason when
+      // the description isn't food (e.g. "my dog", random characters).
+      // Surface that as a friendly message rather than an empty results screen.
+      if (result.items.length === 0) {
+        setError(
+          result.not_food_reason
+            ? `That doesn't seem to be food: ${result.not_food_reason}`
+            : "That doesn't seem to describe any food. Please describe your meal.",
+        );
+        setStep('input');
+        return;
+      }
       setResults(
         result.items.map((item) => ({
           ...item,
@@ -215,18 +237,16 @@ export function AITextEntryAdapter({
         </div>
 
         {results.length > 0 && (
-          <div className="bg-slate-700 rounded-lg p-3">
-            <p className="text-slate-400 text-xs mb-2">Total</p>
-            <div className="flex justify-between text-sm">
-              <span className="text-white font-medium">
-                {Math.round(totals.calories)} kcal
-              </span>
-              <span className="text-slate-400">
-                P: {Math.round(totals.protein)}g | C: {Math.round(totals.carbs)}
-                g | F: {Math.round(totals.fat)}g
-              </span>
-            </div>
-          </div>
+          <MealImpactPreview
+            meal={totals}
+            todayBefore={mapSummaryToMacros(getDailySummary(date))}
+            targets={{
+              calories: profile?.calorie_target ?? 0,
+              protein: profile?.protein_target_g ?? 0,
+              carbs: profile?.carbs_target_g ?? 0,
+              fat: profile?.fat_target_g ?? 0,
+            }}
+          />
         )}
 
         {error && <p className="text-red-400 text-sm text-center">{error}</p>}

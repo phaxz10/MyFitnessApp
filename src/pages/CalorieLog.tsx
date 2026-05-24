@@ -1,15 +1,9 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import {
-  ChevronLeft,
-  ChevronRight,
-  Copy,
-  Edit2,
-  Plus,
-  Trash2,
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useSearchParams } from 'react-router-dom';
+import { DailySummaryCard, FoodEntryRow } from '../components/nutrition';
 import {
   Button,
   CalorieLogSkeleton,
@@ -26,7 +20,6 @@ import { useCalories } from '../hooks/useCalories';
 import { useProfile } from '../hooks/useProfile';
 import { type FoodEntryFormData, foodEntrySchema } from '../schemas/forms';
 import type { FoodEntry, MealType } from '../types';
-import { formatCalories } from '../utils/calculations';
 import { formatDate, formatDisplayDate, getPreviousDay } from '../utils/date';
 
 export function CalorieLog() {
@@ -283,56 +276,14 @@ export function CalorieLog() {
         </button>
       </div>
 
-      {/* Daily Summary */}
-      <Card className="mb-4">
-        <CardContent className="p-4">
-          <div className="flex justify-between items-center">
-            <div>
-              <p className="text-slate-400 text-sm">Total Calories</p>
-              <p className="text-2xl font-bold text-white">
-                {formatCalories(summary.total_calories)}
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-slate-400 text-sm">Target</p>
-              <p className="text-xl text-slate-300">
-                {formatCalories(profile?.calorie_target || 0)}
-              </p>
-            </div>
-          </div>
-          <div className="mt-4 grid grid-cols-3 gap-2 text-center text-sm">
-            <div className="bg-slate-700/50 rounded-lg p-2">
-              <p className="text-blue-400 font-semibold">
-                {summary.total_protein_g.toFixed(0)}g
-              </p>
-              <p className="text-slate-400 text-xs">Protein</p>
-            </div>
-            <div className="bg-slate-700/50 rounded-lg p-2">
-              <p className="text-green-400 font-semibold">
-                {summary.total_carbs_g.toFixed(0)}g
-              </p>
-              <p className="text-slate-400 text-xs">Carbs</p>
-            </div>
-            <div className="bg-slate-700/50 rounded-lg p-2">
-              <p className="text-yellow-400 font-semibold">
-                {summary.total_fat_g.toFixed(0)}g
-              </p>
-              <p className="text-slate-400 text-xs">Fat</p>
-            </div>
-          </div>
-
-          {/* Copy Previous Day Button */}
-          <button
-            type="button"
-            onClick={handleCopyPreviousDay}
-            disabled={caloriesLoading}
-            className="mt-4 w-full py-2 border border-dashed border-slate-600 rounded-lg text-slate-400 hover:text-white hover:border-slate-500 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            <Copy size={16} />
-            Copy meals from yesterday
-          </button>
-        </CardContent>
-      </Card>
+      {/* Daily Summary — concentric rings for calorie + 3 macros. See
+          components/nutrition/NutritionRings.tsx for the design choice. */}
+      <DailySummaryCard
+        summary={summary}
+        profile={profile ?? null}
+        onCopyPreviousDay={handleCopyPreviousDay}
+        copyLoading={caloriesLoading}
+      />
 
       {/* Success/Error Messages */}
       {copySuccess && (
@@ -365,76 +316,25 @@ export function CalorieLog() {
               {mealEntries.length === 0 ? (
                 <p className="text-slate-500 text-sm py-2">No entries</p>
               ) : (
-                <div className="space-y-2">
+                <div>
                   {mealEntries.map((entry) => (
-                    <div
+                    <FoodEntryRow
                       key={entry.id}
-                      className="flex items-center justify-between bg-slate-700/30 rounded-lg p-3"
-                    >
-                      <div className="flex-1">
-                        <p className="text-white text-sm">
-                          {entry.food_description}
-                        </p>
-                        <p className="text-slate-400 text-xs">
-                          {entry.calories} kcal | P: {entry.protein_g}g | C:{' '}
-                          {entry.carbs_g}g | F: {entry.fat_g}g
-                        </p>
-                      </div>
-                      <div className="flex gap-1">
-                        <div className="relative">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setCopyMenuEntryId(
-                                copyMenuEntryId === entry.id ? null : entry.id,
-                              )
-                            }
-                            className="p-2 text-slate-400 hover:text-green-400"
-                            title="Copy to another meal"
-                          >
-                            <Copy size={16} />
-                          </button>
-                          {copyMenuEntryId === entry.id && (
-                            <div
-                              ref={copyMenuRef}
-                              className="absolute right-0 top-full mt-1 z-10 bg-slate-800 border border-slate-600 rounded-lg shadow-lg py-1 min-w-[140px]"
-                            >
-                              <p className="px-3 py-1 text-xs text-slate-400 border-b border-slate-700">
-                                Copy to:
-                              </p>
-                              {mealTypes
-                                .filter((m) => m.value !== entry.meal_type)
-                                .map((meal) => (
-                                  <button
-                                    key={meal.value}
-                                    type="button"
-                                    onClick={() =>
-                                      handleCopyEntryToMeal(entry, meal.value)
-                                    }
-                                    className="w-full px-3 py-2 text-left text-sm text-slate-200 hover:bg-slate-700 transition-colors"
-                                  >
-                                    {meal.label}
-                                  </button>
-                                ))}
-                            </div>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => openEditModal(entry)}
-                          className="p-2 text-slate-400 hover:text-blue-400"
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(entry)}
-                          className="p-2 text-slate-400 hover:text-red-400"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
+                      entry={entry}
+                      onEdit={openEditModal}
+                      onDelete={handleDelete}
+                      onCopyToMeal={handleCopyEntryToMeal}
+                      isCopyMenuOpen={copyMenuEntryId === entry.id}
+                      onToggleCopyMenu={() =>
+                        setCopyMenuEntryId(
+                          copyMenuEntryId === entry.id ? null : entry.id,
+                        )
+                      }
+                      copyMenuRef={copyMenuRef}
+                      availableMealTargets={mealTypes.filter(
+                        (m) => m.value !== entry.meal_type,
+                      )}
+                    />
                   ))}
                 </div>
               )}

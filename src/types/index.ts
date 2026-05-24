@@ -194,6 +194,10 @@ export interface AIFoodAnalysisResponse {
     carbs_g: number;
     fat_g: number;
   };
+  // Populated when the analyzer determines the input is not food (e.g. a
+  // photo of a pet, "happy thoughts" as text). When set, items is empty and
+  // the consumer should surface this message instead of saving any entries.
+  not_food_reason?: string;
 }
 
 export interface AIExerciseResponse {

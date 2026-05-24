@@ -18,6 +18,7 @@ import {
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
+import { MACRO_PALETTE } from '../components/nutrition';
 import { ExportModal } from '../components/settings/ExportModal';
 import {
   Button,
@@ -528,28 +529,47 @@ export function Settings() {
                 options={goalOptions}
                 error={goalsForm.formState.errors.goal?.message}
               />
+              {/* Each macro input carries a left-border accent in its
+                  MACRO_PALETTE color so the user sees the same color identity
+                  here as on the CalorieLog rings. */}
               <div className="grid grid-cols-2 gap-3">
                 <Input
                   label="Calories"
                   type="number"
+                  style={{
+                    borderLeftColor: MACRO_PALETTE.calories.hex,
+                    borderLeftWidth: 4,
+                  }}
                   {...goalsForm.register('calories')}
                   error={goalsForm.formState.errors.calories?.message}
                 />
                 <Input
                   label="Protein (g)"
                   type="number"
+                  style={{
+                    borderLeftColor: MACRO_PALETTE.protein.hex,
+                    borderLeftWidth: 4,
+                  }}
                   {...goalsForm.register('protein')}
                   error={goalsForm.formState.errors.protein?.message}
                 />
                 <Input
                   label="Carbs (g)"
                   type="number"
+                  style={{
+                    borderLeftColor: MACRO_PALETTE.carbs.hex,
+                    borderLeftWidth: 4,
+                  }}
                   {...goalsForm.register('carbs')}
                   error={goalsForm.formState.errors.carbs?.message}
                 />
                 <Input
                   label="Fat (g)"
                   type="number"
+                  style={{
+                    borderLeftColor: MACRO_PALETTE.fat.hex,
+                    borderLeftWidth: 4,
+                  }}
                   {...goalsForm.register('fat')}
                   error={goalsForm.formState.errors.fat?.message}
                 />

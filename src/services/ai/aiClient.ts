@@ -78,8 +78,46 @@ export async function respond(opts: RespondOptions): Promise<RawResponse> {
   }
 }
 
+const RETRY_INSTRUCTION =
+  'IMPORTANT: Your previous response did not match the required JSON schema. Return ONLY a single valid JSON object matching the exact format specified. No markdown code fences, no prose before or after, no arithmetic expressions, no comments. Every required field must be present.';
+
 // Single-turn JSON-parse helper with optional Zod validation.
+//
+// Retries once on parse_failed/schema_mismatch with a stricter instruction
+// preamble and cache bypass — LLMs occasionally drift on the first attempt
+// (citation noise, missed field, code fences) but a second pass with explicit
+// "your last response was wrong" feedback usually succeeds. Other failure
+// kinds (rate_limited, timeout, unavailable, server_error) are not retried
+// because retrying won't help and adds latency.
 export async function complete<T = unknown>(
+  opts: CompleteOptions<T>,
+): Promise<T> {
+  try {
+    return await completeOnce(opts);
+  } catch (err) {
+    if (
+      !(err instanceof AIError) ||
+      (err.kind !== 'parse_failed' && err.kind !== 'schema_mismatch')
+    ) {
+      throw err;
+    }
+
+    console.warn(
+      `[aiClient] ${err.kind} on first attempt; retrying once with stricter prompt`,
+      err.cause,
+    );
+
+    return completeOnce({
+      ...opts,
+      cache: undefined,
+      instructions: opts.instructions
+        ? `${opts.instructions}\n\n${RETRY_INSTRUCTION}`
+        : RETRY_INSTRUCTION,
+    });
+  }
+}
+
+async function completeOnce<T = unknown>(
   opts: CompleteOptions<T>,
 ): Promise<T> {
   const model = opts.model ?? DEFAULT_MODEL;

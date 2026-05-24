@@ -165,4 +165,93 @@ describe('aiClient.complete', () => {
       }),
     );
   });
+
+  it('retries once when the first response is unparseable JSON', async () => {
+    // First call returns prose that contains no valid JSON object;
+    // second call returns valid JSON. The retry should succeed.
+    mocks.create
+      .mockResolvedValueOnce({
+        output_text: 'sorry I cannot answer that',
+        output: [],
+      })
+      .mockResolvedValueOnce({
+        output_text: JSON.stringify(foodAnalysis),
+        output: [],
+      });
+
+    await expect(
+      complete({
+        prompt: '150g white rice',
+        schema: foodAnalysisSchema,
+        schemaName: 'food_analysis',
+      }),
+    ).resolves.toEqual(foodAnalysis);
+
+    expect(mocks.create).toHaveBeenCalledTimes(2);
+    const retryCall = mocks.create.mock.calls[1][0];
+    expect(retryCall.instructions).toContain(
+      'previous response did not match',
+    );
+  });
+
+  it('retries once when the first response fails schema validation', async () => {
+    const wrongShape = {
+      items: 'not-an-array',
+      total: { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
+    };
+    mocks.create
+      .mockResolvedValueOnce({
+        output_text: JSON.stringify(wrongShape),
+        output: [],
+      })
+      .mockResolvedValueOnce({
+        output_text: JSON.stringify(foodAnalysis),
+        output: [],
+      });
+
+    await expect(
+      complete({
+        prompt: '150g white rice',
+        schema: foodAnalysisSchema,
+        schemaName: 'food_analysis',
+      }),
+    ).resolves.toEqual(foodAnalysis);
+
+    expect(mocks.create).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry on rate_limited or transport errors', async () => {
+    mocks.create.mockRejectedValue(
+      Object.assign(new Error('Too Many Requests'), { status: 429 }),
+    );
+
+    await expect(
+      complete({
+        prompt: '150g white rice',
+        schema: foodAnalysisSchema,
+        schemaName: 'food_analysis',
+      }),
+    ).rejects.toMatchObject({ kind: 'rate_limited' });
+
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives up after the single retry on persistent schema mismatch', async () => {
+    const wrongShape = { items: 'not-an-array' };
+    mocks.create.mockResolvedValue({
+      output_text: JSON.stringify(wrongShape),
+      output: [],
+    });
+
+    await expect(
+      complete({
+        prompt: '150g white rice',
+        schema: foodAnalysisSchema,
+        schemaName: 'food_analysis',
+      }),
+    ).rejects.toMatchObject({ kind: 'schema_mismatch' });
+
+    // 1 initial + 1 retry = 2 calls, no third attempt
+    expect(mocks.create).toHaveBeenCalledTimes(2);
+  });
 });

@@ -26,6 +26,13 @@ const foodItemSchema = z.object({
 // an explicit "no food detected" response — { items: [], not_food_reason }.
 // A min(1) constraint would turn a correct refusal (e.g. photo of a cat)
 // into a cryptic schema-mismatch error.
+//
+// not_food_reason uses .nullable() (not .optional()) because OpenAI's strict
+// structured-output mode rejects optional fields — every property must appear
+// in `required`. Using .nullable() means the AI must always emit the key,
+// either as null (when input IS food) or a refusal string (when it isn't).
+// The .optional() variant would silently fall back to prompt-guided JSON
+// because the SDK helper throws on optional-without-nullable.
 const foodAnalysisSchema = z.object({
   items: z.array(foodItemSchema),
   total: z.object({
@@ -34,8 +41,8 @@ const foodAnalysisSchema = z.object({
     carbs_g: z.number().nonnegative(),
     fat_g: z.number().nonnegative(),
   }),
-  not_food_reason: z.string().optional(),
-}) satisfies z.ZodType<AIFoodAnalysisResponse>;
+  not_food_reason: z.string().nullable(),
+});
 
 const targetReasoningSchema = z.object({
   reasoning: z.string(),
@@ -66,6 +73,8 @@ For valid food descriptions, use web search for branded/restaurant/package items
 
 Return valid JSON only. All numeric values must be pre-computed numbers (e.g. 279, not "1.5 * 186"). No arithmetic expressions. No markdown code blocks.
 
+The "not_food_reason" field is REQUIRED: emit null when the input describes valid food, or a short string explaining what was provided instead.
+
 Food: ${foodDescription}
 
 Return format for food:
@@ -85,7 +94,8 @@ Return format for food:
     "protein_g": total_protein,
     "carbs_g": total_carbs,
     "fat_g": total_fat
-  }
+  },
+  "not_food_reason": null
 }`;
 
   return complete({
@@ -115,6 +125,8 @@ ${textDescription ? `Additional context from user: ${textDescription}` : ''}
 
 For valid food images, estimate visible portions in grams. Prefer conservative estimates and split distinct foods into separate items. Use web search for branded/restaurant items visible in the photo (logos, wrappers, packaging) for accurate data. All numeric values must be pre-computed numbers; no arithmetic expressions.
 
+The "not_food_reason" field is REQUIRED: emit null when the image contains valid food, or a short string describing what's in the image instead.
+
 Return JSON format only, no markdown code blocks. Return format for food:
 {
   "items": [
@@ -132,7 +144,8 @@ Return JSON format only, no markdown code blocks. Return format for food:
     "protein_g": total_protein,
     "carbs_g": total_carbs,
     "fat_g": total_fat
-  }
+  },
+  "not_food_reason": null
 }`;
 
   return complete({
@@ -269,15 +282,21 @@ export function weightForMacros(profile: TargetProfile): number {
 // rounded to 1 decimal place for clean UI display.
 //
 // Short-circuits for the "not food" response shape (items: []), preserving
-// the refusal reason so the UI can render a friendly message.
+// the refusal reason so the UI can render a friendly message. Accepts both
+// `null` (from the schema-validated structured output) and `undefined` (from
+// legacy callers / tests) for not_food_reason, normalizing to undefined.
+type NormalizableFoodAnalysis = Omit<AIFoodAnalysisResponse, 'not_food_reason'> & {
+  not_food_reason?: string | null;
+};
+
 export function normalizeFoodAnalysis(
-  response: AIFoodAnalysisResponse,
+  response: NormalizableFoodAnalysis,
 ): AIFoodAnalysisResponse {
   if (response.items.length === 0) {
     return {
       items: [],
       total: { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
-      not_food_reason: response.not_food_reason,
+      not_food_reason: response.not_food_reason ?? undefined,
     };
   }
 

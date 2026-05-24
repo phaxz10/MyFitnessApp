@@ -24,7 +24,13 @@ const exerciseDetailsSchema = z.object({
   tips: z.array(z.string()),
 }) satisfies z.ZodType<AIExerciseResponse>;
 
-const exerciseDetailsArraySchema = z.array(exerciseDetailsSchema);
+// Wrapped in an object (rather than a bare array) so it qualifies for
+// OpenAI's strict structured-output mode — the SDK helper throws on
+// array-root schemas, which would silently disable structured output and
+// drop us back to prompt-guided JSON.
+const exerciseDetailsBatchSchema = z.object({
+  exercises: z.array(exerciseDetailsSchema),
+});
 
 function buildExerciseDetailsPrompt(exerciseNames: string[]): string {
   const isBatch = exerciseNames.length > 1;
@@ -34,22 +40,24 @@ function buildExerciseDetailsPrompt(exerciseNames: string[]): string {
   const intro = isBatch
     ? `You are a certified personal trainer and exercise science expert. Generate comprehensive exercise details for the following exercises:\n\n${exerciseList}`
     : `You are a certified personal trainer and exercise science expert. Generate comprehensive exercise details for: "${exerciseNames[0]}"`;
-  const responseShape = `[
-  {
-    "name": "standardized exercise name",
-    "description": "A comprehensive step-by-step guide on how to perform this exercise. Include: starting position, movement execution (concentric and eccentric phases), and end position. Be specific about body positioning, grip, stance, and range of motion.",
-    "muscle_groups": ["Primary category", "Secondary category"],
-    "equipment": "required equipment (or 'Bodyweight' if none)",
-    "exercise_type": "reps_weight|reps_only|duration|duration_weight",
-    "tips": [
-      "Form cue or technique tip",
-      "Common mistake to avoid",
-      "Breathing instruction (e.g., 'Exhale during the lift, inhale on the descent')",
-      "Safety consideration",
-      "Progression or variation tip"
-    ]
-  }
-]`;
+  const responseShape = `{
+  "exercises": [
+    {
+      "name": "standardized exercise name",
+      "description": "A comprehensive step-by-step guide on how to perform this exercise. Include: starting position, movement execution (concentric and eccentric phases), and end position. Be specific about body positioning, grip, stance, and range of motion.",
+      "muscle_groups": ["Primary category", "Secondary category"],
+      "equipment": "required equipment (or 'Bodyweight' if none)",
+      "exercise_type": "reps_weight|reps_only|duration|duration_weight",
+      "tips": [
+        "Form cue or technique tip",
+        "Common mistake to avoid",
+        "Breathing instruction (e.g., 'Exhale during the lift, inhale on the descent')",
+        "Safety consideration",
+        "Progression or variation tip"
+      ]
+    }
+  ]
+}`;
 
   return `${intro}
 
@@ -75,7 +83,7 @@ Guidelines:
 - Description should be 3-5 sentences covering the full movement pattern
 - Include 4-6 practical tips covering form, breathing, safety, and common errors
 - Be specific and actionable - avoid vague instructions
-- Use builtwithscience.com publicly available data as reference where applicable${isBatch ? '\n- Return an array with one object per exercise, in the same order as the input list' : ''}`;
+- Use builtwithscience.com publicly available data as reference where applicable${isBatch ? '\n- Return one object per input exercise inside "exercises", in the same order as the input list' : ''}`;
 }
 
 export async function generateExerciseDetails(
@@ -83,14 +91,14 @@ export async function generateExerciseDetails(
 ): Promise<AIExerciseResponse> {
   const prompt = buildExerciseDetailsPrompt([exerciseName]);
 
-  // The prompt's response shape is always an array; pull the first item.
-  const items = await complete({
+  const { exercises } = await complete({
     prompt,
-    schema: exerciseDetailsArraySchema,
+    schema: exerciseDetailsBatchSchema,
+    schemaName: 'exercise_details_batch',
     tools: [WEB_SEARCH_TOOL],
   });
 
-  const first = items[0];
+  const first = exercises[0];
   if (!first) {
     throw new Error('AI returned no exercise details');
   }
@@ -102,11 +110,13 @@ export async function generateExerciseDetailsBatch(
 ): Promise<AIExerciseResponse[]> {
   const prompt = buildExerciseDetailsPrompt(exerciseNames);
 
-  return complete({
+  const { exercises } = await complete({
     prompt,
-    schema: exerciseDetailsArraySchema,
+    schema: exerciseDetailsBatchSchema,
+    schemaName: 'exercise_details_batch',
     tools: [WEB_SEARCH_TOOL],
   });
+  return exercises;
 }
 
 // Low-stakes "fuzzy match" — soft-fail rather than throw on bad JSON,

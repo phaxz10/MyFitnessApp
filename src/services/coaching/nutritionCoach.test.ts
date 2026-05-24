@@ -314,4 +314,37 @@ describe('normalizeFoodAnalysis', () => {
       fat_g: 0,
     });
   });
+
+  it('coerces null not_food_reason to undefined on the not-food path', () => {
+    // The structured-output schema now uses .nullable(), so the AI emits
+    // null when the input IS food. Consumer code checks for truthiness,
+    // so undefined preserves existing behavior on empty-items responses.
+    const result = normalizeFoodAnalysis({
+      items: [],
+      total: { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
+      not_food_reason: null,
+    });
+    expect(result.not_food_reason).toBeUndefined();
+  });
+
+  it('drops null not_food_reason on the food path (does not leak null)', () => {
+    // When food IS detected, the AI emits not_food_reason: null. The
+    // food-path branch doesn't echo the reason at all, so it must be absent
+    // from the result regardless of input shape.
+    const result = normalizeFoodAnalysis({
+      items: [
+        {
+          name: 'apple',
+          portion_grams: 150,
+          calories: 80,
+          protein_g: 0.4,
+          carbs_g: 21,
+          fat_g: 0.3,
+        },
+      ],
+      total: { calories: 80, protein_g: 0.4, carbs_g: 21, fat_g: 0.3 },
+      not_food_reason: null,
+    });
+    expect(result.not_food_reason).toBeUndefined();
+  });
 });

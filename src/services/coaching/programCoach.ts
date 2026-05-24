@@ -53,13 +53,22 @@ const generatedSessionSchema = z.object({
   exercises: z.array(generatedExerciseSchema),
 });
 
+// muscleGroupBreakdown is an array of {muscleGroup, sets} rather than a
+// record because OpenAI's strict structured-output mode rejects objects
+// with arbitrary keys (additionalProperties must be false). The array is
+// flattened back into a Record<string, number> in normalizeProgramResponse.
 const programResponseSchema = z.object({
   programName: z.string(),
   programDescription: z.string(),
   sessions: z.array(generatedSessionSchema),
   weeklyVolumeSummary: z.object({
     totalSets: z.number(),
-    muscleGroupBreakdown: z.record(z.string(), z.number()),
+    muscleGroupBreakdown: z.array(
+      z.object({
+        muscleGroup: z.string(),
+        sets: z.number(),
+      }),
+    ),
   }),
   recommendations: z.array(z.string()),
   experienceLevel: z.enum(['beginner', 'intermediate', 'advanced']).nullable(),
@@ -80,9 +89,17 @@ const experienceLevelInferenceSchema = z.object({
 
 type RawProgramResponse = z.infer<typeof programResponseSchema>;
 
-function normalizeProgramResponse(
+export function normalizeProgramResponse(
   response: RawProgramResponse,
 ): AIProgramGeneratorResponse {
+  const muscleGroupBreakdown: Record<string, number> = {};
+  for (const { muscleGroup, sets } of response.weeklyVolumeSummary
+    .muscleGroupBreakdown) {
+    const trimmed = muscleGroup.trim();
+    if (!trimmed) continue;
+    muscleGroupBreakdown[trimmed] = (muscleGroupBreakdown[trimmed] ?? 0) + sets;
+  }
+
   return {
     programName: response.programName,
     programDescription: response.programDescription,
@@ -98,7 +115,10 @@ function normalizeProgramResponse(
         supersetWith: exercise.supersetWith ?? undefined,
       })),
     })),
-    weeklyVolumeSummary: response.weeklyVolumeSummary,
+    weeklyVolumeSummary: {
+      totalSets: response.weeklyVolumeSummary.totalSets,
+      muscleGroupBreakdown,
+    },
     recommendations: response.recommendations,
     experienceLevel: response.experienceLevel ?? undefined,
   };
@@ -748,15 +768,15 @@ Return JSON format only, no markdown code blocks:
   ],
   "weeklyVolumeSummary": {
     "totalSets": 45,
-    "muscleGroupBreakdown": {
-      "Chest": 12,
-      "Back": 14,
-      "Shoulders": 10,
-      "Biceps": 8,
-      "Triceps": 8,
-      "Legs": 16,
-      "Core": 6
-    }
+    "muscleGroupBreakdown": [
+      { "muscleGroup": "Chest", "sets": 12 },
+      { "muscleGroup": "Back", "sets": 14 },
+      { "muscleGroup": "Shoulders", "sets": 10 },
+      { "muscleGroup": "Biceps", "sets": 8 },
+      { "muscleGroup": "Triceps", "sets": 8 },
+      { "muscleGroup": "Legs", "sets": 16 },
+      { "muscleGroup": "Core", "sets": 6 }
+    ]
   },
   "recommendations": [
     "Tip about progression",
@@ -894,15 +914,15 @@ Return JSON only (no markdown):
   ],
   "weeklyVolumeSummary": {
     "totalSets": number,
-    "muscleGroupBreakdown": {
-      "Chest": number,
-      "Back": number,
-      "Shoulders": number,
-      "Biceps": number,
-      "Triceps": number,
-      "Legs": number,
-      "Core": number
-    }
+    "muscleGroupBreakdown": [
+      { "muscleGroup": "Chest", "sets": number },
+      { "muscleGroup": "Back", "sets": number },
+      { "muscleGroup": "Shoulders", "sets": number },
+      { "muscleGroup": "Biceps", "sets": number },
+      { "muscleGroup": "Triceps", "sets": number },
+      { "muscleGroup": "Legs", "sets": number },
+      { "muscleGroup": "Core", "sets": number }
+    ]
   },
   "recommendations": ["string"],
   "experienceLevel": "beginner|intermediate|advanced"

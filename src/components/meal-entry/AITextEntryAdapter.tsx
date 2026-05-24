@@ -12,6 +12,10 @@ import { describeAIError } from './describeAIError';
 
 interface EditableFoodItem extends AIFoodItem {
   originalPortion: number;
+  // Stable client-side ID assigned when the AI response lands. Used as React
+  // list key — names can repeat ("egg", "egg") and array indices shift when
+  // the user removes an item, both of which would break key stability.
+  id: string;
 }
 
 interface AITextEntryAdapterProps {
@@ -75,6 +79,7 @@ export function AITextEntryAdapter({
         result.items.map((item) => ({
           ...item,
           originalPortion: item.portion_grams,
+          id: crypto.randomUUID(),
         })),
       );
       setStep('results');
@@ -185,10 +190,7 @@ export function AITextEntryAdapter({
 
         <div className="space-y-2">
           {results.map((item, index) => (
-            <div
-              key={`${item.name}-${index}`}
-              className="bg-slate-700/50 rounded-lg p-3"
-            >
+            <div key={item.id} className="bg-slate-700/50 rounded-lg p-3">
               <div className="flex items-start justify-between mb-2">
                 <div className="flex-1">
                   <p className="text-white font-medium text-sm">{item.name}</p>

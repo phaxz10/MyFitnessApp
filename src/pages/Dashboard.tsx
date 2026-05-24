@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { MACRO_PALETTE, NutritionRings } from '../components/nutrition';
 import {
   Button,
   Card,
@@ -31,7 +32,7 @@ import {
 } from '../hooks/useWeeklyConsistency';
 import { useWeight } from '../hooks/useWeight';
 import { useWorkoutLogs } from '../hooks/useWorkoutLogs';
-import { calculateProgress, formatCalories } from '../utils/calculations';
+import { formatCalories } from '../utils/calculations';
 import { formatDate, formatDisplayDate } from '../utils/date';
 
 export function Dashboard() {
@@ -100,7 +101,6 @@ export function Dashboard() {
   const caloriesConsumed = summary.total_calories;
   const calorieTarget = profile?.calorie_target || 2000;
   const caloriesRemaining = calorieTarget - caloriesConsumed;
-  const progress = calculateProgress(caloriesConsumed, calorieTarget);
 
   if (isLoading) {
     return <DashboardSkeleton />;
@@ -192,7 +192,10 @@ export function Dashboard() {
         />
       )}
 
-      {/* Calorie Summary Card */}
+      {/* Calorie Summary Card — rings + macro legend match CalorieLog so the
+          design language carries through. Dashboard keeps "remaining" framing
+          in the ring center (at-a-glance) vs. CalorieLog's "consumed/target"
+          (detail view). */}
       <Card>
         <CardContent className="p-6">
           <div className="flex items-center justify-between mb-4">
@@ -205,151 +208,66 @@ export function Dashboard() {
             </Link>
           </div>
 
-          {/* Progress Ring */}
-          <div className="flex items-center justify-center mb-6">
-            <div className="relative w-40 h-40">
-              <svg
-                className="w-full h-full transform -rotate-90"
-                viewBox="0 0 160 160"
-                aria-label="Calorie progress indicator"
-                role="img"
-              >
-                <circle
-                  cx="80"
-                  cy="80"
-                  r="70"
-                  fill="none"
-                  stroke="#334155"
-                  strokeWidth="12"
-                />
-                <circle
-                  cx="80"
-                  cy="80"
-                  r="70"
-                  fill="none"
-                  stroke={progress > 100 ? '#ef4444' : '#3b82f6'}
-                  strokeWidth="12"
-                  strokeLinecap="round"
-                  strokeDasharray={`${Math.min(progress, 100) * 4.4} 440`}
-                />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-3xl font-bold text-white">
-                  {formatCalories(caloriesRemaining)}
-                </span>
-                <span className="text-slate-400 text-sm">remaining</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Macro Summary */}
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div>
-              <p className="text-2xl font-semibold text-white">
-                {formatCalories(caloriesConsumed)}
-              </p>
-              <p className="text-slate-400 text-xs">Consumed</p>
-            </div>
-            <div>
-              <p className="text-2xl font-semibold text-white">
-                {formatCalories(calorieTarget)}
-              </p>
-              <p className="text-slate-400 text-xs">Target</p>
-            </div>
-            <div>
-              <p
-                className={`text-2xl font-semibold ${caloriesRemaining < 0 ? 'text-red-400' : 'text-green-400'}`}
-              >
-                {formatCalories(Math.abs(caloriesRemaining))}
-              </p>
-              <p className="text-slate-400 text-xs">
-                {caloriesRemaining < 0 ? 'Over' : 'Left'}
-              </p>
-            </div>
-          </div>
-
-          {/* Macros Progress Bars */}
-          <div className="mt-6 space-y-3">
-            {/* Protein */}
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-blue-400 font-medium">Protein</span>
-                <span className="text-white">
-                  {summary.total_protein_g.toFixed(0)}g /{' '}
-                  {profile?.protein_target_g || 0}g
-                </span>
-              </div>
-              <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-300 ${
-                    summary.total_protein_g > (profile?.protein_target_g || 0)
-                      ? 'bg-red-500'
-                      : 'bg-blue-500'
-                  }`}
-                  style={{
-                    width: `${Math.min(
-                      (summary.total_protein_g /
-                        (profile?.protein_target_g || 1)) *
-                        100,
-                      100,
-                    )}%`,
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Carbs */}
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-green-400 font-medium">Carbs</span>
-                <span className="text-white">
-                  {summary.total_carbs_g.toFixed(0)}g /{' '}
-                  {profile?.carbs_target_g || 0}g
-                </span>
-              </div>
-              <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-300 ${
-                    summary.total_carbs_g > (profile?.carbs_target_g || 0)
-                      ? 'bg-red-500'
-                      : 'bg-green-500'
-                  }`}
-                  style={{
-                    width: `${Math.min(
-                      (summary.total_carbs_g / (profile?.carbs_target_g || 1)) *
-                        100,
-                      100,
-                    )}%`,
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Fat */}
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-yellow-400 font-medium">Fat</span>
-                <span className="text-white">
-                  {summary.total_fat_g.toFixed(0)}g /{' '}
-                  {profile?.fat_target_g || 0}g
-                </span>
-              </div>
-              <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-300 ${
-                    summary.total_fat_g > (profile?.fat_target_g || 0)
-                      ? 'bg-red-500'
-                      : 'bg-yellow-500'
-                  }`}
-                  style={{
-                    width: `${Math.min(
-                      (summary.total_fat_g / (profile?.fat_target_g || 1)) *
-                        100,
-                      100,
-                    )}%`,
-                  }}
-                />
-              </div>
+          <div className="flex items-center gap-4">
+            <NutritionRings
+              consumed={{
+                calories: caloriesConsumed,
+                protein: summary.total_protein_g,
+                carbs: summary.total_carbs_g,
+                fat: summary.total_fat_g,
+              }}
+              targets={{
+                calories: calorieTarget,
+                protein: profile?.protein_target_g ?? 0,
+                carbs: profile?.carbs_target_g ?? 0,
+                fat: profile?.fat_target_g ?? 0,
+              }}
+              size={144}
+              center={
+                <>
+                  <span
+                    className={`text-2xl font-bold tabular-nums leading-none ${
+                      caloriesRemaining < 0 ? 'text-rose-300' : 'text-white'
+                    }`}
+                  >
+                    {formatCalories(Math.abs(caloriesRemaining))}
+                  </span>
+                  <span className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">
+                    {caloriesRemaining < 0 ? 'kcal over' : 'kcal left'}
+                  </span>
+                </>
+              }
+            />
+            <div className="flex-1 space-y-2">
+              <DashboardMacroLine
+                label="Protein"
+                consumed={summary.total_protein_g}
+                target={profile?.protein_target_g ?? 0}
+                color={MACRO_PALETTE.protein.text}
+                dot={MACRO_PALETTE.protein.hex}
+              />
+              <DashboardMacroLine
+                label="Carbs"
+                consumed={summary.total_carbs_g}
+                target={profile?.carbs_target_g ?? 0}
+                color={MACRO_PALETTE.carbs.text}
+                dot={MACRO_PALETTE.carbs.hex}
+              />
+              <DashboardMacroLine
+                label="Fat"
+                consumed={summary.total_fat_g}
+                target={profile?.fat_target_g ?? 0}
+                color={MACRO_PALETTE.fat.text}
+                dot={MACRO_PALETTE.fat.hex}
+              />
+              <DashboardMacroLine
+                label="Calories"
+                consumed={caloriesConsumed}
+                target={calorieTarget}
+                color={MACRO_PALETTE.calories.text}
+                dot={MACRO_PALETTE.calories.hex}
+                suffix=""
+              />
             </div>
           </div>
         </CardContent>
@@ -726,6 +644,47 @@ export function Dashboard() {
           </div>
         )}
       </Modal>
+    </div>
+  );
+}
+
+// Single-line "dot + label + consumed / target" legend row used beside the
+// nutrition rings on Dashboard. Mirrors the legend rows inside
+// components/nutrition/DailySummaryCard but kept inline here because
+// Dashboard wants no copy-yesterday button and a slightly different layout.
+interface DashboardMacroLineProps {
+  label: string;
+  consumed: number;
+  target: number;
+  color: string;
+  dot: string;
+  suffix?: string;
+}
+
+function DashboardMacroLine({
+  label,
+  consumed,
+  target,
+  color,
+  dot,
+  suffix = 'g',
+}: DashboardMacroLineProps) {
+  return (
+    <div className="flex items-center gap-2">
+      <span
+        className="w-2 h-2 rounded-full flex-shrink-0"
+        style={{ background: dot }}
+      />
+      <span className="text-[10px] uppercase tracking-widest text-slate-500 w-20 flex-shrink-0">
+        {label}
+      </span>
+      <span className={`text-xs tabular-nums font-semibold ${color}`}>
+        {Math.round(consumed)}
+      </span>
+      <span className="text-xs text-slate-600 tabular-nums">
+        / {Math.round(target)}
+        {suffix}
+      </span>
     </div>
   );
 }

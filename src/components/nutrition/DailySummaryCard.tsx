@@ -30,8 +30,8 @@ export function DailySummaryCard({
 
   return (
     <div className="bg-slate-800/80 rounded-3xl p-6 mb-4 backdrop-blur">
-      <div className="flex items-center gap-6">
-        <NutritionRings consumed={consumed} targets={targets} />
+      <div className="flex items-center gap-4">
+        <NutritionRings consumed={consumed} targets={targets} size={144} />
         <div className="flex-1 space-y-2">
           <MacroLegendRow
             label="Protein"
@@ -60,7 +60,7 @@ export function DailySummaryCard({
             target={targets.calories}
             color={MACRO_PALETTE.calories.text}
             dot={MACRO_PALETTE.calories.hex}
-            suffix="kcal"
+            suffix=""
           />
         </div>
       </div>
@@ -101,7 +101,7 @@ function MacroLegendRow({
         className="w-2 h-2 rounded-full flex-shrink-0"
         style={{ background: dot }}
       />
-      <span className="text-[10px] uppercase tracking-widest text-slate-500 w-12">
+      <span className="text-[10px] uppercase tracking-widest text-slate-500 w-20 flex-shrink-0">
         {label}
       </span>
       <span className={`text-xs tabular-nums font-semibold ${color}`}>

@@ -104,17 +104,21 @@ export function NutritionRings({
               strokeOpacity="0.15"
               strokeWidth={STROKE_WIDTH}
             />
-            <circle
-              cx="100"
-              cy="100"
-              r={ring.radius}
-              fill="none"
-              stroke={ring.color}
-              strokeWidth={STROKE_WIDTH}
-              strokeLinecap="round"
-              strokeDasharray={ringDashArray(ring.progress, ring.radius)}
-              style={{ transition: 'stroke-dasharray 0.5s ease-out' }}
-            />
+            {ring.progress > 0 && (
+              // Skip the progress arc at 0% — strokeLinecap="round" would
+              // otherwise render a stale dot at the 12-o'clock position.
+              <circle
+                cx="100"
+                cy="100"
+                r={ring.radius}
+                fill="none"
+                stroke={ring.color}
+                strokeWidth={STROKE_WIDTH}
+                strokeLinecap="round"
+                strokeDasharray={ringDashArray(ring.progress, ring.radius)}
+                style={{ transition: 'stroke-dasharray 0.5s ease-out' }}
+              />
+            )}
           </g>
         ))}
       </svg>

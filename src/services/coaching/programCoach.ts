@@ -1,8 +1,4 @@
-import type {
-  FunctionTool,
-  ResponseInputItem,
-  Tool,
-} from 'openai/resources/responses/responses';
+import { tool } from 'ai';
 import { z } from 'zod';
 import { ALWAYS_AVAILABLE_EQUIPMENT } from '../../constants/equipment';
 import type {
@@ -15,9 +11,14 @@ import type {
   ExperienceLevel,
   ExperienceLevelInference,
 } from '../../types';
-import { complete, respond } from '../ai/aiClient';
+import { complete, respond, webSearchTool } from '../ai/aiClient';
 
-const WEB_SEARCH_TOOL: Tool = { type: 'web_search' };
+// web_search lets the AI cross-reference current programming research.
+// Returns undefined for OpenAI without a proxy.
+function maybeWebSearchTools() {
+  const search = webSearchTool();
+  return search ? { web_search: search } : undefined;
+}
 
 const GOAL_DESCRIPTIONS: Record<string, string> = {
   bulk: 'Building muscle mass (caloric surplus)',
@@ -124,253 +125,71 @@ export function normalizeProgramResponse(
   };
 }
 
-// FUNCTION TOOLS for multi-turn program generation.
-// The AI uses these tools to: (1) infer experience level from history,
-// (2) select exercises from the user's existing library, (3) create new
-// exercises that don't exist yet, and (4) assemble the final program.
-// This approach lets the AI handle exercise resolution in a single
-// conversation instead of requiring a separate post-processing step.
+// Zod input schemas for the four function tools used by
+// generateWorkoutProgramWithFunctionCalling. Defined here so the tool factory
+// (built per call to close over the accumulators) stays tight.
 
-const createExercisesFunctionTool: FunctionTool = {
-  type: 'function',
-  name: 'create_exercises',
-  description:
-    'Create new exercises in the user exercise library. Call this when the program requires exercises that do not exist in the library.',
-  strict: false,
-  parameters: {
-    type: 'object',
-    properties: {
-      exercises: {
-        type: 'array',
-        description: 'List of exercises to create',
-        items: {
-          type: 'object',
-          properties: {
-            name: {
-              type: 'string',
-              description: 'Standard exercise name',
-            },
-            description: {
-              type: 'string',
-              description:
-                'Step-by-step guide for performing the exercise (3-5 sentences)',
-            },
-            muscle_groups: {
-              type: 'array',
-              items: { type: 'string' },
-              description:
-                'Primary and secondary muscle groups (e.g., ["Chest", "Triceps"])',
-            },
-            equipment: {
-              type: 'string',
-              description: 'Required equipment (or "Bodyweight" if none)',
-            },
-            exercise_type: {
-              type: 'string',
-              enum: ['reps_weight', 'reps_only', 'duration', 'duration_weight'],
-              description: 'Type of exercise tracking',
-            },
-            tips: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Form cues, safety tips, and common mistakes (4-6)',
-            },
-          },
-          required: [
-            'name',
-            'description',
-            'muscle_groups',
-            'equipment',
-            'exercise_type',
-            'tips',
-          ],
-        },
-      },
-    },
-    required: ['exercises'],
-  },
-};
+const inferExperienceLevelInput = z.object({
+  inferredLevel: z.enum(['beginner', 'intermediate', 'advanced']),
+  confidence: z.enum(['low', 'medium', 'high']),
+  reasoning: z.string(),
+});
 
-const selectExercisesFunctionTool: FunctionTool = {
-  type: 'function',
-  name: 'select_exercises',
-  description:
-    'Select exercises from the existing library to use in the program. Always prefer existing exercises over creating new ones.',
-  strict: false,
-  parameters: {
-    type: 'object',
-    properties: {
-      selections: {
-        type: 'array',
-        description: 'List of exercise selections from the library',
-        items: {
-          type: 'object',
-          properties: {
-            exercise_name: {
-              type: 'string',
-              description: 'Exact name of the exercise from the library',
-            },
-            reason: {
-              type: 'string',
-              description: 'Brief reason for selecting this exercise',
-            },
-          },
-          required: ['exercise_name'],
-        },
-      },
-    },
-    required: ['selections'],
-  },
-};
+const selectExercisesInput = z.object({
+  selections: z.array(
+    z.object({
+      exercise_name: z.string(),
+      reason: z.string().optional(),
+    }),
+  ),
+});
 
-const generateProgramFunctionTool: FunctionTool = {
-  type: 'function',
-  name: 'generate_program',
-  description:
-    'Generate a complete workout program with sessions and exercises. Call this after selecting/creating all needed exercises.',
-  strict: false,
-  parameters: {
-    type: 'object',
-    properties: {
-      programName: {
-        type: 'string',
-        description: 'Descriptive name for the program',
-      },
-      programDescription: {
-        type: 'string',
-        description: '2-3 sentence program overview',
-      },
-      experienceLevel: {
-        type: 'string',
-        enum: ['beginner', 'intermediate', 'advanced'],
-        description: 'Inferred or confirmed experience level',
-      },
-      sessions: {
-        type: 'array',
-        description: 'List of workout sessions',
-        items: {
-          type: 'object',
-          properties: {
-            name: {
-              type: 'string',
-              description: 'Session name (e.g., "Push Day", "Upper Body A")',
-            },
-            dayOfWeek: {
-              type: 'number',
-              description:
-                'Day of week (0=Sunday through 6=Saturday), or null for flexible',
-            },
-            sessionTimeMinutes: {
-              type: 'number',
-              description: 'Estimated session duration',
-            },
-            exercises: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  name: {
-                    type: 'string',
-                    description:
-                      'Exercise name (must match library or created)',
-                  },
-                  targetSets: {
-                    type: 'number',
-                    description: 'Number of sets (typically 2-4)',
-                  },
-                  targetRepMin: {
-                    type: 'number',
-                    description:
-                      'Minimum reps (can be 4-30+ depending on exercise type)',
-                  },
-                  targetRepMax: {
-                    type: 'number',
-                    description:
-                      'Maximum reps (lateral raises: 15-25, calves: 20-30, compounds: 6-10)',
-                  },
-                  targetDurationSeconds: {
-                    type: 'number',
-                    description: 'For duration-based exercises (planks, holds)',
-                  },
-                  notes: {
-                    type: 'string',
-                    description:
-                      'Form cue, intensity technique (e.g., "Rest-pause: 12 reps + 15 sec + max reps", "Slow 3 sec eccentric", "Drop set on final set")',
-                  },
-                  supersetWith: {
-                    type: 'string',
-                    description:
-                      'Name of exercise to superset with. IMPORTANT: Both exercises must reference each other.',
-                  },
-                },
-                required: [
-                  'name',
-                  'targetSets',
-                  'targetRepMin',
-                  'targetRepMax',
-                ],
-              },
-            },
-          },
-          required: ['name', 'exercises'],
-        },
-      },
-      weeklyVolumeSummary: {
-        type: 'object',
-        properties: {
-          totalSets: { type: 'number' },
-          muscleGroupBreakdown: {
-            type: 'object',
-            description:
-              'Sets per muscle group (e.g., {"Chest": 12, "Back": 14})',
-          },
-        },
-        required: ['totalSets', 'muscleGroupBreakdown'],
-      },
-      recommendations: {
-        type: 'array',
-        items: { type: 'string' },
-        description: 'Tips for the user about progression, recovery, nutrition',
-      },
-    },
-    required: [
-      'programName',
-      'programDescription',
-      'experienceLevel',
-      'sessions',
-      'weeklyVolumeSummary',
-      'recommendations',
-    ],
-  },
-};
+const createExercisesInput = z.object({
+  exercises: z.array(
+    z.object({
+      name: z.string(),
+      description: z.string(),
+      muscle_groups: z.array(z.string()),
+      equipment: z.string(),
+      exercise_type: z.enum([
+        'reps_weight',
+        'reps_only',
+        'duration',
+        'duration_weight',
+      ]),
+      tips: z.array(z.string()),
+    }),
+  ),
+});
 
-const inferExperienceLevelFunctionTool: FunctionTool = {
-  type: 'function',
-  name: 'infer_experience_level',
-  description:
-    'Infer the user experience level based on their workout history. Call this if experience level is not provided.',
-  strict: false,
-  parameters: {
-    type: 'object',
-    properties: {
-      inferredLevel: {
-        type: 'string',
-        enum: ['beginner', 'intermediate', 'advanced'],
-        description: 'Inferred experience level',
-      },
-      confidence: {
-        type: 'string',
-        enum: ['low', 'medium', 'high'],
-        description: 'Confidence in the inference',
-      },
-      reasoning: {
-        type: 'string',
-        description: 'Explanation of why this level was inferred',
-      },
-    },
-    required: ['inferredLevel', 'confidence', 'reasoning'],
-  },
-};
+const generateProgramExerciseInput = z.object({
+  name: z.string(),
+  targetSets: z.number(),
+  targetRepMin: z.number(),
+  targetRepMax: z.number(),
+  targetDurationSeconds: z.number().optional(),
+  notes: z.string().optional(),
+  supersetWith: z.string().optional(),
+});
+
+const generateProgramInput = z.object({
+  programName: z.string(),
+  programDescription: z.string(),
+  experienceLevel: z.enum(['beginner', 'intermediate', 'advanced']),
+  sessions: z.array(
+    z.object({
+      name: z.string(),
+      dayOfWeek: z.number().nullable().optional(),
+      sessionTimeMinutes: z.number().optional(),
+      exercises: z.array(generateProgramExerciseInput),
+    }),
+  ),
+  weeklyVolumeSummary: z.object({
+    totalSets: z.number(),
+    muscleGroupBreakdown: z.record(z.string(), z.number()),
+  }),
+  recommendations: z.array(z.string()),
+});
 
 // ============================================================================
 // generateWorkoutProgram — single-turn program generation
@@ -799,7 +618,7 @@ CRITICAL RULES:
     prompt,
     schema: programResponseSchema,
     schemaName: 'workout_program',
-    tools: [WEB_SEARCH_TOOL],
+    tools: maybeWebSearchTools(),
   });
 
   return normalizeProgramResponse(response);
@@ -879,7 +698,7 @@ WEEKLY VOLUME SUMMARY:
     .map(([muscle, sets]) => `${muscle}: ${sets}`)
     .join(', ')}
 
-EXERCISE LIBRARY (prefer these names):
+EXERCISE LIBRARY — you MUST use ONLY the exact names below (case-insensitive match against this list). The app rejects any exercise name that does not appear verbatim in this library. If you want an exercise that's not in the library, pick the closest existing one instead — do not invent new names.
 ${exerciseLibrary || 'No library data'}
 
 TASKS:
@@ -889,6 +708,7 @@ TASKS:
 4. Maintain or improve exercise ordering (compounds first, accessories later).
 5. Use supersets when it improves efficiency, but avoid overloading fatigue.
 6. Keep session duration within the preferred limit.
+7. CRITICAL: every "name" field in your output must be a verbatim copy of an exercise name from the library above. Do not paraphrase, abbreviate, or add qualifiers.
 
 Return JSON only (no markdown):
 {
@@ -932,7 +752,7 @@ Return JSON only (no markdown):
     prompt,
     schema: programResponseSchema,
     schemaName: 'workout_program',
-    tools: [WEB_SEARCH_TOOL],
+    tools: maybeWebSearchTools(),
   });
 
   return normalizeProgramResponse(response);
@@ -1097,6 +917,27 @@ WORKFLOW:
 3. If you need exercises not in the library, call create_exercises to add them
 4. Finally, call generate_program with the complete program structure
 
+=== EXERCISE TYPE CLASSIFICATION (REQUIRED for create_exercises) ===
+
+When calling create_exercises, you MUST pick the correct exercise_type per exercise.
+Misclassifying breaks the workout UI (e.g. a Plank stored as reps_weight forces the user to enter weight/reps instead of starting a timer).
+
+Pick exactly one:
+
+- "reps_weight" — performed for reps WITH external load. The user logs weight × reps.
+    Examples: Bench Press, Squat, Bicep Curl, Cable Row, Lat Pulldown, Overhead Press, Romanian Deadlift, Hip Thrust, Leg Press
+
+- "reps_only" — performed for reps with NO external load (bodyweight / band). The user logs reps only.
+    Examples: Push-Up, Pull-Up, Chin-Up, Air Squat, Dip, Burpee, Sit-Up, Bodyweight Lunge, Inverted Row
+
+- "duration" — HELD or PERFORMED FOR TIME, no external weight. The user starts a timer.
+    Examples: Plank, Side Plank, Wall Sit, Dead Hang, Hollow Hold, Superman Hold, L-Sit, Glute Bridge Hold
+
+- "duration_weight" — held for time WITH external weight. Timer plus weight input.
+    Examples: Weighted Plank, Farmer's Carry, Suitcase Carry, Yoke Walk, Weighted Dead Hang
+
+Rule of thumb: if the goal of the exercise is to hold a position or carry a load (not perform repetitions), it's duration / duration_weight. If you would naturally count reps, it's reps_only or reps_weight depending on whether weight is loaded.
+
 === REP RANGE GUIDELINES (CRITICAL - BuiltWithScience-based) ===
 
 COMPOUND MOVEMENTS:
@@ -1217,157 +1058,104 @@ INSTRUCTIONS:
 
 Remember: ALWAYS pair supersets bidirectionally. If Bicep Curls superset with Tricep Pushdowns, BOTH exercises must reference each other.`;
 
-  const tools: Tool[] = [
-    inferExperienceLevelFunctionTool,
-    selectExercisesFunctionTool,
-    createExercisesFunctionTool,
-    generateProgramFunctionTool,
-  ];
-
+  // Accumulators closed over by the tool execute callbacks. The Vercel SDK
+  // drives the multi-step loop: it calls a tool, feeds the result back to the
+  // model, and continues until stopWhen says stop.
   let inferredExperienceLevel: ExperienceLevelInference | undefined;
   const selectedExercises: { name: string; reason?: string }[] = [];
   const exercisesToCreate: AIExerciseResponse[] = [];
   let program: AIProgramGeneratorResponse | null = null;
 
-  const conversation: ResponseInputItem[] = [
-    { role: 'user', content: userPrompt },
-  ];
-
-  const maxIterations = 10;
-
-  for (let i = 0; i < maxIterations; i++) {
-    const response = await respond({
-      instructions: systemPrompt,
-      prompt: conversation,
-      tools,
-      tool_choice: 'auto',
-    });
-
-    const functionCalls = response.output.filter(
-      (item): item is Extract<typeof item, { type: 'function_call' }> =>
-        item.type === 'function_call',
-    );
-
-    if (functionCalls.length === 0) {
-      break;
-    }
-
-    // Echo the model's function calls into the conversation, then provide outputs
-    for (const call of functionCalls) {
-      conversation.push(call);
-    }
-
-    for (const call of functionCalls) {
-      const functionName = call.name;
-      const args = JSON.parse(call.arguments || '{}') as Record<
-        string,
-        unknown
-      >;
-      let resultText = '';
-
-      switch (functionName) {
-        case 'infer_experience_level': {
-          inferredExperienceLevel = {
-            inferredLevel: args.inferredLevel as ExperienceLevel,
-            confidence: args.confidence as 'low' | 'medium' | 'high',
-            reasoning: args.reasoning as string,
-            metrics: {
-              totalWorkouts: input.workoutHistory?.totalWorkouts || 0,
-              averageVolumePerSession:
-                input.workoutHistory?.avgSetsPerSession || 0,
-              exerciseVariety: input.workoutHistory?.topExercises.length || 0,
-              trainingConsistencyWeeks: input.workoutHistory?.totalWeeks || 0,
-              hasProgressiveOverload: false,
-            },
-          };
-          resultText = `Experience level inferred as ${args.inferredLevel}. Proceed with program generation.`;
-          break;
+  const tools = {
+    infer_experience_level: tool({
+      description:
+        'Infer the user experience level based on their workout history. Call this if experience level is not provided.',
+      inputSchema: inferExperienceLevelInput,
+      execute: async (args) => {
+        inferredExperienceLevel = {
+          inferredLevel: args.inferredLevel,
+          confidence: args.confidence,
+          reasoning: args.reasoning,
+          metrics: {
+            totalWorkouts: input.workoutHistory?.totalWorkouts || 0,
+            averageVolumePerSession:
+              input.workoutHistory?.avgSetsPerSession || 0,
+            exerciseVariety: input.workoutHistory?.topExercises.length || 0,
+            trainingConsistencyWeeks: input.workoutHistory?.totalWeeks || 0,
+            hasProgressiveOverload: false,
+          },
+        };
+        return `Experience level inferred as ${args.inferredLevel}. Proceed with program generation.`;
+      },
+    }),
+    select_exercises: tool({
+      description:
+        'Select exercises from the existing library to use in the program. Always prefer existing exercises over creating new ones.',
+      inputSchema: selectExercisesInput,
+      execute: async (args) => {
+        for (const sel of args.selections) {
+          selectedExercises.push({
+            name: sel.exercise_name,
+            reason: sel.reason,
+          });
         }
-
-        case 'select_exercises': {
-          const selections = args.selections as Array<{
-            exercise_name: string;
-            reason?: string;
-          }>;
-          for (const sel of selections) {
-            selectedExercises.push({
-              name: sel.exercise_name,
-              reason: sel.reason,
-            });
-          }
-          resultText = `Selected ${selections.length} exercises from library: ${selections.map((s) => s.exercise_name).join(', ')}`;
-          break;
+        return `Selected ${args.selections.length} exercises from library: ${args.selections
+          .map((s) => s.exercise_name)
+          .join(', ')}`;
+      },
+    }),
+    create_exercises: tool({
+      description:
+        'Create new exercises in the user exercise library. Call this when the program requires exercises that do not exist in the library.',
+      inputSchema: createExercisesInput,
+      execute: async (args) => {
+        for (const ex of args.exercises) {
+          exercisesToCreate.push(ex);
         }
-
-        case 'create_exercises': {
-          const exercises = args.exercises as AIExerciseResponse[];
-          for (const ex of exercises) {
-            exercisesToCreate.push(ex);
-          }
-          resultText = `Queued ${exercises.length} new exercises for creation: ${exercises.map((e) => e.name).join(', ')}`;
-          break;
-        }
-
-        case 'generate_program': {
-          program = {
-            programName: args.programName as string,
-            programDescription: args.programDescription as string,
-            sessions: (
-              args.sessions as Array<{
-                name: string;
-                dayOfWeek?: number;
-                sessionTimeMinutes?: number;
-                exercises: Array<{
-                  name: string;
-                  targetSets: number;
-                  targetRepMin: number;
-                  targetRepMax: number;
-                  targetDurationSeconds?: number;
-                  notes?: string;
-                  supersetWith?: string;
-                }>;
-              }>
-            ).map((s) => ({
-              name: s.name,
-              dayOfWeek: s.dayOfWeek ?? null,
-              exercises: s.exercises.map((e) => ({
-                name: e.name,
-                targetSets: e.targetSets,
-                targetRepMin: e.targetRepMin,
-                targetRepMax: e.targetRepMax,
-                targetDurationSeconds: e.targetDurationSeconds,
-                notes: e.notes,
-                supersetWith: e.supersetWith,
-              })),
+        return `Queued ${args.exercises.length} new exercises for creation: ${args.exercises
+          .map((e) => e.name)
+          .join(', ')}`;
+      },
+    }),
+    generate_program: tool({
+      description:
+        'Generate a complete workout program with sessions and exercises. Call this after selecting/creating all needed exercises.',
+      inputSchema: generateProgramInput,
+      execute: async (args) => {
+        program = {
+          programName: args.programName,
+          programDescription: args.programDescription,
+          sessions: args.sessions.map((s) => ({
+            name: s.name,
+            dayOfWeek: s.dayOfWeek ?? null,
+            exercises: s.exercises.map((e) => ({
+              name: e.name,
+              targetSets: e.targetSets,
+              targetRepMin: e.targetRepMin,
+              targetRepMax: e.targetRepMax,
+              targetDurationSeconds: e.targetDurationSeconds,
+              notes: e.notes,
+              supersetWith: e.supersetWith,
             })),
-            weeklyVolumeSummary: args.weeklyVolumeSummary as {
-              totalSets: number;
-              muscleGroupBreakdown: Record<string, number>;
-            },
-            recommendations: args.recommendations as string[],
-            experienceLevel: args.experienceLevel as ExperienceLevel,
-          };
-          resultText = `Program "${args.programName}" generated successfully with ${(args.sessions as unknown[]).length} sessions.`;
-          break;
-        }
+          })),
+          weeklyVolumeSummary: args.weeklyVolumeSummary,
+          recommendations: args.recommendations,
+          experienceLevel: args.experienceLevel as ExperienceLevel,
+        };
+        return `Program "${args.programName}" generated successfully with ${args.sessions.length} sessions.`;
+      },
+    }),
+  };
 
-        default:
-          resultText = `Unknown function: ${functionName}`;
-      }
-
-      conversation.push({
-        type: 'function_call_output',
-        call_id: call.call_id,
-        output: JSON.stringify({ result: resultText }),
-      });
-    }
-
-    // If the model already produced the final program, we can stop now —
-    // no need to round-trip another turn just to hear "done."
-    if (program) {
-      break;
-    }
-  }
+  // stopWhen short-circuits the loop the moment generate_program fires —
+  // no extra round-trip just to hear "done." The 10-step cap is a fallback
+  // if the model never calls generate_program.
+  await respond({
+    instructions: systemPrompt,
+    prompt: userPrompt,
+    tools,
+    maxSteps: 10,
+  });
 
   if (!program) {
     throw new Error('AI did not generate a program. Please try again.');

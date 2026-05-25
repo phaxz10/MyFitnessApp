@@ -74,7 +74,10 @@ export const onboardingGoalSchema = z.object({
 });
 
 export const onboardingApiSchema = z.object({
+  aiProvider: z.enum(['openai', 'anthropic', 'google']).optional(),
+  aiModel: z.string().optional(),
   apiKey: z.string().optional(),
+  proxyUrl: z.string().optional(),
 });
 
 export const onboardingTargetsSchema = z.object({
@@ -101,7 +104,10 @@ export const onboardingSchema = z.object({
   weightKg: z.string().min(1, 'Weight is required'),
   activityLevel: z.enum(['sedentary', 'light', 'moderate', 'active']),
   goal: z.enum(['bulk', 'lean_bulk', 'recomp', 'cut', 'maintain']),
+  aiProvider: z.enum(['openai', 'anthropic', 'google']).optional(),
+  aiModel: z.string().optional(),
   apiKey: z.string().optional(),
+  proxyUrl: z.string().optional(),
   targets: z.object({
     calories: z.number(),
     protein: z.number(),
@@ -129,6 +135,8 @@ export const goalsFormSchema = z.object({
 });
 
 export const apiKeyFormSchema = z.object({
+  aiProvider: z.enum(['openai', 'anthropic', 'google']).optional(),
+  aiModel: z.string().optional(),
   apiKey: z.string().optional(),
   proxyUrl: z
     .string()

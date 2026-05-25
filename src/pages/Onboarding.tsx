@@ -5,7 +5,9 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { MACRO_PALETTE } from '../components/nutrition';
+import { AISetupForm } from '../components/settings/AISetupForm';
 import { Button, Input } from '../components/ui';
+import { DEFAULT_MODEL_BY_PROVIDER } from '../constants/aiProviders';
 import { useAppStore } from '../hooks/useAppStore';
 import { useProfile } from '../hooks/useProfile';
 import { useWeight } from '../hooks/useWeight';
@@ -17,6 +19,7 @@ import {
 } from '../services/coaching/nutritionCoach';
 import { signIn } from '../services/googleAuth';
 import { hasRemoteBackup } from '../services/googleDrive';
+import type { AIProvider } from '../types';
 import { calculateAgeFromBirthdate, formatDate } from '../utils/date';
 
 type Step =
@@ -75,7 +78,10 @@ export function Onboarding() {
       weightKg: '',
       activityLevel: 'moderate',
       goal: 'lean_bulk',
+      aiProvider: undefined,
+      aiModel: undefined,
       apiKey: '',
+      proxyUrl: '',
       targets: {
         calories: 2000,
         protein: 150,
@@ -89,6 +95,10 @@ export function Onboarding() {
   const activityLevel = watch('activityLevel');
   const goal = watch('goal');
   const targets = watch('targets');
+  const aiProvider = watch('aiProvider');
+  const aiModel = watch('aiModel');
+  const apiKey = watch('apiKey') ?? '';
+  const proxyUrl = watch('proxyUrl') ?? '';
 
   const handleNext = async () => {
     setError(null);
@@ -160,9 +170,14 @@ export function Onboarding() {
     const values = getValues();
     const profile = buildTargetProfile();
     try {
-      if (values.apiKey) {
-        // Seed the API key in the store so the stateless aiClient can read it.
-        // The full profile is created right after this step completes.
+      const hasFullAISetup = !!(
+        values.aiProvider &&
+        values.aiModel &&
+        values.apiKey
+      );
+      if (hasFullAISetup) {
+        // Seed the active profile in the store so the stateless aiClient can
+        // read it. The full DB profile row is created right after this step.
         useAppStore.setState({
           userProfile: {
             id: 0,
@@ -175,8 +190,13 @@ export function Onboarding() {
             protein_target_g: 0,
             carbs_target_g: 0,
             fat_target_g: 0,
-            openai_api_key: values.apiKey,
-            openai_proxy_url: null,
+            ai_provider: values.aiProvider as AIProvider,
+            ai_model: values.aiModel as string,
+            ai_api_key: values.apiKey ?? null,
+            ai_proxy_url:
+              values.aiProvider === 'openai' && values.proxyUrl?.trim()
+                ? values.proxyUrl.trim()
+                : null,
             created_at: '',
             updated_at: '',
           },
@@ -195,6 +215,11 @@ export function Onboarding() {
 
   const saveProfile = async () => {
     const values = getValues();
+    // If the user picked a provider but skipped the key (or vice versa),
+    // fall back to defaults so the DB row stays valid. The capability check
+    // gates AI features on having all three.
+    const provider: AIProvider = values.aiProvider ?? 'openai';
+    const model = values.aiModel ?? DEFAULT_MODEL_BY_PROVIDER[provider];
     try {
       await createProfile({
         birthdate: values.birthdate,
@@ -206,8 +231,13 @@ export function Onboarding() {
         protein_target_g: values.targets.protein,
         carbs_target_g: values.targets.carbs,
         fat_target_g: values.targets.fat,
-        openai_api_key: values.apiKey || null,
-        openai_proxy_url: null,
+        ai_provider: provider,
+        ai_model: model,
+        ai_api_key: values.apiKey || null,
+        ai_proxy_url:
+          provider === 'openai' && values.proxyUrl?.trim()
+            ? values.proxyUrl.trim()
+            : null,
       });
 
       // Add initial weight log
@@ -456,28 +486,24 @@ export function Onboarding() {
           </div>
         )}
 
-        {/* API Key Step */}
+        {/* AI Setup Step */}
         {step === 'api' && (
           <div>
             <h2 className="text-2xl font-bold text-white mb-6">AI Setup</h2>
-            <p className="text-slate-400 mb-4">
-              Enter your OpenAI API key to enable AI features like food analysis
-              and smart recommendations.
-            </p>
-            <Input
-              label="OpenAI API Key"
-              type="password"
-              {...register('apiKey')}
-              placeholder="Enter your API key"
+            <AISetupForm
+              value={{
+                provider: aiProvider,
+                model: aiModel,
+                apiKey,
+                proxyUrl,
+              }}
+              onChange={(next) => {
+                setValue('aiProvider', next.provider);
+                setValue('aiModel', next.model);
+                setValue('apiKey', next.apiKey);
+                setValue('proxyUrl', next.proxyUrl);
+              }}
             />
-            <a
-              href="https://platform.openai.com/api-keys"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-400 text-sm hover:underline mt-2 inline-block"
-            >
-              Get your API key
-            </a>
             <p className="text-slate-500 text-sm mt-4">
               You can skip this and add it later in Settings.
             </p>
@@ -493,7 +519,7 @@ export function Onboarding() {
               <Button
                 onClick={handleNext}
                 className="flex-1"
-                disabled={!watch('apiKey')}
+                disabled={!aiProvider || !aiModel || !apiKey}
               >
                 Continue
               </Button>

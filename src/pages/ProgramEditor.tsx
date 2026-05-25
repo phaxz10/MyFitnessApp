@@ -717,7 +717,17 @@ export function ProgramEditor() {
       const generateSupersetIdForPair = () =>
         `ss-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-      // Apply the optimized program to the form
+      // Apply the optimized program to the form.
+      //
+      // Exercises returned by the optimizer must resolve to a row in the
+      // user's library before they can be saved (program_exercises.exercise_id
+      // is a NOT NULL FK). The previous behaviour silently substituted id=0
+      // for unmatched names, which let the form render fine and then crashed
+      // the save with an opaque FK constraint error. We now filter unmatched
+      // exercises out and surface them so the user knows which ones were
+      // dropped and can re-add manually if needed.
+      const unmatchedNames: string[] = [];
+
       const newSessions = result.sessions.map((session) => {
         // Track superset pairs by name
         const supersetPairs: Record<string, string> = {};
@@ -732,15 +742,15 @@ export function ProgramEditor() {
           }
         }
 
-        return {
-          name: session.name,
-          dayOfWeek: session.dayOfWeek?.toString() ?? '',
-          isExpanded: true,
-          exercises: session.exercises.map((exercise) => {
-            // Find the exercise in library to get ID and type
+        const matchedExercises = session.exercises
+          .map((exercise) => {
             const libraryExercise = allExercises.find(
               (e) => e.name.toLowerCase() === exercise.name.toLowerCase(),
             );
+            if (!libraryExercise) {
+              unmatchedNames.push(exercise.name);
+              return null;
+            }
 
             // Determine superset group ID
             let supersetGroupId: string | null = null;
@@ -751,14 +761,13 @@ export function ProgramEditor() {
               supersetGroupId = supersetPairs[key] || null;
             }
 
-            const exerciseType =
-              libraryExercise?.exercise_type || 'reps_weight';
+            const exerciseType = libraryExercise.exercise_type || 'reps_weight';
             const isDuration =
               exerciseType === 'duration' || exerciseType === 'duration_weight';
 
             return {
-              exerciseId: libraryExercise?.id || 0,
-              exerciseName: libraryExercise?.name || exercise.name,
+              exerciseId: libraryExercise.id,
+              exerciseName: libraryExercise.name,
               exerciseType,
               targetSets: exercise.targetSets,
               targetRepMin: isDuration ? null : exercise.targetRepMin,
@@ -769,7 +778,14 @@ export function ProgramEditor() {
               supersetGroupId,
               notes: exercise.notes || '',
             };
-          }),
+          })
+          .filter(<T,>(x: T | null): x is T => x !== null);
+
+        return {
+          name: session.name,
+          dayOfWeek: session.dayOfWeek?.toString() ?? '',
+          isExpanded: true,
+          exercises: matchedExercises,
         };
       });
 
@@ -782,13 +798,25 @@ export function ProgramEditor() {
 
       setShowOptimizeModal(false);
 
-      // Show recommendations in an alert
+      // Show recommendations and any dropped exercises in a single alert.
+      const messageLines: string[] = ['Optimization complete!'];
+      if (unmatchedNames.length > 0) {
+        const uniqueUnmatched = [...new Set(unmatchedNames)];
+        messageLines.push(
+          '',
+          `Dropped ${uniqueUnmatched.length} exercise(s) not in your library:`,
+          ...uniqueUnmatched.map((n) => `- ${n}`),
+          '',
+          'Add them to your exercise library first, then re-optimize.',
+        );
+      }
       if (result.recommendations && result.recommendations.length > 0) {
+        messageLines.push('', 'Recommendations:');
+        messageLines.push(...result.recommendations.map((r) => `- ${r}`));
+      }
+      if (messageLines.length > 1) {
         setTimeout(() => {
-          alert(
-            'Optimization complete!\n\nRecommendations:\n- ' +
-              result.recommendations.join('\n- '),
-          );
+          alert(messageLines.join('\n'));
         }, 100);
       }
     } catch (error) {

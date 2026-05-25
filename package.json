@@ -14,13 +14,16 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.79",
+    "@ai-sdk/google": "^3.0.79",
+    "@ai-sdk/openai": "^3.0.65",
     "@electric-sql/pglite": "^0.4.5",
     "@hookform/resolvers": "^5.4.0",
     "@tailwindcss/vite": "^4.3.0",
     "@tanstack/react-query": "^5.100.11",
+    "ai": "^6.0.191",
     "date-fns": "^4.2.1",
     "lucide-react": "^1.16.0",
-    "openai": "^6.39.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-hook-form": "^7.76.0",

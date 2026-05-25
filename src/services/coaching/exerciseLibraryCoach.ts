@@ -1,12 +1,16 @@
-import type { Tool } from 'openai/resources/responses/responses';
 import { z } from 'zod';
 import { MUSCLE_GROUPS } from '../../constants/equipment';
 import type { AIExerciseResponse, Exercise } from '../../types';
-import { complete, respond } from '../ai/aiClient';
+import { complete, respond, webSearchTool } from '../ai/aiClient';
 
 // web_search lets the AI look up correct form descriptions, muscle group
 // classifications, and exercise variations from authoritative sources.
-const WEB_SEARCH_TOOL: Tool = { type: 'web_search' };
+// Returns undefined for OpenAI without a proxy — in that case the model
+// answers from its training cutoff.
+function maybeWebSearchTools() {
+  const search = webSearchTool();
+  return search ? { web_search: search } : undefined;
+}
 
 const exerciseTypeEnum = z.enum([
   'reps_weight',
@@ -95,7 +99,7 @@ export async function generateExerciseDetails(
     prompt,
     schema: exerciseDetailsBatchSchema,
     schemaName: 'exercise_details_batch',
-    tools: [WEB_SEARCH_TOOL],
+    tools: maybeWebSearchTools(),
   });
 
   const first = exercises[0];
@@ -114,7 +118,7 @@ export async function generateExerciseDetailsBatch(
     prompt,
     schema: exerciseDetailsBatchSchema,
     schemaName: 'exercise_details_batch',
-    tools: [WEB_SEARCH_TOOL],
+    tools: maybeWebSearchTools(),
   });
   return exercises;
 }
@@ -153,7 +157,7 @@ Return JSON ONLY (no markdown) in this format:
 }`;
 
   const response = await respond({ prompt });
-  const text = response.output_text ?? '';
+  const text = response.text ?? '';
 
   try {
     const cleaned = text

@@ -149,29 +149,30 @@ export async function restoreIfRemoteNewer(): Promise<boolean> {
 // Full backup to Google Drive: called from onboarding restore too
 // ---------------------------------------------------------------------------
 
+// Throws on real failure (network, parse, partial DB restore). Returns false
+// only when there's no remote backup, or the remote backup carries no profile
+// row (i.e. the caller is expected to continue with manual onboarding).
+//
+// Previously this swallowed all errors and silently returned false — which
+// hid mid-restore failures behind "looks fine but exercises are missing".
 export async function restoreFromDrive(): Promise<boolean> {
-  try {
-    const json = await downloadBackupJson();
-    if (!json) return false;
+  const json = await downloadBackupJson();
+  if (!json) return false;
 
-    const backup = JSON.parse(json);
-    const hasProfile =
-      backup.data?.user_profile && backup.data.user_profile.length > 0;
+  const backup = JSON.parse(json);
+  const hasProfile =
+    backup.data?.user_profile && backup.data.user_profile.length > 0;
 
-    await importData(json);
+  await importData(json);
 
-    if (backup.exported_at) {
-      setLastRestoredAt(backup.exported_at);
-    }
-
-    lazyLoadPhotos().catch((err) =>
-      console.warn('Photo lazy-load failed:', err),
-    );
-    return hasProfile;
-  } catch (err) {
-    console.warn('Restore from Drive failed:', err);
-    return false;
+  if (backup.exported_at) {
+    setLastRestoredAt(backup.exported_at);
   }
+
+  lazyLoadPhotos().catch((err) =>
+    console.warn('Photo lazy-load failed:', err),
+  );
+  return hasProfile;
 }
 
 // ---------------------------------------------------------------------------

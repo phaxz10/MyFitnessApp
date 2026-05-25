@@ -1,26 +1,76 @@
+import {
+  APICallError,
+  type LanguageModelResponseMetadata,
+  type LanguageModelUsage,
+  NoObjectGeneratedError,
+  TypeValidationError,
+} from 'ai';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { complete } from './aiClient';
 
+// Mock the high-level ai SDK functions so tests can control responses
+// without round-tripping through a real provider model. Errors stay real
+// (passed through from importActual) so our error-classification path runs
+// against the actual class hierarchy.
+//
+// Note: aiClient routes all schema-bearing calls through generateText +
+// Output.object per Vercel SDK v6 (generateObject was the older API).
 const mocks = vi.hoisted(() => ({
-  create: vi.fn(),
-  OpenAI: vi.fn(),
+  generateText: vi.fn(),
 }));
 
-vi.mock('openai', () => ({
-  default: mocks.OpenAI,
-}));
+vi.mock('ai', async () => {
+  const actual = await vi.importActual<typeof import('ai')>('ai');
+  return {
+    ...actual,
+    generateText: mocks.generateText,
+  };
+});
 
 vi.mock('../../hooks/useAppStore', () => ({
   useAppStore: {
     getState: vi.fn(() => ({
       userProfile: {
-        openai_api_key: 'sk-test',
-        openai_proxy_url: '',
+        ai_provider: 'openai',
+        ai_model: 'gpt-4o',
+        ai_api_key: 'sk-test',
+        ai_proxy_url: null,
       },
     })),
   },
 }));
+
+// vitest's node env provides a partial localStorage stub that's missing
+// removeItem (causes the cache cleanup path to throw). Replace with a real
+// in-memory shim so the cache layer exercises the same code paths it would
+// in the browser.
+class TestStorage {
+  private store = new Map<string, string>();
+  get length() {
+    return this.store.size;
+  }
+  key(i: number) {
+    return [...this.store.keys()][i] ?? null;
+  }
+  getItem(k: string) {
+    return this.store.get(k) ?? null;
+  }
+  setItem(k: string, v: string) {
+    this.store.set(k, v);
+  }
+  removeItem(k: string) {
+    this.store.delete(k);
+  }
+  clear() {
+    this.store.clear();
+  }
+}
+(globalThis as { localStorage?: Storage }).localStorage =
+  new TestStorage() as unknown as Storage;
+
+// Imports MUST come after vi.mock so the mocked 'ai' module is what aiClient
+// pulls in.
+const { complete, respond } = await import('./aiClient');
 
 const foodAnalysisSchema = z.object({
   items: z.array(
@@ -52,51 +102,61 @@ const foodAnalysis = {
       fat_g: 0.5,
     },
   ],
-  total: {
-    calories: 195,
-    protein_g: 4.1,
-    carbs_g: 42,
-    fat_g: 0.5,
-  },
+  total: { calories: 195, protein_g: 4.1, carbs_g: 42, fat_g: 0.5 },
 };
+
+// Stub metadata used by NoObjectGeneratedError's constructor. The class
+// accepts undefined readonly fields, but the ctor signature itself requires
+// values — cast to bypass since these tests don't inspect them.
+const dummyResponseMeta = {
+  id: 'r',
+  timestamp: new Date(),
+  modelId: 'gpt-4o',
+} as unknown as LanguageModelResponseMetadata;
+const dummyUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0,
+} as unknown as LanguageModelUsage;
+
+// Helper: builds a fake NoObjectGeneratedError with a TypeValidationError
+// cause (i.e. "AI returned something that didn't match the schema").
+function makeSchemaMismatchError(): Error {
+  const typeErr = new TypeValidationError({
+    value: { items: 'not-an-array' },
+    cause: new Error('items must be array'),
+  });
+  return new NoObjectGeneratedError({
+    message: 'No object generated',
+    cause: typeErr,
+    text: '{ "items": "not-an-array" }',
+    response: dummyResponseMeta,
+    usage: dummyUsage,
+    finishReason: 'stop',
+  });
+}
+
+// Helper: builds a fake NoObjectGeneratedError with a JSON parse cause.
+function makeParseError(): Error {
+  return new NoObjectGeneratedError({
+    message: 'No object generated',
+    cause: new Error('Unexpected token'),
+    text: 'sorry I cannot answer that',
+    response: dummyResponseMeta,
+    usage: dummyUsage,
+    finishReason: 'stop',
+  });
+}
 
 describe('aiClient.complete', () => {
   beforeEach(() => {
-    mocks.create.mockReset();
-    mocks.OpenAI.mockReset();
-    mocks.OpenAI.mockImplementation(function OpenAIMock() {
-      return {
-        responses: {
-          create: mocks.create,
-        },
-      };
-    });
+    mocks.generateText.mockReset();
   });
 
-  it('parses Responses API output text when the SDK helper field is absent', async () => {
-    mocks.create.mockResolvedValue({
-      object: 'response',
-      output: [
-        {
-          type: 'web_search_call',
-          status: 'completed',
-        },
-        {
-          type: 'message',
-          status: 'completed',
-          content: [
-            {
-              type: 'output_text',
-              text: `Here is the nutritional breakdown:\n\n${JSON.stringify(
-                foodAnalysis,
-                null,
-                2,
-              )}\n\nDetails: [source](https://example.com)`,
-            },
-          ],
-          role: 'assistant',
-        },
-      ],
+  it('returns the typed object on a happy-path schema call', async () => {
+    mocks.generateText.mockResolvedValueOnce({
+      text: '',
+      output: foodAnalysis,
     });
 
     await expect(
@@ -106,108 +166,39 @@ describe('aiClient.complete', () => {
         schemaName: 'food_analysis',
       }),
     ).resolves.toEqual(foodAnalysis);
+
+    expect(mocks.generateText).toHaveBeenCalledTimes(1);
+    const callArgs = mocks.generateText.mock.calls[0][0];
+    expect(callArgs.output).toBeDefined();
   });
 
-  it('does not mistake markdown citation brackets before JSON for the JSON payload', async () => {
-    mocks.create.mockResolvedValue({
-      output_text: `Using [nutrition data](https://example.com), here is the result:\n\n${JSON.stringify(
-        foodAnalysis,
-      )}`,
-      output: [],
+  it('passes tools through alongside Output.object when present', async () => {
+    mocks.generateText.mockResolvedValueOnce({
+      text: '',
+      output: foodAnalysis,
     });
 
+    const fakeTool = { type: 'function' } as unknown as never;
     await expect(
       complete({
         prompt: '150g white rice',
         schema: foodAnalysisSchema,
         schemaName: 'food_analysis',
-      }),
-    ).resolves.toEqual(foodAnalysis);
-  });
-
-  it('skips parseable citation footnotes that do not match the schema', async () => {
-    mocks.create.mockResolvedValue({
-      output_text: `Using source [1], here is the result:\n\n${JSON.stringify(
-        foodAnalysis,
-      )}`,
-      output: [],
-    });
-
-    await expect(
-      complete({
-        prompt: '150g white rice',
-        schema: foodAnalysisSchema,
-        schemaName: 'food_analysis',
-      }),
-    ).resolves.toEqual(foodAnalysis);
-  });
-
-  it('requests structured JSON when a schema is provided', async () => {
-    mocks.create.mockResolvedValue({
-      output_text: JSON.stringify(foodAnalysis),
-      output: [],
-    });
-
-    await complete({
-      prompt: '150g white rice',
-      schema: foodAnalysisSchema,
-      schemaName: 'food_analysis',
-    });
-
-    expect(mocks.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        text: expect.objectContaining({
-          format: expect.objectContaining({
-            name: 'food_analysis',
-            type: 'json_schema',
-          }),
-        }),
-      }),
-    );
-  });
-
-  it('retries once when the first response is unparseable JSON', async () => {
-    // First call returns prose that contains no valid JSON object;
-    // second call returns valid JSON. The retry should succeed.
-    mocks.create
-      .mockResolvedValueOnce({
-        output_text: 'sorry I cannot answer that',
-        output: [],
-      })
-      .mockResolvedValueOnce({
-        output_text: JSON.stringify(foodAnalysis),
-        output: [],
-      });
-
-    await expect(
-      complete({
-        prompt: '150g white rice',
-        schema: foodAnalysisSchema,
-        schemaName: 'food_analysis',
+        tools: { web_search: fakeTool },
       }),
     ).resolves.toEqual(foodAnalysis);
 
-    expect(mocks.create).toHaveBeenCalledTimes(2);
-    const retryCall = mocks.create.mock.calls[1][0];
-    expect(retryCall.instructions).toContain(
-      'previous response did not match',
-    );
+    expect(mocks.generateText).toHaveBeenCalledTimes(1);
+    const callArgs = mocks.generateText.mock.calls[0][0];
+    expect(callArgs.output).toBeDefined();
+    expect(callArgs.tools).toBeDefined();
+    expect(callArgs.stopWhen).toBeDefined();
   });
 
   it('retries once when the first response fails schema validation', async () => {
-    const wrongShape = {
-      items: 'not-an-array',
-      total: { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
-    };
-    mocks.create
-      .mockResolvedValueOnce({
-        output_text: JSON.stringify(wrongShape),
-        output: [],
-      })
-      .mockResolvedValueOnce({
-        output_text: JSON.stringify(foodAnalysis),
-        output: [],
-      });
+    mocks.generateText
+      .mockRejectedValueOnce(makeSchemaMismatchError())
+      .mockResolvedValueOnce({ text: '', output: foodAnalysis });
 
     await expect(
       complete({
@@ -217,12 +208,40 @@ describe('aiClient.complete', () => {
       }),
     ).resolves.toEqual(foodAnalysis);
 
-    expect(mocks.create).toHaveBeenCalledTimes(2);
+    expect(mocks.generateText).toHaveBeenCalledTimes(2);
+    const retryCall = mocks.generateText.mock.calls[1][0];
+    expect(retryCall.system).toContain('previous response did not match');
   });
 
-  it('does not retry on rate_limited or transport errors', async () => {
-    mocks.create.mockRejectedValue(
-      Object.assign(new Error('Too Many Requests'), { status: 429 }),
+  it('retries once when the first response is unparseable JSON', async () => {
+    mocks.generateText
+      .mockRejectedValueOnce(makeParseError())
+      .mockResolvedValueOnce({ text: '', output: foodAnalysis });
+
+    await expect(
+      complete({
+        prompt: '150g white rice',
+        schema: foodAnalysisSchema,
+        schemaName: 'food_analysis',
+      }),
+    ).resolves.toEqual(foodAnalysis);
+
+    expect(mocks.generateText).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry on rate_limited (429)', async () => {
+    mocks.generateText.mockRejectedValue(
+      new APICallError({
+        message: 'Too Many Requests',
+        url: 'https://api.openai.com/v1/chat/completions',
+        requestBodyValues: {},
+        statusCode: 429,
+        responseHeaders: {},
+        responseBody: '',
+        cause: undefined,
+        isRetryable: false,
+        data: undefined,
+      }),
     );
 
     await expect(
@@ -233,15 +252,11 @@ describe('aiClient.complete', () => {
       }),
     ).rejects.toMatchObject({ kind: 'rate_limited' });
 
-    expect(mocks.create).toHaveBeenCalledTimes(1);
+    expect(mocks.generateText).toHaveBeenCalledTimes(1);
   });
 
   it('gives up after the single retry on persistent schema mismatch', async () => {
-    const wrongShape = { items: 'not-an-array' };
-    mocks.create.mockResolvedValue({
-      output_text: JSON.stringify(wrongShape),
-      output: [],
-    });
+    mocks.generateText.mockRejectedValue(makeSchemaMismatchError());
 
     await expect(
       complete({
@@ -251,7 +266,49 @@ describe('aiClient.complete', () => {
       }),
     ).rejects.toMatchObject({ kind: 'schema_mismatch' });
 
-    // 1 initial + 1 retry = 2 calls, no third attempt
-    expect(mocks.create).toHaveBeenCalledTimes(2);
+    expect(mocks.generateText).toHaveBeenCalledTimes(2);
+  });
+
+  it('serves a cache hit without calling the model again', async () => {
+    mocks.generateText.mockResolvedValueOnce({
+      text: '',
+      output: foodAnalysis,
+    });
+
+    const first = await complete({
+      prompt: 'unique-prompt-for-cache-test',
+      schema: foodAnalysisSchema,
+      schemaName: 'food_analysis',
+      cache: { namespace: 'cache_test_namespace' },
+    });
+    expect(first).toEqual(foodAnalysis);
+    expect(mocks.generateText).toHaveBeenCalledTimes(1);
+
+    const second = await complete({
+      prompt: 'unique-prompt-for-cache-test',
+      schema: foodAnalysisSchema,
+      schemaName: 'food_analysis',
+      cache: { namespace: 'cache_test_namespace' },
+    });
+    expect(second).toEqual(foodAnalysis);
+    // No new model call — second hit served from cache.
+    expect(mocks.generateText).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('aiClient.respond', () => {
+  beforeEach(() => {
+    mocks.generateText.mockReset();
+  });
+
+  it('returns the GenerateTextResult shape (text + toolCalls)', async () => {
+    mocks.generateText.mockResolvedValueOnce({
+      text: 'hello world',
+      toolCalls: [],
+      steps: [],
+    });
+
+    const result = await respond({ prompt: 'say hi' });
+    expect(result.text).toBe('hello world');
   });
 });

@@ -2,7 +2,7 @@
 
 A free, open-source, offline-first fitness tracker with AI-powered coaching. Built as a Progressive Web App (PWA) — your data stays in your browser, your AI key stays in your hands.
 
-**BYOK (Bring Your Own Key)** — This app uses your own OpenAI API key for AI features. No accounts, no subscriptions, no data collection. You pay OpenAI directly for what you use (typically $0.01-0.05 per AI interaction).
+**BYOK (Bring Your Own Key)** — This app uses your own API key from your choice of AI provider (OpenAI, Anthropic, or Google). No accounts, no subscriptions, no data collection. You pay your chosen provider directly for what you use (typically $0.01-0.05 per AI interaction).
 
 [Live Demo](https://my-fitness-app-opal.vercel.app) | [Report a Bug](https://github.com/phaxz10/MyFitnessApp/issues)
 
@@ -22,7 +22,7 @@ Most fitness apps either cost $10-20/month, lock your data behind accounts, or s
 
 - **Free forever** — no premium tiers, no feature gates
 - **Your data, your browser** — everything stored locally via PGlite (PostgreSQL in IndexedDB)
-- **Your API key** — AI features use your OpenAI key directly, so you control costs
+- **Your API key, your choice** — pick OpenAI, Anthropic, or Google in Settings; AI features call that provider directly, so you control costs
 - **No backend** — the entire app runs client-side; optional Google Drive backup uses your own Drive
 - **Installable** — works offline as a PWA on any device
 
@@ -86,13 +86,13 @@ Most fitness apps either cost $10-20/month, lock your data behind accounts, or s
 | **State** | Zustand 5 (persisted), TanStack React Query 5 |
 | **Forms** | React Hook Form 7, Zod 4 (validation) |
 | **Database** | PGlite 0.4 (PostgreSQL in IndexedDB) |
-| **AI** | OpenAI SDK 6 (gpt-4o, Responses API) |
+| **AI** | Vercel AI SDK 6 (OpenAI / Anthropic / Google) |
 | **Charts** | Recharts 3 |
 | **Build** | Vite 8, Biome 2 (lint + format) |
 | **PWA** | Workbox 7, vite-plugin-pwa |
 | **Testing** | Vitest 4 (integration tests with real PGlite) |
 | **Backup** | Google Drive API (client-side OAuth) |
-| **CORS Proxy** | Cloudflare Worker (optional, for Responses API) |
+| **CORS Proxy** | Cloudflare Worker (optional, advanced — only OpenAI + web_search) |
 
 ## Getting Started
 
@@ -114,13 +114,17 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 ### Configure AI Features
 
-1. Get an [OpenAI API key](https://platform.openai.com/api-keys)
-2. Open Settings in the app
-3. Paste your API key
+1. Open **Settings → AI Settings** (or do it in onboarding)
+2. Pick a provider: **OpenAI**, **Anthropic**, or **Google**
+3. Pick a model from that provider's curated list
+4. Paste your API key:
+   - OpenAI: [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+   - Anthropic: [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
+   - Google: [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
 
-**About the CORS proxy:** The OpenAI Responses API doesn't include CORS headers, so browser-direct calls fail. You have two options:
-- **Deploy the included Cloudflare Worker** (recommended, free tier) — see [worker/README.md](worker/) for setup
-- **Use without proxy** — some AI features that don't require Responses API will still work
+All three work browser-direct — no proxy required for the default experience.
+
+**Advanced: OpenAI web_search.** OpenAI's built-in `web_search` tool only lives on the Responses API, which omits CORS headers in browsers. If you want web search on OpenAI specifically, deploy the included Cloudflare Worker (see [worker/README.md](worker/)) and paste the URL into the **Advanced: OpenAI proxy URL** field in Settings. Anthropic and Google have their own web-search tools that work without any proxy.
 
 ### Configure Google Drive Backup
 
@@ -188,9 +192,10 @@ AI Client (stateless transport + caching + error classification)
 OpenAI Responses API (via optional CORS proxy)
 ```
 
-- **AI Client** (`src/services/ai/aiClient.ts`) — stateless, reads the API key from Zustand on each call. Two entry points: `complete<T>()` for single-turn with optional Zod validation, `respond()` for multi-turn/tool-calling conversations.
+- **AI Client** (`src/services/ai/aiClient.ts`) — stateless wrapper around the Vercel AI SDK. Reads the active provider + model + key from Zustand on each call. Two entry points: `complete<T>()` for single-turn with optional Zod validation, `respond()` for free-form text and tool-orchestrated calls. Cache, one-shot retry, and `AIError` taxonomy all live here.
 - **Coaching Modules** (`src/services/coaching/`) — five domain-specific modules that own prompts and response schemas. Each module knows about fitness; the AI client does not.
-- **AI Capability** — a configuration concept ("is a key configured?"), separate from network state ("are we online?"). See [ADR-0001](docs/adr/0001-ai-capability-is-configuration-not-call-readiness.md).
+- **AI Capability** — a configuration concept ("is a provider+model+key triple configured?"), separate from network state. See [ADR-0001](docs/adr/0001-ai-capability-is-configuration-not-call-readiness.md).
+- **Multi-provider** — Vercel AI SDK abstracts OpenAI, Anthropic, and Google behind one interface.
 
 ### Database
 
@@ -267,11 +272,11 @@ Contributions are welcome! Here's how to get started:
 - **No telemetry** — zero analytics, no tracking, no data collection
 - **No accounts** — no sign-up, no email, no passwords
 - **Local-first** — all data stored in your browser's IndexedDB
-- **BYOK** — your OpenAI API key is stored in PGlite, never transmitted to any server except OpenAI
+- **BYOK** — your AI API key is stored in PGlite, never transmitted to any server except your chosen AI provider
 - **Export safety** — API keys are automatically stripped from JSON exports
 - **Drive scope** — Google OAuth uses `drive.file` scope (can only access files the app created)
 
 
 ---
 
-Built with React, PGlite, and the OpenAI API. No backend required.
+Built with React, PGlite, and the Vercel AI SDK. No backend required.

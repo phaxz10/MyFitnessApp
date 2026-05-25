@@ -1,17 +1,18 @@
-import type { Tool } from 'openai/resources/responses/responses';
 import { z } from 'zod';
 import type {
   AIFoodAnalysisResponse,
   AIFoodItem,
   AITargetResponse,
 } from '../../types';
-import { complete } from '../ai/aiClient';
+import { complete, webSearchTool } from '../ai/aiClient';
 
-// web_search enables the AI to look up branded foods, restaurant menus, and
-// regional dishes for accurate nutritional data instead of guessing. Enabled
-// for both text and image analyzers — branded packaging in a photo (a Coke
-// can, a McDonald's wrapper) benefits from the same lookup capability.
-const WEB_SEARCH_TOOL: Tool = { type: 'web_search' };
+// Helper: builds a tools map with web search included only when the active
+// provider exposes one in the current configuration. Returns undefined when
+// the model would have no tools to call (so generateText skips the tool path).
+function maybeWebSearchTools() {
+  const search = webSearchTool();
+  return search ? { web_search: search } : undefined;
+}
 
 const foodItemSchema = z.object({
   name: z.string().min(1),
@@ -31,8 +32,6 @@ const foodItemSchema = z.object({
 // structured-output mode rejects optional fields — every property must appear
 // in `required`. Using .nullable() means the AI must always emit the key,
 // either as null (when input IS food) or a refusal string (when it isn't).
-// The .optional() variant would silently fall back to prompt-guided JSON
-// because the SDK helper throws on optional-without-nullable.
 const foodAnalysisSchema = z.object({
   items: z.array(foodItemSchema),
   total: z.object({
@@ -69,7 +68,7 @@ If the description is clearly NOT food or drink (e.g. "my dog", "happy thoughts"
   "not_food_reason": "brief explanation of what was provided instead of food"
 }
 
-For valid food descriptions, use web search for branded/restaurant/package items when useful. Prefer official nutrition facts, USDA-style references, or common serving databases. If exact data is unavailable, use a conservative generic estimate.
+For valid food descriptions, use web search for branded/restaurant/package items when available. Prefer official nutrition facts, USDA-style references, or common serving databases. If exact data is unavailable, use a conservative generic estimate.
 
 Return valid JSON only. All numeric values must be pre-computed numbers (e.g. 279, not "1.5 * 186"). No arithmetic expressions. No markdown code blocks.
 
@@ -102,8 +101,7 @@ Return format for food:
     prompt,
     schema: foodAnalysisSchema,
     schemaName: 'food_analysis',
-    tools: [WEB_SEARCH_TOOL],
-    tool_choice: 'auto',
+    tools: maybeWebSearchTools(),
     temperature: 0.2,
   }).then(normalizeFoodAnalysis);
 }
@@ -153,19 +151,17 @@ Return JSON format only, no markdown code blocks. Return format for food:
       {
         role: 'user',
         content: [
-          { type: 'input_text', text: prompt },
+          { type: 'text', text: prompt },
           {
-            type: 'input_image',
-            image_url: `data:${mimeType};base64,${imageBase64}`,
-            detail: 'auto',
+            type: 'image',
+            image: `data:${mimeType};base64,${imageBase64}`,
           },
         ],
       },
     ],
     schema: foodAnalysisSchema,
     schemaName: 'food_analysis',
-    tools: [WEB_SEARCH_TOOL],
-    tool_choice: 'auto',
+    tools: maybeWebSearchTools(),
     temperature: 0.2,
   }).then(normalizeFoodAnalysis);
 }
@@ -285,7 +281,10 @@ export function weightForMacros(profile: TargetProfile): number {
 // the refusal reason so the UI can render a friendly message. Accepts both
 // `null` (from the schema-validated structured output) and `undefined` (from
 // legacy callers / tests) for not_food_reason, normalizing to undefined.
-type NormalizableFoodAnalysis = Omit<AIFoodAnalysisResponse, 'not_food_reason'> & {
+type NormalizableFoodAnalysis = Omit<
+  AIFoodAnalysisResponse,
+  'not_food_reason'
+> & {
   not_food_reason?: string | null;
 };
 

@@ -223,6 +223,21 @@ const migrations: Migration[] = [
       );
     },
   },
+  {
+    // Multi-provider AI: rename openai_* columns to ai_* and add provider/model
+    // selectors. Existing rows backfill to ('openai', 'gpt-4o') so users see
+    // no behaviour change. See ADR-0005.
+    version: 3,
+    up: async (db) => {
+      await db.exec(`
+        ALTER TABLE user_profile RENAME COLUMN openai_api_key TO ai_api_key;
+        ALTER TABLE user_profile RENAME COLUMN openai_proxy_url TO ai_proxy_url;
+        ALTER TABLE user_profile ADD COLUMN ai_provider TEXT NOT NULL DEFAULT 'openai'
+          CHECK (ai_provider IN ('openai', 'anthropic', 'google'));
+        ALTER TABLE user_profile ADD COLUMN ai_model TEXT NOT NULL DEFAULT 'gpt-4o';
+      `);
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------

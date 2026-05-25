@@ -1,31 +1,50 @@
-import OpenAI from 'openai';
-import { zodTextFormat } from 'openai/helpers/zod';
-import type {
-  Response as OpenAIResponse,
-  ResponseInputItem,
-  ResponseTextConfig,
-  Tool,
-} from 'openai/resources/responses/responses';
+import { createAnthropic } from '@ai-sdk/anthropic';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createOpenAI } from '@ai-sdk/openai';
+import {
+  APICallError,
+  type GenerateTextResult,
+  generateText,
+  JSONParseError,
+  type LanguageModel,
+  type ModelMessage,
+  NoObjectGeneratedError,
+  Output,
+  stepCountIs,
+  type Tool,
+  type ToolSet,
+  TypeValidationError,
+} from 'ai';
 import type { ZodType } from 'zod';
 import { useAppStore } from '../../hooks/useAppStore';
+import type { AIProvider } from '../../types';
 import { AIError } from './AIError';
 
-const DEFAULT_MODEL = 'gpt-4o';
-
-// Two-tier cache: in-memory Map (instant) + localStorage (survives page reload).
-// Key format: "{prefix}.{namespace}.{fnv1a-hash-of-inputs}"
+// ---------------------------------------------------------------------------
+// Caching constants — see CONTEXT.md › Wrapper.
+// ---------------------------------------------------------------------------
 const CACHE_PREFIX = 'mypersonalfitness.aiResponseCache.v1';
 const DEFAULT_CACHE_TTL_MS = 1000 * 60 * 60 * 24; // 24 hours
 const MAX_MEMORY_CACHE_SIZE = 100;
+const DEFAULT_MAX_STEPS = 10;
+
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
+export type Prompt = string | ModelMessage[];
 
 export interface RespondOptions {
-  prompt: string | ResponseInputItem[];
+  prompt: Prompt;
+  /** System instruction (maps to Vercel's `system`). */
   instructions?: string;
-  tools?: Tool[];
-  tool_choice?: 'auto' | 'required' | 'none';
+  /** Tool definitions built via `tool()` from 'ai'. */
+  tools?: ToolSet;
+  /** Override the user's configured model for this call. */
   model?: string;
   temperature?: number;
-  text?: ResponseTextConfig;
+  /** Maximum tool-orchestration steps. Defaults to 10. */
+  maxSteps?: number;
 }
 
 export interface AICacheOptions {
@@ -35,60 +54,123 @@ export interface AICacheOptions {
 
 export interface CompleteOptions<T> extends RespondOptions {
   schema?: ZodType<T>;
+  /** Stable name for the schema; used as the structured-output name. */
   schemaName?: string;
   cache?: AICacheOptions;
 }
 
-type Client = OpenAI;
-// We never request streaming, so narrow the union to the non-stream Response.
-export type RawResponse = OpenAIResponse;
+// Vercel's GenerateTextResult is the wrapper-level "raw response" — coaches
+// that need text, tool calls, or steps reach into this type. ToolSet is `any`
+// because callers can pass arbitrary tool maps.
+// biome-ignore lint/suspicious/noExplicitAny: tools shape is caller-specific.
+export type RawResponse = GenerateTextResult<any, never>;
 
-function buildClient(): Client {
+// ---------------------------------------------------------------------------
+// Provider factory — stateless, reads store on each call (ADR-0002).
+// ---------------------------------------------------------------------------
+
+interface ActiveConfig {
+  provider: AIProvider;
+  model: string;
+  apiKey: string;
+  proxyUrl: string | undefined;
+}
+
+function readActiveConfig(modelOverride?: string): ActiveConfig {
   const profile = useAppStore.getState().userProfile;
-  const apiKey = profile?.openai_api_key;
-  if (!apiKey) {
-    throw new AIError('unavailable', 'No OpenAI API key configured');
+  if (!profile?.ai_api_key) {
+    throw new AIError('unavailable', 'No AI API key configured');
   }
-  // If a proxy URL is configured (see worker/README.md), route through it.
-  // The proxy adds CORS headers OpenAI omits on /v1/responses. Without a
-  // proxy, calls to the Responses API fail with CORS in browsers.
-  const proxyUrl = profile?.openai_proxy_url?.trim();
-  const baseURL = proxyUrl ? `${proxyUrl.replace(/\/+$/, '')}/v1` : undefined;
-  return new OpenAI({ apiKey, baseURL, dangerouslyAllowBrowser: true });
+  return {
+    provider: profile.ai_provider,
+    model: modelOverride ?? profile.ai_model,
+    apiKey: profile.ai_api_key,
+    proxyUrl: profile.ai_proxy_url?.trim() || undefined,
+  };
 }
 
-// Lower-level escape hatch: returns the raw SDK response so coaches can
-// inspect tool calls, drive multi-turn conversations, etc.
-export async function respond(opts: RespondOptions): Promise<RawResponse> {
-  const client = buildClient();
-  try {
-    const response = await client.responses.create({
-      model: opts.model ?? DEFAULT_MODEL,
-      input: opts.prompt,
-      instructions: opts.instructions,
-      tools: opts.tools,
-      tool_choice: opts.tool_choice,
-      temperature: opts.temperature,
-      text: opts.text,
-      stream: false,
-    });
-    return response;
-  } catch (err) {
-    throw classifyTransportError(err);
+function buildLanguageModel(cfg: ActiveConfig): LanguageModel {
+  switch (cfg.provider) {
+    case 'openai': {
+      const baseURL = cfg.proxyUrl
+        ? `${cfg.proxyUrl.replace(/\/+$/, '')}/v1`
+        : undefined;
+      const openai = createOpenAI({ apiKey: cfg.apiKey, baseURL });
+      // Proxy configured → use the Responses API path so openai.tools.webSearch()
+      // works. Without a proxy, plain chat completions has no CORS issue.
+      return cfg.proxyUrl ? openai.responses(cfg.model) : openai(cfg.model);
+    }
+    case 'anthropic': {
+      // Anthropic browser-direct only works with this header set.
+      const anthropic = createAnthropic({
+        apiKey: cfg.apiKey,
+        headers: { 'anthropic-dangerous-direct-browser-access': 'true' },
+      });
+      return anthropic(cfg.model);
+    }
+    case 'google': {
+      const google = createGoogleGenerativeAI({ apiKey: cfg.apiKey });
+      return google(cfg.model);
+    }
   }
 }
+
+// webSearchTool returns the active provider's native web-search tool, or
+// `undefined` when the provider can't expose one in the current config.
+// OpenAI requires the Responses API (proxy) to use webSearch.
+export function webSearchTool(): Tool | undefined {
+  const profile = useAppStore.getState().userProfile;
+  if (!profile?.ai_api_key) return undefined;
+  const apiKey = profile.ai_api_key;
+  const proxyUrl = profile.ai_proxy_url?.trim() || undefined;
+
+  switch (profile.ai_provider) {
+    case 'openai': {
+      if (!proxyUrl) return undefined;
+      const baseURL = `${proxyUrl.replace(/\/+$/, '')}/v1`;
+      return createOpenAI({ apiKey, baseURL }).tools.webSearch({});
+    }
+    case 'anthropic':
+      return createAnthropic({
+        apiKey,
+        headers: { 'anthropic-dangerous-direct-browser-access': 'true' },
+      }).tools.webSearch_20250305({});
+    case 'google':
+      return createGoogleGenerativeAI({ apiKey }).tools.googleSearch({});
+  }
+}
+
+// ---------------------------------------------------------------------------
+// respond() — free-form text or tool-orchestrated calls.
+// ---------------------------------------------------------------------------
+
+export async function respond(opts: RespondOptions): Promise<RawResponse> {
+  const cfg = readActiveConfig(opts.model);
+  const model = buildLanguageModel(cfg);
+  try {
+    return (await generateText({
+      model,
+      system: opts.instructions,
+      ...promptOrMessages(opts.prompt),
+      tools: opts.tools,
+      temperature: opts.temperature,
+      stopWhen: opts.tools
+        ? stepCountIs(opts.maxSteps ?? DEFAULT_MAX_STEPS)
+        : undefined,
+    })) as RawResponse;
+  } catch (err) {
+    throw classifyError(err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// complete<T>() — single-turn JSON with optional Zod validation, cache, and
+// one-shot retry on parse drift (see ADR-0003).
+// ---------------------------------------------------------------------------
 
 const RETRY_INSTRUCTION =
   'IMPORTANT: Your previous response did not match the required JSON schema. Return ONLY a single valid JSON object matching the exact format specified. No markdown code fences, no prose before or after, no arithmetic expressions, no comments. Every required field must be present.';
 
-// Single-turn JSON-parse helper with optional Zod validation.
-//
-// Retries once on parse_failed/schema_mismatch with a stricter instruction
-// preamble and cache bypass — LLMs occasionally drift on the first attempt
-// (citation noise, missed field, code fences) but a second pass with explicit
-// "your last response was wrong" feedback usually succeeds. Other failure
-// kinds (rate_limited, timeout, unavailable, server_error) are not retried
-// because retrying won't help and adds latency.
 export async function complete<T = unknown>(
   opts: CompleteOptions<T>,
 ): Promise<T> {
@@ -117,10 +199,8 @@ export async function complete<T = unknown>(
   }
 }
 
-async function completeOnce<T = unknown>(
-  opts: CompleteOptions<T>,
-): Promise<T> {
-  const model = opts.model ?? DEFAULT_MODEL;
+async function completeOnce<T = unknown>(opts: CompleteOptions<T>): Promise<T> {
+  const cfg = readActiveConfig(opts.model);
   const schemaName = toSchemaName(
     opts.schemaName ?? opts.cache?.namespace ?? 'ai_response',
   );
@@ -128,9 +208,10 @@ async function completeOnce<T = unknown>(
     ? buildCacheKey(opts.cache.namespace, {
         prompt: opts.prompt,
         instructions: opts.instructions,
-        tools: opts.tools,
-        tool_choice: opts.tool_choice,
-        model,
+        toolNames: opts.tools ? Object.keys(opts.tools).sort() : undefined,
+        provider: cfg.provider,
+        model: cfg.model,
+        proxyUsed: !!cfg.proxyUrl,
         temperature: opts.temperature,
         schemaName,
       })
@@ -153,38 +234,98 @@ async function completeOnce<T = unknown>(
     }
   }
 
-  const response = await respond({
-    ...opts,
-    model,
-    text: buildResponseTextConfig(opts.schema, schemaName, opts.text),
-  });
-  const text = responseText(response);
-  const cleaned = extractJson(stripCodeFences(text), opts.schema);
+  const model = buildLanguageModel(cfg);
 
-  let parsed: unknown;
+  // Vercel SDK v6 unifies structured output under generateText + Output.object
+  // (generateObject is the older API; the docs steer everything through this
+  // path). The structured-output step counts toward stopWhen, so when tools
+  // are present we budget one extra step for the final formatted output.
+  const baseStopWhen = opts.tools
+    ? stepCountIs((opts.maxSteps ?? DEFAULT_MAX_STEPS) + (opts.schema ? 1 : 0))
+    : undefined;
+
   try {
-    parsed = JSON.parse(cleaned);
+    let value: unknown;
+
+    if (opts.schema) {
+      const result = await generateText({
+        model,
+        system: opts.instructions,
+        ...promptOrMessages(opts.prompt),
+        tools: opts.tools,
+        temperature: opts.temperature,
+        stopWhen: baseStopWhen,
+        output: Output.object({ schema: opts.schema, name: schemaName }),
+      });
+      value = result.output;
+    } else {
+      // Schemaless JSON path — parse the model's text ourselves.
+      const result = await generateText({
+        model,
+        system: opts.instructions,
+        ...promptOrMessages(opts.prompt),
+        tools: opts.tools,
+        temperature: opts.temperature,
+        stopWhen: baseStopWhen,
+      });
+      try {
+        value = JSON.parse(stripCodeFences(result.text));
+      } catch (err) {
+        throw new AIError('parse_failed', err);
+      }
+    }
+
+    const data = validateParsed(value, opts.schema);
+    if (cacheKey) writeCache(cacheKey, data);
+    return data;
   } catch (err) {
-    throw new AIError('parse_failed', err);
+    throw classifyError(err);
   }
-
-  const data = validateParsed(parsed, opts.schema);
-
-  if (cacheKey) {
-    writeCache(cacheKey, data);
-  }
-
-  return data;
 }
 
-function classifyTransportError(err: unknown): AIError {
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function promptOrMessages(
+  p: Prompt,
+): { prompt: string } | { messages: ModelMessage[] } {
+  return typeof p === 'string' ? { prompt: p } : { messages: p };
+}
+
+function classifyError(err: unknown): AIError {
   if (err instanceof AIError) return err;
-  const status = (err as { status?: number } | null)?.status;
-  if (status === 429) return new AIError('rate_limited', err);
-  if (typeof status === 'number' && status >= 500)
-    return new AIError('server_error', err);
-  if (err instanceof Error && err.name === 'AbortError')
+
+  // Vercel's structured-output errors collapse to parse/schema mismatch.
+  if (NoObjectGeneratedError.isInstance(err)) {
+    // NoObjectGeneratedError wraps either a JSON parse failure or a Zod
+    // mismatch in `cause`. Distinguish so the retry layer can branch.
+    const cause = (err as { cause?: unknown }).cause;
+    if (cause && TypeValidationError.isInstance(cause)) {
+      return new AIError('schema_mismatch', err);
+    }
+    return new AIError('parse_failed', err);
+  }
+  if (TypeValidationError.isInstance(err)) {
+    return new AIError('schema_mismatch', err);
+  }
+  if (JSONParseError.isInstance(err)) {
+    return new AIError('parse_failed', err);
+  }
+
+  if (APICallError.isInstance(err)) {
+    const status = err.statusCode ?? 0;
+    if (status === 429) return new AIError('rate_limited', err);
+    if (status >= 500) return new AIError('server_error', err);
+    if (status === 401 || status === 403) {
+      return new AIError('unavailable', err);
+    }
+  }
+
+  if (err instanceof Error && err.name === 'AbortError') {
     return new AIError('timeout', err);
+  }
+
   return new AIError('server_error', err);
 }
 
@@ -195,125 +336,13 @@ function stripCodeFences(text: string): string {
     .trim();
 }
 
-function responseText(response: RawResponse): string {
-  if (typeof response.output_text === 'string' && response.output_text.length) {
-    return response.output_text;
-  }
-
-  const output = (response as { output?: unknown }).output;
-  if (!Array.isArray(output)) return '';
-
-  const texts: string[] = [];
-  for (const item of output) {
-    if (!isObject(item) || item.type !== 'message') continue;
-    const content = item.content;
-    if (!Array.isArray(content)) continue;
-
-    for (const part of content) {
-      if (!isObject(part) || part.type !== 'output_text') continue;
-      if (typeof part.text === 'string') texts.push(part.text);
-    }
-  }
-
-  return texts.join('');
-}
-
-// LLMs sometimes wrap JSON in prose ("Here is the result: {...}") or include
-// markdown citations before/after the payload. Scan for the first balanced
-// object/array that actually parses as JSON and, when a schema exists, matches
-// that schema.
-function extractJson<T>(text: string, schema: ZodType<T> | undefined): string {
-  let firstJsonCandidate: string | null = null;
-
-  for (let start = 0; start < text.length; start++) {
-    if (text[start] !== '{' && text[start] !== '[') continue;
-    const end = findJsonEnd(text, start);
-    if (end === -1) continue;
-
-    const candidate = text.slice(start, end + 1);
-    try {
-      const parsed = JSON.parse(candidate);
-      firstJsonCandidate ??= candidate;
-      if (!schema || schema.safeParse(parsed).success) {
-        return candidate;
-      }
-    } catch {
-      // Markdown links such as [source](...) are balanced but not JSON.
-    }
-  }
-
-  return firstJsonCandidate ?? text;
-}
-
-function findJsonEnd(text: string, start: number): number {
-  const stack = [text[start]];
-  let inString = false;
-  let escaped = false;
-
-  for (let index = start + 1; index < text.length; index++) {
-    const char = text[index];
-
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (char === '\\') {
-        escaped = true;
-      } else if (char === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (char === '"') {
-      inString = true;
-      continue;
-    }
-
-    if (char === '{' || char === '[') {
-      stack.push(char);
-      continue;
-    }
-
-    if (char !== '}' && char !== ']') continue;
-
-    const opener = stack.pop();
-    if ((char === '}' && opener !== '{') || (char === ']' && opener !== '[')) {
-      return -1;
-    }
-    if (stack.length === 0) return index;
-  }
-
-  return -1;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
 function validateParsed<T>(parsed: unknown, schema: ZodType<T> | undefined): T {
   if (!schema) return parsed as T;
-
   const result = schema.safeParse(parsed);
   if (!result.success) {
     throw new AIError('schema_mismatch', result.error);
   }
   return result.data;
-}
-
-function buildResponseTextConfig<T>(
-  schema: ZodType<T> | undefined,
-  schemaName: string,
-  fallback: ResponseTextConfig | undefined,
-): ResponseTextConfig | undefined {
-  if (!schema) return fallback;
-
-  try {
-    return { format: zodTextFormat(schema, schemaName) };
-  } catch {
-    // The OpenAI helper only supports object-root schemas. Array-root schemas
-    // still get validated after parsing, so fall back to prompt-guided JSON.
-    return fallback;
-  }
 }
 
 function toSchemaName(name: string): string {

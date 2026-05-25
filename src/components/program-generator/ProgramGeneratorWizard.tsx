@@ -833,7 +833,7 @@ export function ProgramGeneratorWizard({
     );
   }
 
-  if (profile && !profile.openai_api_key) {
+  if (profile && !profile.ai_api_key) {
     return (
       <Modal
         isOpen={isOpen}

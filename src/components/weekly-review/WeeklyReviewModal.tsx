@@ -106,7 +106,7 @@ export function WeeklyReviewModal({
         setWeeklyData(data);
 
         // Get AI review if online and has API key
-        if (isOnline && profile.openai_api_key) {
+        if (isOnline && profile.ai_api_key) {
           const review = await reviewWeeklyProgress(profile, data);
           setAiReview(review);
 

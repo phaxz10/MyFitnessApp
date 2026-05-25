@@ -1,28 +1,36 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  generateExerciseDetails,
-  generateExerciseDetailsBatch,
-} from './exerciseLibraryCoach';
 
+// Mock the Vercel SDK function before importing the coach (which transitively
+// imports aiClient → ai). All schema-bearing calls go through generateText +
+// Output.object per Vercel SDK v6.
 const mocks = vi.hoisted(() => ({
-  create: vi.fn(),
-  OpenAI: vi.fn(),
+  generateText: vi.fn(),
 }));
 
-vi.mock('openai', () => ({
-  default: mocks.OpenAI,
-}));
+vi.mock('ai', async () => {
+  const actual = await vi.importActual<typeof import('ai')>('ai');
+  return {
+    ...actual,
+    generateText: mocks.generateText,
+  };
+});
 
 vi.mock('../../hooks/useAppStore', () => ({
   useAppStore: {
     getState: vi.fn(() => ({
       userProfile: {
-        openai_api_key: 'sk-test',
-        openai_proxy_url: '',
+        ai_provider: 'openai',
+        ai_model: 'gpt-4o',
+        ai_api_key: 'sk-test',
+        ai_proxy_url: null,
       },
     })),
   },
 }));
+
+const { generateExerciseDetails, generateExerciseDetailsBatch } = await import(
+  './exerciseLibraryCoach'
+);
 
 const benchPress = {
   name: 'Bench Press',
@@ -38,22 +46,25 @@ const squat = {
   muscle_groups: ['Quads', 'Glutes'],
   equipment: 'Barbell',
   exercise_type: 'reps_weight' as const,
-  tips: ['Brace core', 'Knees track over toes', 'Drive through heels', 'Breathe'],
+  tips: [
+    'Brace core',
+    'Knees track over toes',
+    'Drive through heels',
+    'Breathe',
+  ],
 };
 
 beforeEach(() => {
-  mocks.create.mockReset();
-  mocks.OpenAI.mockReset();
-  mocks.OpenAI.mockImplementation(function OpenAIMock() {
-    return { responses: { create: mocks.create } };
-  });
+  mocks.generateText.mockReset();
 });
 
 describe('exerciseLibraryCoach', () => {
   it('unwraps the { exercises } envelope on single generation', async () => {
-    mocks.create.mockResolvedValue({
-      output_text: JSON.stringify({ exercises: [benchPress] }),
-      output: [],
+    // The wrapper exists specifically so this call uses Output.object structured
+    // mode. The mock returns the envelope shape; the coach unwraps it.
+    mocks.generateText.mockResolvedValue({
+      output: { exercises: [benchPress] },
+      text: '',
     });
 
     await expect(generateExerciseDetails('Bench Press')).resolves.toEqual(
@@ -62,9 +73,9 @@ describe('exerciseLibraryCoach', () => {
   });
 
   it('unwraps the { exercises } envelope on batch generation', async () => {
-    mocks.create.mockResolvedValue({
-      output_text: JSON.stringify({ exercises: [benchPress, squat] }),
-      output: [],
+    mocks.generateText.mockResolvedValue({
+      output: { exercises: [benchPress, squat] },
+      text: '',
     });
 
     await expect(
@@ -72,32 +83,23 @@ describe('exerciseLibraryCoach', () => {
     ).resolves.toEqual([benchPress, squat]);
   });
 
-  it('requests structured JSON for the wrapped schema', async () => {
-    // The wrapper exists specifically so this call uses json_schema mode —
-    // a bare z.array() at the root would silently drop to free-text.
-    mocks.create.mockResolvedValue({
-      output_text: JSON.stringify({ exercises: [benchPress] }),
-      output: [],
+  it('routes structured-output calls through generateText with Output.object', async () => {
+    mocks.generateText.mockResolvedValue({
+      output: { exercises: [benchPress] },
+      text: '',
     });
 
     await generateExerciseDetails('Bench Press');
 
-    expect(mocks.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        text: expect.objectContaining({
-          format: expect.objectContaining({
-            type: 'json_schema',
-            name: 'exercise_details_batch',
-          }),
-        }),
-      }),
-    );
+    expect(mocks.generateText).toHaveBeenCalledTimes(1);
+    const args = mocks.generateText.mock.calls[0][0];
+    expect(args.output).toBeDefined();
   });
 
   it('throws when the AI returns an empty exercises array for single generation', async () => {
-    mocks.create.mockResolvedValue({
-      output_text: JSON.stringify({ exercises: [] }),
-      output: [],
+    mocks.generateText.mockResolvedValue({
+      output: { exercises: [] },
+      text: '',
     });
 
     await expect(generateExerciseDetails('Bench Press')).rejects.toThrow(

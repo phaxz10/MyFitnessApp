@@ -90,11 +90,14 @@ describe('runPendingMigrations', () => {
     }
   });
 
-  it('records version 1 in schema_migrations', async () => {
+  // Bump LATEST_MIGRATION when a new migration is added to migrator.ts.
+  const LATEST_MIGRATION = 3;
+
+  it(`records version ${LATEST_MIGRATION} in schema_migrations`, async () => {
     await runPendingMigrations(db);
 
     const version = await getVersion(db);
-    expect(version).toBe(1);
+    expect(version).toBe(LATEST_MIGRATION);
   });
 
   it('is a no-op on second run (warm start)', async () => {
@@ -107,11 +110,11 @@ describe('runPendingMigrations', () => {
 
     expect(firstVersion).toBe(secondVersion);
 
-    // Should still have exactly one row in schema_migrations
+    // Should still have exactly LATEST_MIGRATION rows in schema_migrations
     const result = await db.query<{ count: number }>(
       'SELECT COUNT(*) as count FROM schema_migrations',
     );
-    expect(Number(result.rows[0].count)).toBe(1);
+    expect(Number(result.rows[0].count)).toBe(LATEST_MIGRATION);
   });
 
   it('creates all expected indexes', async () => {
@@ -165,7 +168,7 @@ describe('runPendingMigrations', () => {
   it('rolls back a failed migration without corrupting state', async () => {
     // Run the real migrations first
     await runPendingMigrations(db);
-    expect(await getVersion(db)).toBe(1);
+    expect(await getVersion(db)).toBe(LATEST_MIGRATION);
 
     // Manually insert a row to verify it survives the failed migration
     await db.exec(`

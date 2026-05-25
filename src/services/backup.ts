@@ -248,6 +248,24 @@ export async function importData(jsonString: string): Promise<void> {
     throw new Error('Invalid backup file structure');
   }
 
+  // Wrap the entire import in a transaction. Without this, a single failing
+  // INSERT mid-restore (most often a FK violation when a program_exercises row
+  // references an exercise that didn't make it into the backup) would leave
+  // the DB in a half-restored state — programs and sessions present but their
+  // exercises missing. With the wrap, any failure rolls back cleanly and the
+  // caller sees a real error instead of silent data loss.
+  await db.exec('BEGIN');
+  try {
+    await importDataInner(db, backup);
+    await db.exec('COMMIT');
+  } catch (err) {
+    await db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: PGlite db type is wide; this stays internal.
+async function importDataInner(db: any, backup: BackupData): Promise<void> {
   const { data } = backup;
 
   // Helper to check if a table has data to import
@@ -281,12 +299,25 @@ export async function importData(jsonString: string): Promise<void> {
   }
 
   // Import data in order of dependencies
-  // User profile
+  // User profile.
+  //
+  // Backwards compatibility: backups created before migration v3 carry
+  // `openai_api_key` / `openai_proxy_url` and no `ai_provider` / `ai_model`.
+  // Map them onto the new columns so old backups restore cleanly.
   if (hasData(data.user_profile)) {
     for (const row of data.user_profile as Record<string, unknown>[]) {
+      const aiApiKey = (row.ai_api_key ?? row.openai_api_key ?? null) as
+        | string
+        | null;
+      const aiProxyUrl = (row.ai_proxy_url ?? row.openai_proxy_url ?? null) as
+        | string
+        | null;
+      const aiProvider = (row.ai_provider ?? 'openai') as string;
+      const aiModel = (row.ai_model ?? 'gpt-4o') as string;
+
       await db.query(
-        `INSERT INTO user_profile (id, birthdate, gender, height_cm, activity_level, goal, calorie_target, protein_target_g, carbs_target_g, fat_target_g, openai_api_key, openai_proxy_url, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+        `INSERT INTO user_profile (id, birthdate, gender, height_cm, activity_level, goal, calorie_target, protein_target_g, carbs_target_g, fat_target_g, ai_provider, ai_model, ai_api_key, ai_proxy_url, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
         [
           row.id,
           row.birthdate ?? getLocalDateString(),
@@ -298,8 +329,10 @@ export async function importData(jsonString: string): Promise<void> {
           row.protein_target_g,
           row.carbs_target_g,
           row.fat_target_g,
-          row.openai_api_key ?? null,
-          row.openai_proxy_url ?? null,
+          aiProvider,
+          aiModel,
+          aiApiKey,
+          aiProxyUrl,
           row.created_at,
           row.updated_at,
         ],

@@ -1,3 +1,6 @@
+// AI provider selection — see ADR-0005.
+export type AIProvider = 'openai' | 'anthropic' | 'google';
+
 // User Profile Types
 export interface UserProfile {
   id: number;
@@ -10,8 +13,10 @@ export interface UserProfile {
   protein_target_g: number;
   carbs_target_g: number;
   fat_target_g: number;
-  openai_api_key: string | null;
-  openai_proxy_url: string | null;
+  ai_provider: AIProvider;
+  ai_model: string;
+  ai_api_key: string | null;
+  ai_proxy_url: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -19,6 +19,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { MACRO_PALETTE } from '../components/nutrition';
+import { AISetupForm } from '../components/settings/AISetupForm';
 import { ExportModal } from '../components/settings/ExportModal';
 import {
   Button,
@@ -28,6 +29,7 @@ import {
   Modal,
   Select,
 } from '../components/ui';
+import { DEFAULT_MODEL_BY_PROVIDER } from '../constants/aiProviders';
 import { useAppStore } from '../hooks/useAppStore';
 import { useProfile } from '../hooks/useProfile';
 import { useWeight } from '../hooks/useWeight';
@@ -64,6 +66,7 @@ import {
   deleteAppFolder,
   hasRemoteBackup,
 } from '../services/googleDrive';
+import type { AIProvider } from '../types';
 import { calculateAgeFromBirthdate, formatDate } from '../utils/date';
 
 const activityOptions = [
@@ -140,10 +143,12 @@ export function Settings() {
     },
   });
 
-  // API Key form
+  // AI Setup form
   const apiKeyForm = useForm<ApiKeyFormData>({
     resolver: zodResolver(apiKeyFormSchema),
     defaultValues: {
+      aiProvider: undefined,
+      aiModel: undefined,
       apiKey: '',
       proxyUrl: '',
     },
@@ -166,8 +171,10 @@ export function Settings() {
         fat: profile.fat_target_g.toString(),
       });
       apiKeyForm.reset({
-        apiKey: profile.openai_api_key || '',
-        proxyUrl: profile.openai_proxy_url || '',
+        aiProvider: profile.ai_provider,
+        aiModel: profile.ai_model,
+        apiKey: profile.ai_api_key || '',
+        proxyUrl: profile.ai_proxy_url || '',
       });
     }
   }, [profile, profileForm, goalsForm, apiKeyForm]);
@@ -264,16 +271,25 @@ export function Settings() {
     setIsLoading(true);
     setError(null);
     try {
+      const provider: AIProvider = data.aiProvider ?? 'openai';
+      const model = data.aiModel ?? DEFAULT_MODEL_BY_PROVIDER[provider];
       await updateProfile({
-        openai_api_key: data.apiKey || null,
-        openai_proxy_url: data.proxyUrl?.trim() || null,
+        ai_provider: provider,
+        ai_model: model,
+        ai_api_key: data.apiKey || null,
+        // Proxy URL is OpenAI-specific; drop it for other providers so they
+        // don't accidentally route through an OpenAI worker.
+        ai_proxy_url:
+          provider === 'openai' && data.proxyUrl?.trim()
+            ? data.proxyUrl.trim()
+            : null,
       });
       // useProfile's refetch + App.tsx's mirror effect updates the store,
       // which the stateless aiClient reads on its next call.
       setSuccess('AI settings updated');
       setActiveSection(null);
     } catch (_err) {
-      setError('Failed to update API key');
+      setError('Failed to update AI settings');
     } finally {
       setIsLoading(false);
     }
@@ -608,7 +624,9 @@ export function Settings() {
               <Key size={20} className="text-purple-400" />
               <div>
                 <p className="text-white font-medium">AI Settings</p>
-                <p className="text-slate-400 text-sm">OpenAI API key</p>
+                <p className="text-slate-400 text-sm">
+                  Provider, model, API key
+                </p>
               </div>
             </div>
             <ChevronRight
@@ -622,34 +640,21 @@ export function Settings() {
               onSubmit={apiKeyForm.handleSubmit(handleUpdateApiKey)}
               className="px-4 pb-4 space-y-3 border-t border-slate-700 pt-4"
             >
-              <Input
-                label="OpenAI API Key"
-                type="password"
-                {...apiKeyForm.register('apiKey')}
-                placeholder="Enter your API key"
+              <AISetupForm
+                compact
+                value={{
+                  provider: apiKeyForm.watch('aiProvider'),
+                  model: apiKeyForm.watch('aiModel'),
+                  apiKey: apiKeyForm.watch('apiKey') ?? '',
+                  proxyUrl: apiKeyForm.watch('proxyUrl') ?? '',
+                }}
+                onChange={(next) => {
+                  apiKeyForm.setValue('aiProvider', next.provider);
+                  apiKeyForm.setValue('aiModel', next.model);
+                  apiKeyForm.setValue('apiKey', next.apiKey);
+                  apiKeyForm.setValue('proxyUrl', next.proxyUrl);
+                }}
               />
-              <a
-                href="https://platform.openai.com/api-keys"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-400 text-sm hover:underline"
-              >
-                Get your API key
-              </a>
-              <Input
-                label="Proxy URL (optional)"
-                type="url"
-                {...apiKeyForm.register('proxyUrl')}
-                placeholder="https://your-worker.workers.dev"
-                error={apiKeyForm.formState.errors.proxyUrl?.message}
-              />
-              <p className="text-slate-400 text-xs leading-relaxed">
-                Browsers can't call OpenAI's Responses API directly (CORS).
-                Deploy the included Cloudflare Worker (see{' '}
-                <code className="text-slate-300">worker/README.md</code>) and
-                paste its URL above. Your API key still lives in this browser —
-                the proxy only adds CORS headers.
-              </p>
               <Button type="submit" isLoading={isLoading} className="w-full">
                 Save AI Settings
               </Button>

@@ -1,4 +1,3 @@
-import type { Tool } from 'openai/resources/responses/responses';
 import { z } from 'zod';
 import type {
   AIGoalReviewResponse,
@@ -8,11 +7,14 @@ import type {
   WeightLog,
 } from '../../types';
 import { calculateAgeFromBirthdate } from '../../utils/date';
-import { complete } from '../ai/aiClient';
+import { complete, webSearchTool } from '../ai/aiClient';
 
 // web_search enables the AI to reference current nutrition science and
-// metabolic adaptation research for evidence-based recommendations.
-const WEB_SEARCH_TOOL: Tool = { type: 'web_search' };
+// metabolic adaptation research. Returns undefined for OpenAI without proxy.
+function maybeWebSearchTools() {
+  const search = webSearchTool();
+  return search ? { web_search: search } : undefined;
+}
 
 // SCHEMAS — review responses drive UI modals that adjust user targets,
 // so validating shape catches regressions before they corrupt the Profile.
@@ -144,7 +146,7 @@ Return JSON format only, no markdown code blocks:
   return complete({
     prompt,
     schema: goalReviewSchema,
-    tools: [WEB_SEARCH_TOOL],
+    tools: maybeWebSearchTools(),
   });
 }
 
@@ -274,6 +276,6 @@ Guidelines:
   return complete({
     prompt,
     schema: weeklyReviewSchema,
-    tools: [WEB_SEARCH_TOOL],
+    tools: maybeWebSearchTools(),
   });
 }

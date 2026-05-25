@@ -46,9 +46,12 @@ export const PROVIDER_OPTIONS: AIProviderOption[] = [
 
 export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
   openai: [
-    { id: 'gpt-4o', label: 'GPT-4o' },
-    { id: 'gpt-4o-mini', label: 'GPT-4o mini (cheap)' },
-    { id: 'gpt-5', label: 'GPT-5' },
+    { id: 'gpt-5.4-mini', label: 'GPT-5.4 mini (recommended)' },
+    { id: 'gpt-5.4-nano', label: 'GPT-5.4 nano (latest low cost)' },
+    { id: 'gpt-5.4', label: 'GPT-5.4 (higher quality)' },
+    { id: 'gpt-5.5', label: 'GPT-5.5 (best)' },
+    { id: 'gpt-4o-mini', label: 'GPT-4o mini (legacy low cost)' },
+    { id: 'gpt-4o', label: 'GPT-4o (legacy)' },
   ],
   anthropic: [
     { id: 'claude-opus-4-5', label: 'Claude Opus 4.5' },
@@ -62,7 +65,7 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
 };
 
 export const DEFAULT_MODEL_BY_PROVIDER: Record<AIProvider, string> = {
-  openai: 'gpt-4o',
+  openai: 'gpt-5.4-mini',
   anthropic: 'claude-sonnet-4-6',
   google: 'gemini-2.5-flash',
 };

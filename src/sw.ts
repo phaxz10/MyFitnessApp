@@ -18,10 +18,19 @@ precacheAndRoute(self.__WB_MANIFEST || []);
 const navigationHandler = createHandlerBoundToURL('/index.html');
 registerRoute(new NavigationRoute(navigationHandler));
 
+// NetworkFirst-cache responses from any supported AI provider's direct API
+// host, so a recent result survives a brief offline blip. (Calls routed
+// through a user-configured proxy URL are not matched here.)
+const AI_API_HOSTS = new Set([
+  'api.openai.com',
+  'api.anthropic.com',
+  'generativelanguage.googleapis.com',
+]);
+
 registerRoute(
-  ({ url }: { url: URL }) => url.origin === 'https://api.openai.com',
+  ({ url }: { url: URL }) => AI_API_HOSTS.has(url.hostname),
   new NetworkFirst({
-    cacheName: 'openai-api-cache',
+    cacheName: 'ai-api-cache',
     plugins: [
       new CacheableResponsePlugin({ statuses: [0, 200] }),
       new ExpirationPlugin({ maxEntries: 10, maxAgeSeconds: 60 * 60 }),

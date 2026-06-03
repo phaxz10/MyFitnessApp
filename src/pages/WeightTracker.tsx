@@ -226,11 +226,11 @@ export function WeightTracker() {
     setIsPhotoModalOpen(true);
   };
 
-  const handleClosePhotoModal = () => {
+  const handleClosePhotoModal = useCallback(() => {
     setIsPhotoModalOpen(false);
     setPhotoNotes('');
     setPhotoError(null);
-  };
+  }, []);
 
   const handlePhotoCapture = useCallback(
     async (data: { base64: string; mimeType: string }) => {
@@ -257,7 +257,13 @@ export function WeightTracker() {
         setIsPhotoLoading(false);
       }
     },
-    [addPhoto, fetchAllPhotos, photoNotes, selectedPhotoType],
+    [
+      addPhoto,
+      fetchAllPhotos,
+      photoNotes,
+      selectedPhotoType,
+      handleClosePhotoModal,
+    ],
   );
 
   const handleViewPhoto = (photo: ProgressPhoto) => {

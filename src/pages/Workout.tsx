@@ -111,7 +111,7 @@ export function Workout() {
     if (activeProgram) {
       // If dateParam is provided, find the session for that date's day of week
       const targetDate = dateParam
-        ? new Date(dateParam + 'T12:00:00')
+        ? new Date(`${dateParam}T12:00:00`)
         : new Date();
       const dayOfWeek = targetDate.getDay();
       const session = activeProgram.sessions.find(
@@ -137,12 +137,12 @@ export function Workout() {
       await startWorkout(activeProgram.id, session.id, dateParam || undefined);
       // Clear the date param and navigate to session
       setSearchParams({});
-      navigate('/workout/session' + (dateParam ? `?date=${dateParam}` : ''));
+      navigate(`/workout/session${dateParam ? `?date=${dateParam}` : ''}`);
     } else {
       // Start empty workout
       await startWorkout(null, null, dateParam || undefined);
       setSearchParams({});
-      navigate('/workout/session' + (dateParam ? `?date=${dateParam}` : ''));
+      navigate(`/workout/session${dateParam ? `?date=${dateParam}` : ''}`);
     }
   };
 

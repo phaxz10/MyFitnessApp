@@ -125,6 +125,7 @@ export function OverviewTab({ timeRange }: OverviewTabProps) {
             <div className="space-y-2">
               {metrics.recentPRs.map((pr: PersonalRecord, index: number) => (
                 <div
+                  // biome-ignore lint/suspicious/noArrayIndexKey: recentPRs has no stable id; static, non-reordering summary list
                   key={`${pr.exerciseId}-${pr.type}-${index}`}
                   className="flex justify-between items-center py-2 border-b border-slate-700 last:border-0"
                 >

@@ -1,5 +1,8 @@
 # MyPersonalFitness
 
+[![CI](https://github.com/phaxz10/MyFitnessApp/actions/workflows/ci.yml/badge.svg)](https://github.com/phaxz10/MyFitnessApp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A free, open-source, offline-first fitness tracker with AI-powered coaching. Built as a Progressive Web App (PWA) — your data stays in your browser, your AI key stays in your hands.
 
 **BYOK (Bring Your Own Key)** — This app uses your own API key from your choice of AI provider (OpenAI, Anthropic, or Google). No accounts, no subscriptions, no data collection. You pay your chosen provider directly for what you use (typically $0.01-0.05 per AI interaction).

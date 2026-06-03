@@ -49,7 +49,7 @@ export function WorkoutDetail() {
          LEFT JOIN program_sessions ps ON wl.session_id = ps.id
          LEFT JOIN workout_programs wp ON wl.program_id = wp.id
          WHERE wl.id = $1`,
-        [parseInt(id)],
+        [parseInt(id, 10)],
       );
 
       if ((result.rows as WorkoutLog[]).length === 0) {
@@ -71,7 +71,7 @@ export function WorkoutDetail() {
          JOIN exercises e ON ws.exercise_id = e.id
          WHERE ws.workout_log_id = $1
          ORDER BY ws.created_at`,
-        [parseInt(id)],
+        [parseInt(id, 10)],
       );
 
       const workoutWithSets: WorkoutLogWithDetails = {
@@ -134,8 +134,8 @@ export function WorkoutDetail() {
   const handleSaveDuration = async () => {
     if (!workout || !durationMinutes) return;
 
-    const mins = parseInt(durationMinutes);
-    if (isNaN(mins) || mins <= 0) return;
+    const mins = parseInt(durationMinutes, 10);
+    if (Number.isNaN(mins) || mins <= 0) return;
 
     try {
       const db = await getDB();

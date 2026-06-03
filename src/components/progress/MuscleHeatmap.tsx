@@ -65,8 +65,8 @@ function getStatusLabel(sets: number, muscleGroup: string): string {
 
 // Format date range for display
 function formatDateRange(start: string, end: string): string {
-  const startDate = new Date(start + 'T00:00:00');
-  const endDate = new Date(end + 'T00:00:00');
+  const startDate = new Date(`${start}T00:00:00`);
+  const endDate = new Date(`${end}T00:00:00`);
 
   const options: Intl.DateTimeFormatOptions = {
     month: 'short',

@@ -257,7 +257,7 @@ export function ExerciseLibrary() {
 
     // Clear the URL param
     setSearchParams({});
-  }, [exercises, updateExercise, fetchExercises, setSearchParams]);
+  }, [exercises, updateExercise, fetchExercises, setSearchParams, aiAvailable]);
 
   // Check for regenerate-details-all URL param
   useEffect(() => {
@@ -947,6 +947,7 @@ export function ExerciseLibrary() {
               <div className="max-h-64 overflow-y-auto space-y-2">
                 {batchExercises.map((exercise, index) => (
                   <div
+                    // biome-ignore lint/suspicious/noArrayIndexKey: AI batch preview items have no stable id and do not reorder
                     key={`${exercise.name}-${index}`}
                     className="flex items-start gap-2 bg-slate-800 rounded-lg p-2"
                   >

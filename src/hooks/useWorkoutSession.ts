@@ -49,21 +49,21 @@ function debounce<T extends (...args: Parameters<T>) => void>(
 function parseWeight(value: string | undefined | null): number {
   if (!value || value === '') return 0;
   const parsed = parseFloat(value);
-  return isNaN(parsed) ? 0 : parsed;
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 // Helper to parse reps - can be null for duration exercises
 function parseReps(value: string | undefined | null): number | null {
   if (!value || value === '') return null;
   const parsed = parseInt(value, 10);
-  return isNaN(parsed) ? null : parsed;
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 // Helper to parse duration - can be null for non-duration exercises
 function parseDuration(value: string | undefined | null): number | null {
   if (!value || value === '') return null;
   const parsed = parseInt(value, 10);
-  return isNaN(parsed) ? null : parsed;
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 // Manages the full lifecycle of an active workout session.
@@ -532,7 +532,7 @@ export function useWorkoutSession(dateOverride?: string) {
       if (!exerciseData || !activeWorkout) return false;
 
       const setData = exerciseData.sets[setIndex];
-      if (!setData || !setData.completed) return false; // Not completed
+      if (!setData?.completed) return false; // Not completed
 
       try {
         await uncompleteSet(setData.id);
@@ -846,7 +846,7 @@ export function useWorkoutSession(dateOverride?: string) {
         const setIdsToDelete: number[] = [];
         for (const exerciseIndex of supersetExerciseIndices) {
           const exerciseData = currentExercises[exerciseIndex];
-          if (exerciseData && exerciseData.sets[roundNumber]) {
+          if (exerciseData?.sets[roundNumber]) {
             setIdsToDelete.push(exerciseData.sets[roundNumber].id);
           }
         }

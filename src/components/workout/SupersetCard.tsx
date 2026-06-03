@@ -290,6 +290,7 @@ export function SupersetCard({
 
                     return (
                       <div
+                        // biome-ignore lint/suspicious/noArrayIndexKey: roundNumber is the stable round position, unique together with exercise.id
                         key={`${ex.exercise.id}-${roundNumber}`}
                         className={`flex items-center gap-2 py-1.5 px-2 rounded ${
                           isCompleted ? 'bg-green-900/20' : 'bg-slate-800/30'

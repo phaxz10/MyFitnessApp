@@ -1166,7 +1166,7 @@ export function ProgramEditor() {
                                           }
                                           onChange={(e) => {
                                             const newSets =
-                                              parseInt(e.target.value) || 1;
+                                              parseInt(e.target.value, 10) || 1;
                                             handleUpdateSupersetSets(
                                               sessionIndex,
                                               group.supersetId!,
@@ -1427,7 +1427,7 @@ export function ProgramEditor() {
               type="number"
               value={sessionDurationMinutes}
               onChange={(e) =>
-                setSessionDurationMinutes(parseInt(e.target.value) || 60)
+                setSessionDurationMinutes(parseInt(e.target.value, 10) || 60)
               }
               min={20}
               max={180}

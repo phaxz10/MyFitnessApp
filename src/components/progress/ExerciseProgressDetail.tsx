@@ -205,6 +205,7 @@ export function ExerciseProgressDetail({
                     <div className="flex flex-wrap gap-2">
                       {session.sets.map((set, setIndex) => (
                         <span
+                          // biome-ignore lint/suspicious/noArrayIndexKey: sets have no stable id; static read-only list that never reorders
                           key={`${session.date}-set-${setIndex}-${set.weight}-${set.reps}`}
                           className="bg-slate-700 text-slate-300 text-sm px-2 py-1 rounded"
                         >

@@ -169,9 +169,7 @@ export async function restoreFromDrive(): Promise<boolean> {
     setLastRestoredAt(backup.exported_at);
   }
 
-  lazyLoadPhotos().catch((err) =>
-    console.warn('Photo lazy-load failed:', err),
-  );
+  lazyLoadPhotos().catch((err) => console.warn('Photo lazy-load failed:', err));
   return hasProfile;
 }
 

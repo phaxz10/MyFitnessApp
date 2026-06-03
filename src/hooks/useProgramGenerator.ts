@@ -406,7 +406,7 @@ export function useProgramGenerator() {
             (m) => m.originalName === exercise.name,
           );
 
-          if (!mapping || !mapping.exerciseId) {
+          if (!mapping?.exerciseId) {
             console.warn(
               `Could not find exercise mapping for: ${exercise.name}`,
             );

@@ -505,7 +505,7 @@ export function WorkoutSession() {
     // Check if there are changes to the program
     const diff = await checkForSessionChanges();
 
-    if (diff && diff.hasChanges) {
+    if (diff?.hasChanges) {
       // Store the notes and show the changes modal
       setPendingWorkoutNotes(data.notes || '');
       setSessionDiff(diff);

@@ -2,7 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-05-22
-- **Deciders**: jonathan (product owner)
+- **Deciders**: JP (@phaxz)
 
 ## Context
 

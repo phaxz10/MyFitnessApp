@@ -181,6 +181,8 @@ docs/adr/               # Architectural Decision Records
 
 ## Architecture
 
+> **Design decisions** are recorded as [Architectural Decision Records](docs/adr/) (ADR-0001…0005), and the project's domain vocabulary lives in [CONTEXT.md](CONTEXT.md). Start there to understand *why* the code is shaped the way it is.
+
 ### AI System
 
 The AI system follows a layered architecture:
@@ -192,13 +194,13 @@ Coaching Modules (domain prompts + Zod validation)
     ↓
 AI Client (stateless transport + caching + error classification)
     ↓
-OpenAI Responses API (via optional CORS proxy)
+Provider API — OpenAI / Anthropic / Google (OpenAI web search via optional CORS proxy)
 ```
 
 - **AI Client** (`src/services/ai/aiClient.ts`) — stateless wrapper around the Vercel AI SDK. Reads the active provider + model + key from Zustand on each call. Two entry points: `complete<T>()` for single-turn with optional Zod validation, `respond()` for free-form text and tool-orchestrated calls. Cache, one-shot retry, and `AIError` taxonomy all live here.
 - **Coaching Modules** (`src/services/coaching/`) — five domain-specific modules that own prompts and response schemas. Each module knows about fitness; the AI client does not.
 - **AI Capability** — a configuration concept ("is a provider+model+key triple configured?"), separate from network state. See [ADR-0001](docs/adr/0001-ai-capability-is-configuration-not-call-readiness.md).
-- **Multi-provider** — Vercel AI SDK abstracts OpenAI, Anthropic, and Google behind one interface.
+- **Multi-provider** — the Vercel AI SDK abstracts OpenAI, Anthropic, and Google behind one interface; a registry (`src/constants/aiProviders.ts`) is the single source of truth. See [ADR-0005](docs/adr/0005-ai-is-multi-provider.md).
 
 ### Database
 

@@ -1,8 +1,10 @@
 # ADR-0002 — AI Client is stateless; no singleton
 
-- **Status**: Accepted
+- **Status**: Accepted · Amended by ADR-0005 (2026-06-03)
 - **Date**: 2026-05-22
 - **Deciders**: JP (@phaxz)
+
+> **Amendment (ADR-0005, 2026-06-03):** The *stateless client* decision still holds and generalised cleanly — but the OpenAI-specific surface here is superseded. There is no `src/services/openai.ts` / `initOpenAI()`; the client moved to the Vercel AI SDK (`ai`), and per-call construction now happens in the provider factory `buildLanguageModel()` (`src/services/ai/aiClient.ts`), which reads `provider/model/key/proxy` from the store and returns a Vercel `LanguageModel`. The prediction below — "future support for multiple providers is one branch in `complete()`" — is essentially what shipped. See ADR-0005.
 
 ## Context
 

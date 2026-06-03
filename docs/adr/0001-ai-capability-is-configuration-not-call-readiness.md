@@ -1,8 +1,10 @@
 # ADR-0001 — AI Capability is configuration, not call-readiness
 
-- **Status**: Accepted
+- **Status**: Accepted · Amended by ADR-0005 (2026-06-03)
 - **Date**: 2026-05-22
 - **Deciders**: JP (@phaxz)
+
+> **Amendment (ADR-0005, 2026-06-03):** This ADR predates multi-provider support. The decision — *Capability is a configuration concept, not call-readiness* — still holds, but the OpenAI-specific details below are superseded: `profile.openai_api_key` is now `profile.ai_api_key`; "is an OpenAI key configured?" is now "is the active **provider + model + key** triple configured?"; and `AICapability`'s `available: true` branch now carries `{ provider, model }`. See ADR-0005.
 
 ## Context
 

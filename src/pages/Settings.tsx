@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Cloud,
   CloudOff,
+  Coffee,
   Download,
   Key,
   LogOut,
@@ -872,6 +873,25 @@ export function Settings() {
               Drive.
             </p>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Support */}
+      <Card className="mb-3">
+        <CardContent className="p-4 space-y-3">
+          <h3 className="text-white font-medium">Support</h3>
+          <p className="text-slate-400 text-sm">
+            Enjoying MyPersonalFitness? Your support helps keep it free.
+          </p>
+          <a
+            href="https://buymeacoffee.com/phaxz10"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-lg bg-[#FFDD00] hover:bg-[#E5C700] text-black font-medium transition-colors"
+          >
+            <Coffee size={20} />
+            Buy me a coffee
+          </a>
         </CardContent>
       </Card>
 

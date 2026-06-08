@@ -8,6 +8,7 @@ import { MACRO_PALETTE } from '../components/nutrition';
 import { AISetupForm } from '../components/settings/AISetupForm';
 import { Button, Input } from '../components/ui';
 import { DEFAULT_MODEL_BY_PROVIDER } from '../constants/aiProviders';
+import { dietTypeOptions } from '../constants/options';
 import { useAppStore } from '../hooks/useAppStore';
 import { useProfile } from '../hooks/useProfile';
 import { useWeight } from '../hooks/useWeight';
@@ -78,6 +79,7 @@ export function Onboarding() {
       weightKg: '',
       activityLevel: 'moderate',
       goal: 'lean_bulk',
+      dietType: 'balanced',
       aiProvider: undefined,
       aiModel: undefined,
       apiKey: '',
@@ -94,6 +96,7 @@ export function Onboarding() {
   const gender = watch('gender');
   const activityLevel = watch('activityLevel');
   const goal = watch('goal');
+  const dietType = watch('dietType');
   const targets = watch('targets');
   const aiProvider = watch('aiProvider');
   const aiModel = watch('aiModel');
@@ -149,6 +152,7 @@ export function Onboarding() {
       weight_kg: parseFloat(values.weightKg),
       activity_level: values.activityLevel,
       goal: values.goal,
+      diet_type: values.dietType,
     };
   };
 
@@ -186,6 +190,7 @@ export function Onboarding() {
             height_cm: parseFloat(values.heightCm),
             activity_level: values.activityLevel,
             goal: values.goal,
+            diet_type: values.dietType,
             calorie_target: 0,
             protein_target_g: 0,
             carbs_target_g: 0,
@@ -227,6 +232,7 @@ export function Onboarding() {
         height_cm: parseFloat(values.heightCm),
         activity_level: values.activityLevel,
         goal: values.goal,
+        diet_type: values.dietType,
         calorie_target: values.targets.calories,
         protein_target_g: values.targets.protein,
         carbs_target_g: values.targets.carbs,
@@ -480,6 +486,39 @@ export function Onboarding() {
                 </button>
               ))}
             </div>
+
+            <h3 className="text-lg font-semibold text-white mt-8 mb-1">
+              Diet Type
+            </h3>
+            <p className="text-slate-400 text-sm mb-3">
+              How carbs are split. Low carb / keto pin carbs low and let fat
+              fill the rest.
+            </p>
+            <div className="space-y-2">
+              {dietTypeOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setValue('dietType', option.value)}
+                  className={`w-full p-4 rounded-lg border text-left transition-colors ${
+                    dietType === option.value
+                      ? 'border-blue-500 bg-blue-500/10 text-white'
+                      : 'border-slate-600 bg-slate-800 text-slate-300 hover:border-slate-500'
+                  }`}
+                >
+                  <span className="block font-medium">{option.label}</span>
+                  <span className="block text-sm text-slate-400">
+                    {option.description}
+                  </span>
+                </button>
+              ))}
+            </div>
+            {dietType === 'keto' && (
+              <p className="text-amber-400/80 text-xs mt-3">
+                Keto is a therapeutic approach — worth discussing with a doctor
+                if you manage blood sugar or take medication.
+              </p>
+            )}
             <Button onClick={handleNext} size="lg" className="w-full mt-6">
               Continue
             </Button>

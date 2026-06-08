@@ -106,6 +106,10 @@ _Avoid_: budget, limit
 **Goal**:
 The training/diet intent: `bulk`, `lean_bulk`, `recomp`, `cut`, or `maintain`. Shapes Targets and program advice.
 
+**Diet Type**:
+The carb strategy that decides the macro split (`diet_type`): `balanced`, `moderate`, `low_carb`, or `keto`. `balanced` makes carbs the residual macro (legacy default); the others pin carbs and make fat the residual. See ADR-0006.
+_Avoid_: diet plan, macro ratio
+
 **Weekly Review**:
 The AI check-in (`weekly_reviews`) that reads a week of weight/intake/workout data and recommends Target/Goal/program adjustments the user can accept.
 _Avoid_: report, summary

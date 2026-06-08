@@ -1,6 +1,12 @@
 // AI provider selection — see ADR-0005.
 export type AIProvider = 'openai' | 'anthropic' | 'google';
 
+// Carbohydrate strategy for macro targets — see ADR-0006.
+// 'balanced' is the legacy default (carbs absorb the remaining calories); the
+// other tiers pin carbs and let fat absorb the remainder, enabling low-carb
+// and ketogenic splits.
+export type DietType = 'balanced' | 'moderate' | 'low_carb' | 'keto';
+
 // User Profile Types
 export interface UserProfile {
   id: number;
@@ -9,6 +15,7 @@ export interface UserProfile {
   height_cm: number;
   activity_level: 'sedentary' | 'light' | 'moderate' | 'active';
   goal: 'bulk' | 'lean_bulk' | 'recomp' | 'cut' | 'maintain';
+  diet_type: DietType;
   calorie_target: number;
   protein_target_g: number;
   carbs_target_g: number;

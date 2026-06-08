@@ -314,10 +314,13 @@ async function importDataInner(db: any, backup: BackupData): Promise<void> {
         | null;
       const aiProvider = (row.ai_provider ?? 'openai') as string;
       const aiModel = (row.ai_model ?? 'gpt-4o') as string;
+      // Backups predating the carb-strategy feature have no diet_type;
+      // default to 'balanced' so they restore with unchanged macros.
+      const dietType = (row.diet_type ?? 'balanced') as string;
 
       await db.query(
-        `INSERT INTO user_profile (id, birthdate, gender, height_cm, activity_level, goal, calorie_target, protein_target_g, carbs_target_g, fat_target_g, ai_provider, ai_model, ai_api_key, ai_proxy_url, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+        `INSERT INTO user_profile (id, birthdate, gender, height_cm, activity_level, goal, diet_type, calorie_target, protein_target_g, carbs_target_g, fat_target_g, ai_provider, ai_model, ai_api_key, ai_proxy_url, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
         [
           row.id,
           row.birthdate ?? getLocalDateString(),
@@ -325,6 +328,7 @@ async function importDataInner(db: any, backup: BackupData): Promise<void> {
           row.height_cm,
           row.activity_level,
           row.goal,
+          dietType,
           row.calorie_target,
           row.protein_target_g,
           row.carbs_target_g,

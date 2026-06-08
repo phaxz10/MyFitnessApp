@@ -3,6 +3,7 @@ import type {
   AIFoodAnalysisResponse,
   AIFoodItem,
   AITargetResponse,
+  DietType,
 } from '../../types';
 import { complete, webSearchTool } from '../ai/aiClient';
 
@@ -54,6 +55,8 @@ type TargetProfile = {
   weight_kg: number;
   activity_level: 'sedentary' | 'light' | 'moderate' | 'active';
   goal: 'bulk' | 'lean_bulk' | 'recomp' | 'cut' | 'maintain';
+  // Optional so legacy callers (and tests) default to the balanced split.
+  diet_type?: DietType;
 };
 
 export async function analyzeFoodText(
@@ -179,12 +182,13 @@ Profile:
 - Weight: ${profile.weight_kg}kg
 - Activity Level: ${profile.activity_level}
 - Goal: ${profile.goal}
+- Diet type: ${profile.diet_type ?? 'balanced'}
 
 Computed formula:
 - Mifflin-St Jeor BMR
 - Activity multiplier based on activity level
 - Goal adjustment based on sustainable rate of change
-- Protein and fat set from body weight; carbs fill remaining calories
+- Protein from body weight; carbs set by diet type (balanced = remaining calories), fat fills the rest
 
 Computed targets:
 - Calories: ${targets.calorie_target} kcal/day
@@ -220,8 +224,13 @@ Return JSON format only, no markdown code blocks:
 // Deterministic target calculation using Mifflin-St Jeor BMR equation.
 // The AI is only used to generate a human-readable explanation of the numbers —
 // the numbers themselves are computed here to ensure consistency and testability.
-// Macro split: protein from bodyweight multiplier (1.8-2.1g/kg based on goal),
-// fat floor of 25% calories or 0.6g/kg, remainder to carbs.
+//
+// Protein always comes from a bodyweight multiplier (1.8-2.1g/kg based on goal).
+// The carb/fat split then depends on diet_type (see ADR-0006):
+//   - balanced (default): fat floored at 25% calories or 0.6g/kg, carbs absorb
+//     the remaining calories (legacy behaviour, tends to land high-carb).
+//   - moderate/low_carb/keto: carbs are pinned to the diet target and fat
+//     absorbs the remainder, with a 0.6g/kg fat floor protecting essential fat.
 //
 // For obese individuals (BMI > 30) the macro multipliers use an adjusted
 // bodyweight rather than the raw value — see weightForMacros(). BMR itself
@@ -232,6 +241,7 @@ export function calculateDeterministicTargets(
 ): AITargetResponse {
   const weight = profile.weight_kg;
   const macroWeight = weightForMacros(profile);
+  const dietType = profile.diet_type ?? 'balanced';
   const bmr =
     profile.gender === 'male'
       ? 10 * weight + 6.25 * profile.height_cm - 5 * profile.age + 5
@@ -242,8 +252,26 @@ export function calculateDeterministicTargets(
     25,
   );
   const protein = Math.round(macroWeight * proteinMultiplier(profile.goal));
-  const fat = Math.round(Math.max(macroWeight * 0.6, (calories * 0.25) / 9));
-  const carbs = Math.max(0, Math.round((calories - protein * 4 - fat * 9) / 4));
+
+  const carbTarget = carbTargetGrams(dietType, calories);
+  let carbs: number;
+  let fat: number;
+  if (carbTarget === null) {
+    // Balanced: fat floored, carbs absorb the remaining calories.
+    fat = Math.round(Math.max(macroWeight * 0.6, (calories * 0.25) / 9));
+    carbs = Math.max(0, Math.round((calories - protein * 4 - fat * 9) / 4));
+  } else {
+    // Low-carb / moderate / keto: carbs pinned, fat absorbs the remainder.
+    // The 0.6g/kg fat floor wins ties — if honouring it would overshoot
+    // calories, carbs give way (never essential fat).
+    carbs = carbTarget;
+    fat = Math.round((calories - protein * 4 - carbs * 4) / 9);
+    const fatFloor = Math.round(macroWeight * 0.6);
+    if (fat < fatFloor) {
+      fat = fatFloor;
+      carbs = Math.max(0, Math.round((calories - protein * 4 - fat * 9) / 4));
+    }
+  }
 
   return {
     calorie_target: calories,
@@ -252,8 +280,44 @@ export function calculateDeterministicTargets(
     fat_g: fat,
     reasoning: `Based on Mifflin-St Jeor estimated maintenance of ${Math.round(
       tdee,
-    )} kcal/day, adjusted for ${profile.goal.replace('_', ' ')} with macros set from body weight.`,
+    )} kcal/day, adjusted for ${profile.goal.replace('_', ' ')} with a ${dietTypeLabel(
+      dietType,
+    )} macro split.`,
   };
+}
+
+// Carbohydrate target per diet type, in grams/day. Returns null for the
+// 'balanced' default, where carbs remain the residual macro.
+//
+// The ketosis-relevant tiers (low_carb, keto) are ABSOLUTE grams, not a
+// percentage of calories: nutritional ketosis tracks total carb intake, not its
+// share of energy, so a percentage would drift in and out of ketosis as the
+// calorie target changes. 'moderate' is a balanced-leaning split, so it scales
+// with calories. Ranges mirror common ADA/Mayo guidance. See ADR-0006.
+function carbTargetGrams(dietType: DietType, calories: number): number | null {
+  switch (dietType) {
+    case 'balanced':
+      return null;
+    case 'moderate':
+      return Math.round((calories * 0.35) / 4);
+    case 'low_carb':
+      return 100;
+    case 'keto':
+      return 25;
+  }
+}
+
+function dietTypeLabel(dietType: DietType): string {
+  switch (dietType) {
+    case 'balanced':
+      return 'balanced';
+    case 'moderate':
+      return 'moderate-carb';
+    case 'low_carb':
+      return 'low-carb';
+    case 'keto':
+      return 'ketogenic';
+  }
 }
 
 // Returns the weight to use when computing bodyweight-based macro targets.

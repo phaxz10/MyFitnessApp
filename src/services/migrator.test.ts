@@ -91,7 +91,7 @@ describe('runPendingMigrations', () => {
   });
 
   // Bump LATEST_MIGRATION when a new migration is added to migrator.ts.
-  const LATEST_MIGRATION = 3;
+  const LATEST_MIGRATION = 4;
 
   it(`records version ${LATEST_MIGRATION} in schema_migrations`, async () => {
     await runPendingMigrations(db);
@@ -144,6 +144,23 @@ describe('runPendingMigrations', () => {
       await columnExists(db, 'workout_sets', 'workout_log_exercise_id'),
     ).toBe(true);
     expect(await columnExists(db, 'workout_sets', 'completed_at')).toBe(true);
+  });
+
+  it('adds diet_type to user_profile defaulting to balanced (migration 4)', async () => {
+    await runPendingMigrations(db);
+
+    expect(await columnExists(db, 'user_profile', 'diet_type')).toBe(true);
+
+    // A row inserted without diet_type should backfill to 'balanced'.
+    await db.exec(`
+      INSERT INTO user_profile
+        (id, birthdate, gender, height_cm, activity_level, goal, calorie_target, protein_target_g, carbs_target_g, fat_target_g)
+      VALUES (1, '1990-01-01', 'male', 180, 'moderate', 'recomp', 2000, 150, 200, 70);
+    `);
+    const result = await db.query<{ diet_type: string }>(
+      'SELECT diet_type FROM user_profile WHERE id = 1',
+    );
+    expect(result.rows[0].diet_type).toBe('balanced');
   });
 
   it('allows null reps and weight_kg in workout_sets', async () => {

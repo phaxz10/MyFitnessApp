@@ -91,7 +91,7 @@ export const onboardingTargetsSchema = z.object({
     .max(500, 'Protein too high'),
   carbs: z
     .number()
-    .min(50, 'Carbs must be at least 50g')
+    .min(20, 'Carbs must be at least 20g')
     .max(1000, 'Carbs too high'),
   fat: z.number().min(20, 'Fat must be at least 20g').max(500, 'Fat too high'),
 });
@@ -104,6 +104,7 @@ export const onboardingSchema = z.object({
   weightKg: z.string().min(1, 'Weight is required'),
   activityLevel: z.enum(['sedentary', 'light', 'moderate', 'active']),
   goal: z.enum(['bulk', 'lean_bulk', 'recomp', 'cut', 'maintain']),
+  dietType: z.enum(['balanced', 'moderate', 'low_carb', 'keto']),
   aiProvider: z.enum(['openai', 'anthropic', 'google']).optional(),
   aiModel: z.string().optional(),
   apiKey: z.string().optional(),
@@ -128,6 +129,7 @@ export const profileFormSchema = z.object({
 
 export const goalsFormSchema = z.object({
   goal: z.string().min(1, 'Goal is required'),
+  dietType: z.string().min(1, 'Diet type is required'),
   calories: z.string().min(1, 'Calories is required'),
   protein: z.string().min(1, 'Protein is required'),
   carbs: z.string().min(1, 'Carbs is required'),

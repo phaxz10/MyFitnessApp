@@ -181,7 +181,7 @@ docs/adr/               # Architectural Decision Records
 
 ## Architecture
 
-> **Design decisions** are recorded as [Architectural Decision Records](docs/adr/) (ADR-0001…0005), and the project's domain vocabulary lives in [CONTEXT.md](CONTEXT.md). Start there to understand *why* the code is shaped the way it is.
+> **Design decisions** are recorded as [Architectural Decision Records](docs/adr/) (ADR-0001…0006), and the project's domain vocabulary lives in [CONTEXT.md](CONTEXT.md). Start there to understand *why* the code is shaped the way it is.
 
 ### AI System
 

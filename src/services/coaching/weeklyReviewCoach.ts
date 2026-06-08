@@ -176,6 +176,7 @@ export async function reviewWeeklyProgress(
 User Profile:
 - Age: ${calculateAgeFromBirthdate(profile.birthdate)}, Gender: ${profile.gender}, Height: ${profile.height_cm}cm
 - Current Goal: ${profile.goal}
+- Diet Type (carb strategy): ${profile.diet_type}
 - Current Calorie Target: ${profile.calorie_target} kcal/day
 - Macro Targets: ${profile.protein_target_g}g protein, ${profile.carbs_target_g}g carbs, ${profile.fat_target_g}g fat
 
@@ -226,6 +227,8 @@ Based on this data, provide a comprehensive weekly review. Consider:
    - If showing "spendthrift" response: continue current approach or adjust based on goals
 5. Should the goal be changed? (e.g., cut -> maintenance for diet break if metabolically adapted)
 6. Are there any workout/program adjustments needed?
+
+IMPORTANT — respect the user's Diet Type when recommending macros: for "low_carb" or "keto", keep carbs within that strategy (keto ≈ 20-50g/day) and adjust calories via fat, not carbs. Do NOT recommend high-carb refeed days for a keto user. Only the "balanced" diet type should carry carbs as the high/residual macro.
 
 Return JSON format only, no markdown code blocks:
 {

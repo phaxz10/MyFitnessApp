@@ -31,6 +31,7 @@ import {
   Select,
 } from '../components/ui';
 import { DEFAULT_MODEL_BY_PROVIDER } from '../constants/aiProviders';
+import { dietTypeOptions } from '../constants/options';
 import { useAppStore } from '../hooks/useAppStore';
 import { useProfile } from '../hooks/useProfile';
 import { useWeight } from '../hooks/useWeight';
@@ -137,6 +138,7 @@ export function Settings() {
     resolver: zodResolver(goalsFormSchema),
     defaultValues: {
       goal: '',
+      dietType: 'balanced',
       calories: '',
       protein: '',
       carbs: '',
@@ -166,6 +168,7 @@ export function Settings() {
       });
       goalsForm.reset({
         goal: profile.goal,
+        dietType: profile.diet_type,
         calories: profile.calorie_target.toString(),
         protein: profile.protein_target_g.toString(),
         carbs: profile.carbs_target_g.toString(),
@@ -208,6 +211,11 @@ export function Settings() {
     try {
       await updateProfile({
         goal: data.goal as 'bulk' | 'lean_bulk' | 'recomp' | 'cut' | 'maintain',
+        diet_type: data.dietType as
+          | 'balanced'
+          | 'moderate'
+          | 'low_carb'
+          | 'keto',
         calorie_target: parseInt(data.calories, 10),
         protein_target_g: parseInt(data.protein, 10),
         carbs_target_g: parseInt(data.carbs, 10),
@@ -254,6 +262,11 @@ export function Settings() {
           | 'recomp'
           | 'cut'
           | 'maintain',
+        diet_type: values.dietType as
+          | 'balanced'
+          | 'moderate'
+          | 'low_carb'
+          | 'keto',
       });
 
       goalsForm.setValue('calories', result.calorie_target.toString());
@@ -546,6 +559,16 @@ export function Settings() {
                 options={goalOptions}
                 error={goalsForm.formState.errors.goal?.message}
               />
+              <Select
+                label="Diet type"
+                {...goalsForm.register('dietType')}
+                options={dietTypeOptions}
+                error={goalsForm.formState.errors.dietType?.message}
+              />
+              <p className="text-slate-500 text-xs -mt-1">
+                Changing this then tapping recalculate re-splits carbs and fat.
+                Keto pins carbs low and lets fat fill the rest.
+              </p>
               {/* Each macro input carries a left-border accent in its
                   MACRO_PALETTE color so the user sees the same color identity
                   here as on the CalorieLog rings. */}

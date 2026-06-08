@@ -238,6 +238,19 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    // Carb strategy: add diet_type to drive the macro split. Existing rows
+    // backfill to 'balanced' (carbs absorb remaining calories) so users see no
+    // change in their targets. 'low_carb'/'keto' pin carbs and let fat fill the
+    // rest. See ADR-0006.
+    version: 4,
+    up: async (db) => {
+      await db.exec(`
+        ALTER TABLE user_profile ADD COLUMN diet_type TEXT NOT NULL DEFAULT 'balanced'
+          CHECK (diet_type IN ('balanced', 'moderate', 'low_carb', 'keto'));
+      `);
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------

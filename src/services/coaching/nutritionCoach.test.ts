@@ -110,6 +110,102 @@ describe('calculateDeterministicTargets', () => {
     expect(result.carbs_g).toBeGreaterThanOrEqual(0);
   });
 
+  // ------------------------------------------------------------------------
+  // diet_type carb strategy — see ADR-0006
+  // Anchor profile: male, 30y, 180cm, 80kg, moderate, recomp
+  // BMR = 1780, TDEE = 2759, recomp adj = 0 → calories = 2750
+  // Protein = round(80 * 2.1) = 168 (same across diet types)
+  // ------------------------------------------------------------------------
+  const recompAnchor = {
+    age: 30,
+    gender: 'male' as const,
+    height_cm: 180,
+    weight_kg: 80,
+    activity_level: 'moderate' as const,
+    goal: 'recomp' as const,
+  };
+
+  it('defaults to the balanced split when diet_type is omitted', () => {
+    // Balanced: fat = round(max(48, 2750*0.25/9=76.4)) = 76
+    // Carbs = round((2750 - 672 - 684) / 4) = 349 (residual)
+    const result = calculateDeterministicTargets(recompAnchor);
+    expect(result.carbs_g).toBe(349);
+    expect(result.fat_g).toBe(76);
+  });
+
+  it('pins carbs low and lets fat absorb the remainder for keto', () => {
+    // Carbs pinned to 25; fat = round((2750 - 672 - 100) / 9) = 220
+    const result = calculateDeterministicTargets({
+      ...recompAnchor,
+      diet_type: 'keto',
+    });
+    expect(result.calorie_target).toBe(2750);
+    expect(result.protein_g).toBe(168);
+    expect(result.carbs_g).toBe(25);
+    expect(result.fat_g).toBe(220);
+  });
+
+  it('pins carbs to ~100g for low_carb', () => {
+    // Carbs = 100; fat = round((2750 - 672 - 400) / 9) = 186
+    const result = calculateDeterministicTargets({
+      ...recompAnchor,
+      diet_type: 'low_carb',
+    });
+    expect(result.carbs_g).toBe(100);
+    expect(result.fat_g).toBe(186);
+  });
+
+  it('scales carbs to ~35% of calories for moderate', () => {
+    // Carbs = round(2750 * 0.35 / 4) = 241; fat = round((2750-672-964)/9) = 124
+    const result = calculateDeterministicTargets({
+      ...recompAnchor,
+      diet_type: 'moderate',
+    });
+    expect(result.carbs_g).toBe(241);
+    expect(result.fat_g).toBe(124);
+  });
+
+  it('orders carbs keto < low_carb < moderate < balanced (and inverts fat)', () => {
+    const balanced = calculateDeterministicTargets(recompAnchor);
+    const moderate = calculateDeterministicTargets({
+      ...recompAnchor,
+      diet_type: 'moderate',
+    });
+    const low = calculateDeterministicTargets({
+      ...recompAnchor,
+      diet_type: 'low_carb',
+    });
+    const keto = calculateDeterministicTargets({
+      ...recompAnchor,
+      diet_type: 'keto',
+    });
+    expect(keto.carbs_g).toBeLessThan(low.carbs_g);
+    expect(low.carbs_g).toBeLessThan(moderate.carbs_g);
+    expect(moderate.carbs_g).toBeLessThan(balanced.carbs_g);
+    // Fewer carbs means more fat absorbs the remainder
+    expect(keto.fat_g).toBeGreaterThan(balanced.fat_g);
+  });
+
+  it('honours the 0.6g/kg fat floor, trimming carbs instead of fat', () => {
+    // Stocky cutter where a 35% carb target would push fat below its floor.
+    // 95kg, 165cm → BMI 34.9 → ABW 79.9; protein = 168; calories = 1675
+    // Moderate carbs would be 147 → fat 46, but floor = round(79.9*0.6) = 48.
+    // Floor wins: fat clamps to 48 and carbs drop to absorb the difference.
+    const result = calculateDeterministicTargets({
+      age: 50,
+      gender: 'male',
+      height_cm: 165,
+      weight_kg: 95,
+      activity_level: 'sedentary',
+      goal: 'cut',
+      diet_type: 'moderate',
+    });
+    expect(result.calorie_target).toBe(1675);
+    expect(result.protein_g).toBe(168);
+    expect(result.fat_g).toBe(48);
+    expect(result.carbs_g).toBe(143);
+  });
+
   it('uses adjusted body weight for macros when BMI > 30', () => {
     // 100kg, 170cm → BMI = 100/2.89 = 34.6 (obese)
     // IBW @ BMI 27.5 = 27.5 * 2.89 = 79.475

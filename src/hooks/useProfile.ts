@@ -30,13 +30,13 @@ async function createProfileFn(
 ): Promise<void> {
   const db = await getDB();
   await db.query(
-    `INSERT INTO user_profile (id, birthdate, gender, height_cm, activity_level, goal, calorie_target, protein_target_g, carbs_target_g, fat_target_g, ai_provider, ai_model, ai_api_key, ai_proxy_url)
-     VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    `INSERT INTO user_profile (id, birthdate, gender, height_cm, activity_level, goal, diet_type, calorie_target, protein_target_g, carbs_target_g, fat_target_g, ai_provider, ai_model, ai_api_key, ai_proxy_url)
+     VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
      ON CONFLICT (id) DO UPDATE SET
        birthdate = $1, gender = $2, height_cm = $3, activity_level = $4, goal = $5,
-       calorie_target = $6, protein_target_g = $7, carbs_target_g = $8,
-       fat_target_g = $9, ai_provider = $10, ai_model = $11,
-       ai_api_key = $12, ai_proxy_url = $13,
+       diet_type = $6, calorie_target = $7, protein_target_g = $8,
+       carbs_target_g = $9, fat_target_g = $10, ai_provider = $11, ai_model = $12,
+       ai_api_key = $13, ai_proxy_url = $14,
        updated_at = CURRENT_TIMESTAMP`,
     [
       data.birthdate,
@@ -44,6 +44,7 @@ async function createProfileFn(
       data.height_cm,
       data.activity_level,
       data.goal,
+      data.diet_type,
       data.calorie_target,
       data.protein_target_g,
       data.carbs_target_g,

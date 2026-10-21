@@ -12,10 +12,17 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "bench": "vitest bench --run --config scripts/bench/vitest.config.ts"
+    "bench": "vitest bench --run --config scripts/bench/vitest.config.ts",
+    "cap:sync": "pnpm build && LANG=en_US.UTF-8 cap sync"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.65",
+    "@capacitor-community/keep-awake": "^7.1.0",
+    "@capacitor/android": "^7.6.9",
+    "@capacitor/core": "^7.6.9",
+    "@capacitor/haptics": "^7.0.5",
+    "@capacitor/ios": "^7.6.9",
+    "@capacitor/local-notifications": "^7.0.7",
     "@electric-sql/pglite": "^0.4.5",
     "@hookform/resolvers": "^5.4.0",
     "@tailwindcss/vite": "^4.3.0",
@@ -41,6 +48,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",
+    "@capacitor/cli": "^7.6.9",
     "@types/node": "^25.9.1",
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",

@@ -1,6 +1,11 @@
 import { Pause, Play, RotateCcw, Timer, Volume2, VolumeX } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAlarmTone } from '../../hooks/useAlarmTone';
+import {
+  alarmHaptic,
+  cancelRestAlarm,
+  scheduleRestAlarm,
+} from '../../services/native';
 import { formatTimerDisplay } from '../../utils/formatters';
 import { Button, Modal } from '../ui';
 import { reconcileCountdown } from './restCountdown';
@@ -23,12 +28,6 @@ function formatPreset(time: number): string {
   if (time < 60) return `${time}s`;
   const rest = time % 60;
   return `${Math.floor(time / 60)}m${rest > 0 ? ` ${rest}s` : ''}`;
-}
-
-function sendToSW(message: { type: string; endAt?: number }) {
-  navigator.serviceWorker?.ready.then((reg) => {
-    reg.active?.postMessage(message);
-  });
 }
 
 export function RestTimer({
@@ -57,19 +56,12 @@ export function RestTimer({
     return workerRef.current;
   }, []);
 
-  const requestNotificationPermission = useCallback(async () => {
-    if (!('Notification' in window)) return;
-    if (Notification.permission === 'default') {
-      await Notification.requestPermission();
-    }
-  }, []);
-
   const scheduleNotification = useCallback((endAt: number) => {
-    sendToSW({ type: 'schedule-notification', endAt });
+    void scheduleRestAlarm(endAt);
   }, []);
 
   const cancelNotification = useCallback(() => {
-    sendToSW({ type: 'cancel-notification' });
+    void cancelRestAlarm();
   }, []);
 
   const startCountdown = useCallback(
@@ -77,13 +69,12 @@ export function RestTimer({
       const endAt = Date.now() + durationSeconds * 1000;
       endAtRef.current = endAt;
 
-      requestNotificationPermission();
       scheduleNotification(endAt);
 
       const worker = getWorker();
       worker.postMessage({ type: 'start', endAt });
     },
-    [getWorker, requestNotificationPermission, scheduleNotification],
+    [getWorker, scheduleNotification],
   );
 
   const stopCountdown = useCallback(() => {
@@ -122,8 +113,8 @@ export function RestTimer({
 
         if (soundEnabled) {
           startAlarm();
-        } else if (navigator.vibrate) {
-          navigator.vibrate([200, 100, 200, 100, 200]);
+        } else {
+          alarmHaptic();
         }
       }
     };
@@ -148,8 +139,8 @@ export function RestTimer({
       onOpenChange(true);
       if (soundEnabled) {
         startAlarm();
-      } else if (navigator.vibrate) {
-        navigator.vibrate([200, 100, 200, 100, 200]);
+      } else {
+        alarmHaptic();
       }
     };
 

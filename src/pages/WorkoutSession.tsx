@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Combine, Flag, Plus } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -29,6 +29,7 @@ import {
   type WorkoutNotesFormData,
   workoutNotesSchema,
 } from '../schemas/forms';
+import { setDoneHaptic, setKeepAwake } from '../services/native';
 import { parseLocalTimestamp } from '../utils/date';
 import {
   compareSessionToProgram,
@@ -122,7 +123,6 @@ export function WorkoutSession() {
     useState<ExerciseInfo | null>(null);
 
   // Wake lock ref
-  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
   // Form for workout notes
   const {
@@ -134,34 +134,17 @@ export function WorkoutSession() {
     defaultValues: { notes: '' },
   });
 
-  // Wake lock management
+  // Keep the screen on for the whole session (native wake lock in the app shell).
   useEffect(() => {
-    const requestWakeLock = async () => {
-      if ('wakeLock' in navigator && activeWorkout) {
-        try {
-          wakeLockRef.current = await navigator.wakeLock.request('screen');
-        } catch (err) {
-          console.log('Wake lock request failed:', err);
-        }
-      }
+    if (!activeWorkout) return;
+    void setKeepAwake(true);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void setKeepAwake(true);
     };
-
-    requestWakeLock();
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && activeWorkout) {
-        requestWakeLock();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      if (wakeLockRef.current) {
-        wakeLockRef.current.release();
-        wakeLockRef.current = null;
-      }
+      document.removeEventListener('visibilitychange', onVisible);
+      void setKeepAwake(false);
     };
   }, [activeWorkout]);
 
@@ -286,6 +269,7 @@ export function WorkoutSession() {
   // Wrapper for completing a single set (starts rest timer)
   const onCompleteSet = async (exerciseIndex: number, setIndex: number) => {
     const success = await handleCompleteSet(exerciseIndex, setIndex);
+    if (success) setDoneHaptic();
     if (success) {
       startRestTimer();
     }
@@ -297,6 +281,7 @@ export function WorkoutSession() {
     roundNumber: number,
   ) => {
     const success = await handleCompleteRound(exerciseIndices, roundNumber);
+    if (success) setDoneHaptic();
     if (success) {
       startRestTimer();
     }

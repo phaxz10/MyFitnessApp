@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { MACRO_PALETTE } from '../components/nutrition';
 import { AISetupForm } from '../components/settings/AISetupForm';
 import { Button, Input } from '../components/ui';
-import { DEFAULT_MODEL_BY_PROVIDER } from '../constants/aiProviders';
+import { AI_PROVIDER, FALLBACK_MODEL } from '../constants/aiProviders';
 import { dietTypeOptions } from '../constants/options';
 import { useAppStore } from '../hooks/useAppStore';
 import { useProfile } from '../hooks/useProfile';
@@ -20,7 +20,6 @@ import {
 } from '../services/coaching/nutritionCoach';
 import { signIn } from '../services/googleAuth';
 import { hasRemoteBackup } from '../services/googleDrive';
-import type { AIProvider } from '../types';
 import { calculateAgeFromBirthdate, formatDate } from '../utils/date';
 
 type Step =
@@ -80,10 +79,8 @@ export function Onboarding() {
       activityLevel: 'moderate',
       goal: 'lean_bulk',
       dietType: 'balanced',
-      aiProvider: undefined,
       aiModel: undefined,
       apiKey: '',
-      proxyUrl: '',
       targets: {
         calories: 2000,
         protein: 150,
@@ -98,10 +95,8 @@ export function Onboarding() {
   const goal = watch('goal');
   const dietType = watch('dietType');
   const targets = watch('targets');
-  const aiProvider = watch('aiProvider');
   const aiModel = watch('aiModel');
   const apiKey = watch('apiKey') ?? '';
-  const proxyUrl = watch('proxyUrl') ?? '';
 
   const handleNext = async () => {
     setError(null);
@@ -174,11 +169,7 @@ export function Onboarding() {
     const values = getValues();
     const profile = buildTargetProfile();
     try {
-      const hasFullAISetup = !!(
-        values.aiProvider &&
-        values.aiModel &&
-        values.apiKey
-      );
+      const hasFullAISetup = !!(values.aiModel && values.apiKey);
       if (hasFullAISetup) {
         // Seed the active profile in the store so the stateless aiClient can
         // read it. The full DB profile row is created right after this step.
@@ -195,13 +186,10 @@ export function Onboarding() {
             protein_target_g: 0,
             carbs_target_g: 0,
             fat_target_g: 0,
-            ai_provider: values.aiProvider as AIProvider,
+            ai_provider: AI_PROVIDER,
             ai_model: values.aiModel as string,
             ai_api_key: values.apiKey ?? null,
-            ai_proxy_url:
-              values.aiProvider === 'openai' && values.proxyUrl?.trim()
-                ? values.proxyUrl.trim()
-                : null,
+            ai_proxy_url: null,
             created_at: '',
             updated_at: '',
           },
@@ -220,11 +208,11 @@ export function Onboarding() {
 
   const saveProfile = async () => {
     const values = getValues();
-    // If the user picked a provider but skipped the key (or vice versa),
-    // fall back to defaults so the DB row stays valid. The capability check
-    // gates AI features on having all three.
-    const provider: AIProvider = values.aiProvider ?? 'openai';
-    const model = values.aiModel ?? DEFAULT_MODEL_BY_PROVIDER[provider];
+    // If the user picked a model but skipped the key (or vice versa), fall
+    // back to defaults so the DB row stays valid. The capability check gates
+    // AI features on having model + key.
+    const provider: typeof AI_PROVIDER = AI_PROVIDER;
+    const model = values.aiModel ?? FALLBACK_MODEL;
     try {
       await createProfile({
         birthdate: values.birthdate,
@@ -240,10 +228,7 @@ export function Onboarding() {
         ai_provider: provider,
         ai_model: model,
         ai_api_key: values.apiKey || null,
-        ai_proxy_url:
-          provider === 'openai' && values.proxyUrl?.trim()
-            ? values.proxyUrl.trim()
-            : null,
+        ai_proxy_url: null,
       });
 
       // Add initial weight log
@@ -530,17 +515,10 @@ export function Onboarding() {
           <div>
             <h2 className="text-2xl font-bold text-white mb-6">AI Setup</h2>
             <AISetupForm
-              value={{
-                provider: aiProvider,
-                model: aiModel,
-                apiKey,
-                proxyUrl,
-              }}
+              value={{ model: aiModel, apiKey }}
               onChange={(next) => {
-                setValue('aiProvider', next.provider);
                 setValue('aiModel', next.model);
                 setValue('apiKey', next.apiKey);
-                setValue('proxyUrl', next.proxyUrl);
               }}
             />
             <p className="text-slate-500 text-sm mt-4">
@@ -558,7 +536,7 @@ export function Onboarding() {
               <Button
                 onClick={handleNext}
                 className="flex-1"
-                disabled={!aiProvider || !aiModel || !apiKey}
+                disabled={!aiModel || !apiKey}
               >
                 Continue
               </Button>

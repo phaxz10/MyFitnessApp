@@ -118,16 +118,10 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 ### Configure AI Features
 
 1. Open **Settings → AI Settings** (or do it in onboarding)
-2. Pick a provider: **OpenAI**, **Anthropic**, or **Google**
-3. Pick a model from that provider's curated list
-4. Paste your API key:
-   - OpenAI: [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
-   - Anthropic: [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
-   - Google: [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+2. Paste an OpenRouter API key from [openrouter.ai/keys](https://openrouter.ai/keys)
+3. Search and pick a model from OpenRouter's live catalog (or type any model id)
 
-All three work browser-direct — no proxy required for the default experience.
-
-**Advanced: OpenAI web_search.** OpenAI's built-in `web_search` tool only lives on the Responses API, which omits CORS headers in browsers. If you want web search on OpenAI specifically, deploy the included Cloudflare Worker (see [worker/README.md](worker/)) and paste the URL into the **Advanced: OpenAI proxy URL** field in Settings. Anthropic and Google have their own web-search tools that work without any proxy.
+OpenRouter is browser-direct — no proxy required. Web search uses OpenRouter's `:online` plugin (see [ADR-0007](docs/adr/0007-openrouter-single-provider.md)).
 
 ### Configure Google Drive Backup
 
@@ -175,7 +169,7 @@ src/
 ├── schemas/            # Zod form validation schemas
 └── lib/                # TanStack Query configuration
 
-worker/                 # Cloudflare Worker (OpenAI CORS proxy)
+worker/                 # Legacy OpenAI CORS proxy (unused since ADR-0007)
 docs/adr/               # Architectural Decision Records
 ```
 
@@ -194,13 +188,13 @@ Coaching Modules (domain prompts + Zod validation)
     ↓
 AI Client (stateless transport + caching + error classification)
     ↓
-Provider API — OpenAI / Anthropic / Google (OpenAI web search via optional CORS proxy)
+Provider API — OpenRouter (single BYOK gateway for every vendor; hosted web search via the `:online` plugin)
 ```
 
 - **AI Client** (`src/services/ai/aiClient.ts`) — stateless wrapper around the Vercel AI SDK. Reads the active provider + model + key from Zustand on each call. Two entry points: `complete<T>()` for single-turn with optional Zod validation, `respond()` for free-form text and tool-orchestrated calls. Cache, one-shot retry, and `AIError` taxonomy all live here.
 - **Coaching Modules** (`src/services/coaching/`) — five domain-specific modules that own prompts and response schemas. Each module knows about fitness; the AI client does not.
 - **AI Capability** — a configuration concept ("is a provider+model+key triple configured?"), separate from network state. See [ADR-0001](docs/adr/0001-ai-capability-is-configuration-not-call-readiness.md).
-- **Multi-provider** — the Vercel AI SDK abstracts OpenAI, Anthropic, and Google behind one interface; a registry (`src/constants/aiProviders.ts`) is the single source of truth. See [ADR-0005](docs/adr/0005-ai-is-multi-provider.md).
+- **Live model catalog** — OpenRouter is the single provider; the model picker is a searchable combobox fed by OpenRouter's public models endpoint (`src/services/ai/openrouterModels.ts`). See [ADR-0007](docs/adr/0007-openrouter-single-provider.md).
 
 ### Database
 

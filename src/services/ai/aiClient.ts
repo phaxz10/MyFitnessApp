@@ -1,5 +1,3 @@
-import { createAnthropic } from '@ai-sdk/anthropic';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import {
   APICallError,
@@ -16,6 +14,12 @@ import {
   TypeValidationError,
 } from 'ai';
 import type { ZodType } from 'zod';
+import {
+  APP_REFERENCE_URL,
+  APP_TITLE,
+  OPENROUTER_BASE_URL,
+  WEB_SEARCH_SUFFIX,
+} from '../../constants/aiProviders';
 import { useAppStore } from '../../hooks/useAppStore';
 import type { AIProvider } from '../../types';
 import { AIError } from './AIError';
@@ -66,14 +70,15 @@ export interface CompleteOptions<T> extends RespondOptions {
 export type RawResponse = GenerateTextResult<any, never>;
 
 // ---------------------------------------------------------------------------
-// Provider factory — stateless, reads store on each call (ADR-0002).
+// Provider factory — stateless, reads store on each call (ADR-0002, ADR-0007).
+// OpenRouter is the single provider: OpenAI-API-compatible and CORS-friendly,
+// so browser-direct calls need no proxy and every model rides one transport.
 // ---------------------------------------------------------------------------
 
 interface ActiveConfig {
   provider: AIProvider;
   model: string;
   apiKey: string;
-  proxyUrl: string | undefined;
 }
 
 function readActiveConfig(modelOverride?: string): ActiveConfig {
@@ -85,59 +90,68 @@ function readActiveConfig(modelOverride?: string): ActiveConfig {
     provider: profile.ai_provider,
     model: modelOverride ?? profile.ai_model,
     apiKey: profile.ai_api_key,
-    proxyUrl: profile.ai_proxy_url?.trim() || undefined,
   };
 }
 
+// Attribution metadata OpenRouter recommends for usage dashboards.
 function buildLanguageModel(cfg: ActiveConfig): LanguageModel {
-  switch (cfg.provider) {
-    case 'openai': {
-      const baseURL = cfg.proxyUrl
-        ? `${cfg.proxyUrl.replace(/\/+$/, '')}/v1`
-        : undefined;
-      const openai = createOpenAI({ apiKey: cfg.apiKey, baseURL });
-      // Proxy configured → use the Responses API path so openai.tools.webSearch()
-      // works. Without a proxy, plain chat completions has no CORS issue.
-      return cfg.proxyUrl ? openai.responses(cfg.model) : openai(cfg.model);
-    }
-    case 'anthropic': {
-      // Anthropic browser-direct only works with this header set.
-      const anthropic = createAnthropic({
-        apiKey: cfg.apiKey,
-        headers: { 'anthropic-dangerous-direct-browser-access': 'true' },
-      });
-      return anthropic(cfg.model);
-    }
-    case 'google': {
-      const google = createGoogleGenerativeAI({ apiKey: cfg.apiKey });
-      return google(cfg.model);
-    }
-  }
+  const openrouter = createOpenAI({
+    apiKey: cfg.apiKey,
+    baseURL: OPENROUTER_BASE_URL,
+    headers: {
+      'HTTP-Referer': APP_REFERENCE_URL,
+      'X-Title': APP_TITLE,
+    },
+  });
+  // .chat(): the v3 default `openrouter(id)` targets the Responses API.
+  return openrouter.chat(cfg.model);
 }
 
-// webSearchTool returns the active provider's native web-search tool, or
-// `undefined` when the provider can't expose one in the current config.
-// OpenAI requires the Responses API (proxy) to use webSearch.
+// Web search works differently through OpenRouter: there is no native
+// web_search tool over the AI SDK transport, but OpenRouter offers a hosted
+// web-search plugin enabled per-request by appending ':online' to the model id
+// (billed via OpenRouter, no proxy needed).
+//
+// To keep Coaches provider-agnostic, webSearchTool() returns a sentinel and
+// this module translates a `web_search` entry in the tools map into the suffix
+// instead of sending a tool. See splitWebSearch() below.
+const WEB_SEARCH_KEY = 'web_search';
+/** Sentinel a Coach puts in its tools map to declare "this call wants web search". */
+const WEB_SEARCH_SENTINEL = {
+  description: "Sentinel for OpenRouter's hosted web-search plugin (:online).",
+} as unknown as Tool;
+
+// webSearchTool returns the web-search capability for the active config, or
+// `undefined` when no key is configured (so the Coach skips the tool path).
 export function webSearchTool(): Tool | undefined {
   const profile = useAppStore.getState().userProfile;
   if (!profile?.ai_api_key) return undefined;
-  const apiKey = profile.ai_api_key;
-  const proxyUrl = profile.ai_proxy_url?.trim() || undefined;
+  return WEB_SEARCH_SENTINEL;
+}
 
-  switch (profile.ai_provider) {
-    case 'openai': {
-      if (!proxyUrl) return undefined;
-      const baseURL = `${proxyUrl.replace(/\/+$/, '')}/v1`;
-      return createOpenAI({ apiKey, baseURL }).tools.webSearch({});
-    }
-    case 'anthropic':
-      return createAnthropic({
-        apiKey,
-        headers: { 'anthropic-dangerous-direct-browser-access': 'true' },
-      }).tools.webSearch_20250305({});
-    case 'google':
-      return createGoogleGenerativeAI({ apiKey }).tools.googleSearch({});
-  }
+// Splits a Coach's tools map into (real tools, web-search intent). The
+// sentinel is never sent to the provider — it only flips the ':online' suffix
+// on the outgoing model id.
+function splitWebSearch(tools?: ToolSet): {
+  tools: ToolSet | undefined;
+  webSearch: boolean;
+} {
+  if (!tools) return { tools: undefined, webSearch: false };
+  if (!(WEB_SEARCH_KEY in tools)) return { tools, webSearch: false };
+  const rest: ToolSet = { ...tools };
+  delete rest[WEB_SEARCH_KEY];
+  return {
+    tools: Object.keys(rest).length > 0 ? rest : undefined,
+    webSearch: true,
+  };
+}
+
+// Applies the web-search suffix to a model id. Idempotent (user-entered ids
+// may already end in ':online').
+function applyWebSearch(modelId: string): string {
+  return modelId.endsWith(WEB_SEARCH_SUFFIX)
+    ? modelId
+    : modelId + WEB_SEARCH_SUFFIX;
 }
 
 // ---------------------------------------------------------------------------
@@ -146,15 +160,17 @@ export function webSearchTool(): Tool | undefined {
 
 export async function respond(opts: RespondOptions): Promise<RawResponse> {
   const cfg = readActiveConfig(opts.model);
+  const { tools, webSearch } = splitWebSearch(opts.tools);
+  if (webSearch) cfg.model = applyWebSearch(cfg.model);
   const model = buildLanguageModel(cfg);
   try {
     return (await generateText({
       model,
       system: opts.instructions,
       ...promptOrMessages(opts.prompt),
-      tools: opts.tools,
+      tools,
       temperature: opts.temperature,
-      stopWhen: opts.tools
+      stopWhen: tools
         ? stepCountIs(opts.maxSteps ?? DEFAULT_MAX_STEPS)
         : undefined,
     })) as RawResponse;
@@ -201,6 +217,8 @@ export async function complete<T = unknown>(
 
 async function completeOnce<T = unknown>(opts: CompleteOptions<T>): Promise<T> {
   const cfg = readActiveConfig(opts.model);
+  const { tools, webSearch } = splitWebSearch(opts.tools);
+  if (webSearch) cfg.model = applyWebSearch(cfg.model);
   const schemaName = toSchemaName(
     opts.schemaName ?? opts.cache?.namespace ?? 'ai_response',
   );
@@ -208,10 +226,13 @@ async function completeOnce<T = unknown>(opts: CompleteOptions<T>): Promise<T> {
     ? buildCacheKey(opts.cache.namespace, {
         prompt: opts.prompt,
         instructions: opts.instructions,
-        toolNames: opts.tools ? Object.keys(opts.tools).sort() : undefined,
+        // The sentinel never reaches the request body, so the effective tool
+        // names are what matter for the key. Reflect web-search intent too —
+        // a ':online' run must not collide with a plain one.
+        toolNames: tools ? Object.keys(tools).sort() : undefined,
+        webSearch,
         provider: cfg.provider,
         model: cfg.model,
-        proxyUsed: !!cfg.proxyUrl,
         temperature: opts.temperature,
         schemaName,
       })
@@ -240,7 +261,7 @@ async function completeOnce<T = unknown>(opts: CompleteOptions<T>): Promise<T> {
   // (generateObject is the older API; the docs steer everything through this
   // path). The structured-output step counts toward stopWhen, so when tools
   // are present we budget one extra step for the final formatted output.
-  const baseStopWhen = opts.tools
+  const baseStopWhen = tools
     ? stepCountIs((opts.maxSteps ?? DEFAULT_MAX_STEPS) + (opts.schema ? 1 : 0))
     : undefined;
 
@@ -252,7 +273,7 @@ async function completeOnce<T = unknown>(opts: CompleteOptions<T>): Promise<T> {
         model,
         system: opts.instructions,
         ...promptOrMessages(opts.prompt),
-        tools: opts.tools,
+        tools,
         temperature: opts.temperature,
         stopWhen: baseStopWhen,
         output: Output.object({ schema: opts.schema, name: schemaName }),
@@ -264,7 +285,7 @@ async function completeOnce<T = unknown>(opts: CompleteOptions<T>): Promise<T> {
         model,
         system: opts.instructions,
         ...promptOrMessages(opts.prompt),
-        tools: opts.tools,
+        tools,
         temperature: opts.temperature,
         stopWhen: baseStopWhen,
       });

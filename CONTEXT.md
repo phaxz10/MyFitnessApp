@@ -15,22 +15,22 @@ A domain module that builds a prompt + Zod schema for one job and calls the Wrap
 _Avoid_: service, helper, agent
 
 **Provider**:
-One of the three AI vendors the app supports: `openai`, `anthropic`, `google`. The active Provider is stored on the Profile.
+One AI vendor gateway the app supports: `openrouter` (ADR-0007). OpenRouter is OpenAI-API-compatible and browser-direct, so one transport covers every model. The active Provider is stored on the Profile.
 _Avoid_: vendor, backend, engine
 
 **Model**:
-A specific model id within a Provider (e.g. `gpt-5.4-mini`, `claude-sonnet-4-6`). Enumerated per Provider in the Provider registry.
+A specific OpenRouter model id (e.g. `openai/gpt-4o-mini`, `anthropic/claude-sonnet-4-6`). Not enumerated in code — the Model Catalog serves the live list.
 
-**Provider registry**:
-`src/constants/aiProviders.ts` — the single source of truth for which Provider + Model combinations the app exposes. Both the Settings pickers and the Wrapper's factory read it.
-_Avoid_: config, models list
+**Model Catalog**:
+`src/services/ai/openrouterModels.ts` — fetches OpenRouter's public, no-auth models endpoint and caches it (24h TTL). Powers the Model Combobox in Onboarding/Settings, so users pick a real current id instead of typing one.
+_Avoid_: registry, models list, config
 
 **Capability**:
 The answer to "can AI run right now, by configuration?" — specifically, whether the active **Provider + Model + key** triple is set. A configuration concept only; network state is a separate concern. (See ADR-0001, ADR-0005.)
 _Avoid_: availability, readiness
 
 **Proxy**:
-The optional Cloudflare Worker (`worker/openai-proxy.ts`) that adds CORS headers so OpenAI's Responses API (web search) works from the browser. OpenAI-only; Anthropic and Google need no Proxy.
+Retired (ADR-0007). OpenRouter is browser-direct, so the Cloudflare Worker no longer has a caller; `worker/openai-proxy.ts` remains for reference only.
 _Avoid_: server, backend, gateway
 
 **BYOK** (Bring Your Own Key):
@@ -118,7 +118,7 @@ _Avoid_: report, summary
 
 - **Session vs Workout Log** — the sharpest one. A **Session** is the *template* (part of a Program); a **Workout Log** is the *performed instance*. "Workout" alone is ambiguous — prefer one of the two. UI copy may say "workout" to users, but code and prompts use the precise term.
 - **Wrapper vs Coach** — the **Wrapper** is transport (one file, no domain knowledge); a **Coach** is domain + prompt (no transport knowledge). A new AI feature is a new Coach, never a change to the Wrapper.
-- **Provider vs Model** — a **Provider** is the vendor (`openai`); a **Model** is a specific id (`gpt-5.4-mini`). Capability needs both, plus a key.
+- **Provider vs Model** — a **Provider** is the gateway (`openrouter`); a **Model** is a specific id (`openai/gpt-4o-mini`). Capability needs both, plus a key.
 
 ## Example dialogue
 

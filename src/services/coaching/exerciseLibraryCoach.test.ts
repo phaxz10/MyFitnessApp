@@ -19,8 +19,8 @@ vi.mock('../../hooks/useAppStore', () => ({
   useAppStore: {
     getState: vi.fn(() => ({
       userProfile: {
-        ai_provider: 'openai',
-        ai_model: 'gpt-4o',
+        ai_provider: 'openrouter',
+        ai_model: 'openai/gpt-4o-mini',
         ai_api_key: 'sk-test',
         ai_proxy_url: null,
       },

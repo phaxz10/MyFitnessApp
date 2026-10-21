@@ -30,7 +30,7 @@ import {
   Modal,
   Select,
 } from '../components/ui';
-import { DEFAULT_MODEL_BY_PROVIDER } from '../constants/aiProviders';
+import { AI_PROVIDER, FALLBACK_MODEL } from '../constants/aiProviders';
 import { dietTypeOptions } from '../constants/options';
 import { useAppStore } from '../hooks/useAppStore';
 import { useProfile } from '../hooks/useProfile';
@@ -68,7 +68,6 @@ import {
   deleteAppFolder,
   hasRemoteBackup,
 } from '../services/googleDrive';
-import type { AIProvider } from '../types';
 import { calculateAgeFromBirthdate, formatDate } from '../utils/date';
 
 const activityOptions = [
@@ -150,10 +149,8 @@ export function Settings() {
   const apiKeyForm = useForm<ApiKeyFormData>({
     resolver: zodResolver(apiKeyFormSchema),
     defaultValues: {
-      aiProvider: undefined,
       aiModel: undefined,
       apiKey: '',
-      proxyUrl: '',
     },
   });
 
@@ -175,10 +172,8 @@ export function Settings() {
         fat: profile.fat_target_g.toString(),
       });
       apiKeyForm.reset({
-        aiProvider: profile.ai_provider,
         aiModel: profile.ai_model,
         apiKey: profile.ai_api_key || '',
-        proxyUrl: profile.ai_proxy_url || '',
       });
     }
   }, [profile, profileForm, goalsForm, apiKeyForm]);
@@ -285,18 +280,14 @@ export function Settings() {
     setIsLoading(true);
     setError(null);
     try {
-      const provider: AIProvider = data.aiProvider ?? 'openai';
-      const model = data.aiModel ?? DEFAULT_MODEL_BY_PROVIDER[provider];
+      const provider: typeof AI_PROVIDER = AI_PROVIDER;
+      const model = data.aiModel ?? FALLBACK_MODEL;
       await updateProfile({
         ai_provider: provider,
         ai_model: model,
         ai_api_key: data.apiKey || null,
-        // Proxy URL is OpenAI-specific; drop it for other providers so they
-        // don't accidentally route through an OpenAI worker.
-        ai_proxy_url:
-          provider === 'openai' && data.proxyUrl?.trim()
-            ? data.proxyUrl.trim()
-            : null,
+        // The legacy OpenAI proxy is obsolete — OpenRouter is browser-direct.
+        ai_proxy_url: null,
       });
       // useProfile's refetch + App.tsx's mirror effect updates the store,
       // which the stateless aiClient reads on its next call.
@@ -667,16 +658,12 @@ export function Settings() {
               <AISetupForm
                 compact
                 value={{
-                  provider: apiKeyForm.watch('aiProvider'),
                   model: apiKeyForm.watch('aiModel'),
                   apiKey: apiKeyForm.watch('apiKey') ?? '',
-                  proxyUrl: apiKeyForm.watch('proxyUrl') ?? '',
                 }}
                 onChange={(next) => {
-                  apiKeyForm.setValue('aiProvider', next.provider);
                   apiKeyForm.setValue('aiModel', next.model);
                   apiKeyForm.setValue('apiKey', next.apiKey);
-                  apiKeyForm.setValue('proxyUrl', next.proxyUrl);
                 }}
               />
               <Button type="submit" isLoading={isLoading} className="w-full">

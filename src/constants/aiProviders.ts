@@ -1,85 +1,67 @@
-// Multi-provider AI registry — see ADR-0005 and CONTEXT.md.
+// Central AI config — see ADR-0007 (single provider: OpenRouter).
 //
-// This is the single source of truth for which provider+model combinations
-// the app exposes. Onboarding/Settings dropdowns read from here; aiClient's
-// provider factory reads from here. New models drop frequently — update
-// MODELS_BY_PROVIDER and the matching DEFAULT_MODEL_BY_PROVIDER when they do.
+// The old per-vendor registry (openai/anthropic/google) is gone: OpenRouter is
+// OpenAI-API-compatible and CORS-friendly, so one provider id and one transport
+// cover every model. The live model list is NOT hard-coded here — it comes from
+// OpenRouter's public models endpoint via `src/services/ai/openrouterModels.ts`
+// (see the ModelCombobox). This file holds only what that service and the rest
+// of the app need: the provider constant, endpoints, and OpenRouter quirks.
 
 import type { AIProvider } from '../types';
 
-export interface AIModelOption {
-  id: string;
-  label: string;
-}
-
-export interface AIProviderOption {
-  id: AIProvider;
-  label: string;
-  /** Where the user gets an API key. Shown as a link in the UI. */
-  apiKeyUrl: string;
-  /** Short copy under the provider name in the picker. */
-  blurb: string;
-}
-
-export const PROVIDER_OPTIONS: AIProviderOption[] = [
-  {
-    id: 'openai',
-    label: 'OpenAI',
-    apiKeyUrl: 'https://platform.openai.com/api-keys',
-    blurb:
-      'GPT models. Works without proxy; advanced users can configure one to enable web search.',
-  },
-  {
-    id: 'anthropic',
-    label: 'Anthropic',
-    apiKeyUrl: 'https://console.anthropic.com/settings/keys',
-    blurb:
-      'Claude models. Works browser-direct. Strong reasoning for program generation.',
-  },
-  {
-    id: 'google',
-    label: 'Google',
-    apiKeyUrl: 'https://aistudio.google.com/apikey',
-    blurb: 'Gemini models. Works browser-direct. Cheap per call.',
-  },
-];
-
-export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
-  openai: [
-    { id: 'gpt-5.4-mini', label: 'GPT-5.4 mini (recommended)' },
-    { id: 'gpt-5.4-nano', label: 'GPT-5.4 nano (latest low cost)' },
-    { id: 'gpt-5.4', label: 'GPT-5.4 (higher quality)' },
-    { id: 'gpt-5.5', label: 'GPT-5.5 (best)' },
-    { id: 'gpt-4o-mini', label: 'GPT-4o mini (legacy low cost)' },
-    { id: 'gpt-4o', label: 'GPT-4o (legacy)' },
-  ],
-  anthropic: [
-    { id: 'claude-opus-4-5', label: 'Claude Opus 4.5' },
-    { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-    { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5 (cheap)' },
-  ],
-  google: [
-    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (cheap)' },
-  ],
-};
-
-export const DEFAULT_MODEL_BY_PROVIDER: Record<AIProvider, string> = {
-  openai: 'gpt-5.4-mini',
-  anthropic: 'claude-sonnet-4-6',
-  google: 'gemini-2.5-flash',
-};
+/** The one supported provider. The Profile carries it; keep for readability. */
+export const AI_PROVIDER: AIProvider = 'openrouter';
 
 export function isAIProvider(value: unknown): value is AIProvider {
-  return value === 'openai' || value === 'anthropic' || value === 'google';
+  return value === 'openrouter';
 }
 
-export function getProviderLabel(id: AIProvider): string {
-  return PROVIDER_OPTIONS.find((p) => p.id === id)?.label ?? id;
-}
+/** Where the user gets an OpenRouter API key. Shown as a link in the UI. */
+export const API_KEY_URL = 'https://openrouter.ai/keys';
 
-export function getModelLabel(provider: AIProvider, modelId: string): string {
-  return (
-    MODELS_BY_PROVIDER[provider].find((m) => m.id === modelId)?.label ?? modelId
-  );
+export const PROVIDER_LABEL = 'OpenRouter';
+
+export const PROVIDER_BLURB =
+  'One key, every model — OpenAI, Anthropic, Google, Meta, Mistral and more. Pay OpenRouter per request.';
+
+/**
+ * `fetchOpenRouterModels` fallback: not a recommended model, just the
+ * DB/migration default so a Profile row always satisfies NOT NULL. Users who
+ * actually configure AI always pick a model through the combobox.
+ */
+export const FALLBACK_MODEL = 'openai/gpt-4o-mini';
+
+/** OpenRouter's API base (OpenAI-compatible; browser-direct works). */
+export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+
+/** Public, no-auth models listing — powers the model combobox. */
+export const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
+
+/**
+ * Suffix that turns on OpenRouter's hosted web-search plugin for a model.
+ * Coaches request web search symbolically (webSearchTool() → sentinel) and the
+ * Wrapper translates that to this suffix instead of a native tool — OpenRouter
+ * has no native web_search tool over the AI SDK transport.
+ */
+export const WEB_SEARCH_SUFFIX = ':online';
+
+/**
+ * Ad-hoc attribution recommended by OpenRouter for API usage stats. Sent as
+ * HTTP-Referer / X-Title on chat requests (not CORS-relevant, just metadata).
+ */
+export const APP_REFERENCE_URL = 'https://mypersonalfitness.app';
+export const APP_TITLE = 'MyPersonalFitness';
+
+/**
+ * Maps a legacy (ADR-0005, pre-OpenRouter) model id onto the matching
+ * OpenRouter slug, e.g. `gpt-4o` → `openai/gpt-4o`. Ids that already look like
+ * OpenRouter slugs (contain `/`) or unknown shapes pass through untouched —
+ * worst case is a legible runtime API error, same as a stale model id.
+ */
+export function toOpenRouterModelId(modelId: string): string {
+  if (modelId.includes('/')) return modelId;
+  if (modelId.startsWith('gpt')) return `openai/${modelId}`;
+  if (modelId.startsWith('claude')) return `anthropic/${modelId}`;
+  if (modelId.startsWith('gemini')) return `google/${modelId}`;
+  return modelId;
 }

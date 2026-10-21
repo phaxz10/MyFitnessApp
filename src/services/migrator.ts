@@ -251,6 +251,49 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    // OpenRouter becomes the single AI provider (ADR-0007). Legacy rows kept
+    // ('openai' | 'anthropic' | 'google') from migration v3's CHECK constraint;
+    // that constraint must be dropped before the provider value can change.
+    //
+    // Model ids get remapped to OpenRouter slugs ('gpt-4o' → 'openai/gpt-4o',
+    // 'claude-*' → 'anthropic/claude-*', 'gemini-*' → 'google/gemini-*') so the
+    // user's configured model keeps meaning the same thing.
+    //
+    // Vendored API keys and the OpenAI proxy are NULLed deliberately: a raw
+    // OpenAI/Anthropic/Google key cannot authenticate against OpenRouter and
+    // a proxy is no longer needed (browser-direct works). Nulling them flips
+    // Capability off so users land on the AI Settings screen to paste their
+    // OpenRouter key instead of hitting opaque 401s at AI-call time.
+    version: 5,
+    up: async (db) => {
+      await db.exec(`
+        ALTER TABLE user_profile
+          DROP CONSTRAINT IF EXISTS user_profile_ai_provider_check;
+
+        UPDATE user_profile SET ai_model = CASE
+          WHEN ai_model LIKE 'gpt%' THEN 'openai/' || ai_model
+          WHEN ai_model LIKE 'claude%' THEN 'anthropic/' || ai_model
+          WHEN ai_model LIKE 'gemini%' THEN 'google/' || ai_model
+          ELSE ai_model
+        END;
+
+        UPDATE user_profile
+          SET ai_provider = 'openrouter',
+              ai_api_key = NULL,
+              ai_proxy_url = NULL;
+
+        ALTER TABLE user_profile
+          ALTER COLUMN ai_provider SET DEFAULT 'openrouter';
+        ALTER TABLE user_profile
+          ALTER COLUMN ai_model SET DEFAULT 'openai/gpt-4o-mini';
+
+        ALTER TABLE user_profile
+          ADD CONSTRAINT user_profile_ai_provider_check
+          CHECK (ai_provider = 'openrouter');
+      `);
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -279,12 +322,23 @@ async function getCurrentVersion(db: PGlite): Promise<number> {
  * Each migration runs inside its own transaction — if it fails, that
  * migration rolls back but earlier ones stay committed. On a warm start
  * (schema already up to date) this costs one SELECT and returns immediately.
+ *
+ * `targetVersion` stops after that migration (exclusive end: migrations at or
+ * below it run, later ones stay pending). Used by tests that need a
+ * mid-history schema state; production always passes nothing (full run).
  */
-export async function runPendingMigrations(db: PGlite): Promise<void> {
+export async function runPendingMigrations(
+  db: PGlite,
+  targetVersion?: number,
+): Promise<void> {
   await ensureMigrationsTable(db);
   const current = await getCurrentVersion(db);
 
-  const pending = migrations.filter((m) => m.version > current);
+  const pending = migrations.filter(
+    (m) =>
+      m.version > current &&
+      (targetVersion === undefined || m.version <= targetVersion),
+  );
   if (pending.length === 0) return;
 
   for (const migration of pending) {

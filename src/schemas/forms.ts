@@ -74,10 +74,9 @@ export const onboardingGoalSchema = z.object({
 });
 
 export const onboardingApiSchema = z.object({
-  aiProvider: z.enum(['openai', 'anthropic', 'google']).optional(),
+  // ADR-0007: OpenRouter is the single provider, so only model + key here.
   aiModel: z.string().optional(),
   apiKey: z.string().optional(),
-  proxyUrl: z.string().optional(),
 });
 
 export const onboardingTargetsSchema = z.object({
@@ -105,10 +104,8 @@ export const onboardingSchema = z.object({
   activityLevel: z.enum(['sedentary', 'light', 'moderate', 'active']),
   goal: z.enum(['bulk', 'lean_bulk', 'recomp', 'cut', 'maintain']),
   dietType: z.enum(['balanced', 'moderate', 'low_carb', 'keto']),
-  aiProvider: z.enum(['openai', 'anthropic', 'google']).optional(),
   aiModel: z.string().optional(),
   apiKey: z.string().optional(),
-  proxyUrl: z.string().optional(),
   targets: z.object({
     calories: z.number(),
     protein: z.number(),
@@ -137,24 +134,9 @@ export const goalsFormSchema = z.object({
 });
 
 export const apiKeyFormSchema = z.object({
-  aiProvider: z.enum(['openai', 'anthropic', 'google']).optional(),
+  // ADR-0007: OpenRouter is the single provider, so only model + key here.
   aiModel: z.string().optional(),
   apiKey: z.string().optional(),
-  proxyUrl: z
-    .string()
-    .optional()
-    .refine(
-      (val) => {
-        if (!val || val.trim() === '') return true;
-        try {
-          const url = new URL(val);
-          return url.protocol === 'https:' || url.protocol === 'http:';
-        } catch {
-          return false;
-        }
-      },
-      { message: 'Must be a valid http(s) URL' },
-    ),
 });
 
 export type ProfileFormData = z.infer<typeof profileFormSchema>;

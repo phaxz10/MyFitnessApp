@@ -14,8 +14,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.79",
-    "@ai-sdk/google": "^3.0.79",
     "@ai-sdk/openai": "^3.0.65",
     "@electric-sql/pglite": "^0.4.5",
     "@hookform/resolvers": "^5.4.0",

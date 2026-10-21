@@ -31,9 +31,9 @@ vi.mock('../../hooks/useAppStore', () => ({
   useAppStore: {
     getState: vi.fn(() => ({
       userProfile: {
-        ai_provider: 'openai',
-        ai_model: 'gpt-4o',
-        ai_api_key: 'sk-test',
+        ai_provider: 'openrouter',
+        ai_model: 'openai/gpt-4o-mini',
+        ai_api_key: 'sk-or-test',
         ai_proxy_url: null,
       },
     })),
@@ -179,12 +179,15 @@ describe('aiClient.complete', () => {
     });
 
     const fakeTool = { type: 'function' } as unknown as never;
+    // 'web_search' is a reserved key (the Wrapper strips it and applies
+    // OpenRouter's :online suffix — covered in its own test below), so real
+    // passthrough is asserted with a non-sentinel name.
     await expect(
       complete({
         prompt: '150g white rice',
         schema: foodAnalysisSchema,
         schemaName: 'food_analysis',
-        tools: { web_search: fakeTool },
+        tools: { other_tool: fakeTool },
       }),
     ).resolves.toEqual(foodAnalysis);
 
@@ -193,6 +196,55 @@ describe('aiClient.complete', () => {
     expect(callArgs.output).toBeDefined();
     expect(callArgs.tools).toBeDefined();
     expect(callArgs.stopWhen).toBeDefined();
+  });
+
+  it('translates a web_search tool into the OpenRouter :online suffix', async () => {
+    mocks.generateText.mockResolvedValueOnce({
+      text: '',
+      output: foodAnalysis,
+    });
+
+    // Coaches specify web search via webSearchTool()'s sentinel; the Wrapper
+    // must convert it to OpenRouter's hosted web plugin instead of sending
+    // the sentinel as a real tool.
+    const { webSearchTool } = await import('./aiClient');
+    await expect(
+      complete({
+        prompt: 'a Big Mac',
+        schema: foodAnalysisSchema,
+        schemaName: 'food_analysis',
+        tools: { web_search: webSearchTool() as never },
+      }),
+    ).resolves.toEqual(foodAnalysis);
+
+    const callArgs = mocks.generateText.mock.calls[0][0];
+    // The sentinel must not reach the provider, and the model id gains the
+    // hosted web plugin suffix.
+    expect(callArgs.tools).toBeUndefined();
+    expect(String(callArgs.model.modelId)).toBe('openai/gpt-4o-mini:online');
+  });
+
+  it('strips the web_search sentinel alongside other real tools', async () => {
+    mocks.generateText.mockResolvedValueOnce({
+      text: '',
+      output: foodAnalysis,
+    });
+
+    const { webSearchTool } = await import('./aiClient');
+    const fakeTool = { type: 'function' } as unknown as never;
+    await expect(
+      complete({
+        prompt: '150g white rice',
+        schema: foodAnalysisSchema,
+        schemaName: 'food_analysis',
+        tools: { web_search: webSearchTool() as never, other: fakeTool },
+      }),
+    ).resolves.toEqual(foodAnalysis);
+
+    const callArgs = mocks.generateText.mock.calls[0][0];
+    expect(callArgs.tools).toBeDefined();
+    expect(Object.keys(callArgs.tools)).toEqual(['other']);
+    expect(String(callArgs.model.modelId)).toBe('openai/gpt-4o-mini:online');
   });
 
   it('retries once when the first response fails schema validation', async () => {
@@ -310,5 +362,22 @@ describe('aiClient.respond', () => {
 
     const result = await respond({ prompt: 'say hi' });
     expect(result.text).toBe('hello world');
+  });
+});
+
+describe('aiClient transport', () => {
+  beforeEach(() => {
+    mocks.generateText.mockReset();
+  });
+
+  // OpenRouter is used via its OpenAI-compatible chat completions endpoint.
+  // @ai-sdk/openai v3's default `provider(id)` builds a Responses API model,
+  // which hits /responses instead (ADR-0007).
+  it('targets OpenRouter chat completions, not the Responses API', async () => {
+    mocks.generateText.mockResolvedValueOnce({ text: 'ok', steps: [] });
+    await respond({ prompt: 'ping' });
+    const { model } = mocks.generateText.mock.calls[0][0];
+    expect(model.provider).toBe('openai.chat');
+    expect(model.modelId).toBe('openai/gpt-4o-mini');
   });
 });

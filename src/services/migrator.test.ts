@@ -91,7 +91,7 @@ describe('runPendingMigrations', () => {
   });
 
   // Bump LATEST_MIGRATION when a new migration is added to migrator.ts.
-  const LATEST_MIGRATION = 4;
+  const LATEST_MIGRATION = 5;
 
   it(`records version ${LATEST_MIGRATION} in schema_migrations`, async () => {
     await runPendingMigrations(db);
@@ -161,6 +161,45 @@ describe('runPendingMigrations', () => {
       'SELECT diet_type FROM user_profile WHERE id = 1',
     );
     expect(result.rows[0].diet_type).toBe('balanced');
+  });
+
+  it('pins ai_provider to openrouter and remaps legacy models (migration 5)', async () => {
+    // Pause after v4 so a row can be seeded in its true pre-v5 shape:
+    // vendored provider, bare model id, raw vendor key, proxy set.
+    await runPendingMigrations(db, 4);
+    await db.exec(`
+      INSERT INTO user_profile
+        (id, birthdate, gender, height_cm, activity_level, goal, calorie_target, protein_target_g, carbs_target_g, fat_target_g,
+         ai_provider, ai_model, ai_api_key, ai_proxy_url)
+      VALUES
+        (1, '1990-01-01', 'male', 180, 'moderate', 'recomp', 2000, 150, 200, 70,
+         'openai', 'gpt-4o', 'sk-openai-key', 'https://proxy.example.com');
+      `);
+
+    await runPendingMigrations(db);
+
+    const result = await db.query<{
+      ai_provider: string;
+      ai_model: string;
+      ai_api_key: string | null;
+      ai_proxy_url: string | null;
+    }>(
+      'SELECT ai_provider, ai_model, ai_api_key, ai_proxy_url FROM user_profile WHERE id = 1',
+    );
+    expect(result.rows[0].ai_provider).toBe('openrouter');
+    expect(result.rows[0].ai_model).toBe('openai/gpt-4o');
+    // Vendor keys cannot authenticate against OpenRouter — force re-setup.
+    expect(result.rows[0].ai_api_key).toBeNull();
+    expect(result.rows[0].ai_proxy_url).toBeNull();
+
+    // The v3 multi-vendor CHECK is gone; the replacement pins 'openrouter'.
+    const constraint = await db.query<{ conname: string }>(
+      `SELECT conname FROM pg_constraint
+       WHERE conrelid = 'user_profile'::regclass
+         AND conname LIKE '%ai_provider%'`,
+    );
+    expect(constraint.rows).toHaveLength(1);
+    expect(constraint.rows[0].conname).toBe('user_profile_ai_provider_check');
   });
 
   it('allows null reps and weight_kg in workout_sets', async () => {

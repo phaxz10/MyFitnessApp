@@ -1,3 +1,4 @@
+import { toOpenRouterModelId } from '../constants/aiProviders';
 import { getLocalDateString } from '../utils/date';
 import { getDB } from './db';
 
@@ -312,8 +313,19 @@ async function importDataInner(db: any, backup: BackupData): Promise<void> {
       const aiProxyUrl = (row.ai_proxy_url ?? row.openai_proxy_url ?? null) as
         | string
         | null;
-      const aiProvider = (row.ai_provider ?? 'openai') as string;
-      const aiModel = (row.ai_model ?? 'gpt-4o') as string;
+      // ADR-0007: OpenRouter is the single provider. Backups made before this
+      // migration carry legacy vendored providers and raw vendor keys — neither
+      // is usable against OpenRouter (which needs an sk-or- key), so provider
+      // is forced to 'openrouter' and vendor keys are dropped rather than
+      // written as values a later AI call would 401 on. The CHECK constraint
+      // re-added by migration v5 also requires this: inserting legacy provider
+      // strings would violate it and fail the restore.
+      const hasLegacyVendorKey =
+        (row.ai_provider as string | undefined) !== 'openrouter';
+      const aiProvider = 'openrouter';
+      const aiModel = toOpenRouterModelId(
+        (row.ai_model as string | undefined) ?? 'gpt-4o',
+      );
       // Backups predating the carb-strategy feature have no diet_type;
       // default to 'balanced' so they restore with unchanged macros.
       const dietType = (row.diet_type ?? 'balanced') as string;
@@ -335,8 +347,11 @@ async function importDataInner(db: any, backup: BackupData): Promise<void> {
           row.fat_target_g,
           aiProvider,
           aiModel,
-          aiApiKey,
-          aiProxyUrl,
+          // Legacy vendor keys cannot authenticate against OpenRouter; for
+          // OpenRouter backups the stored key is already an sk-or- key.
+          hasLegacyVendorKey ? null : aiApiKey,
+          // The legacy OpenAI proxy is obsolete — OpenRouter is browser-direct.
+          hasLegacyVendorKey ? null : aiProxyUrl,
           row.created_at,
           row.updated_at,
         ],

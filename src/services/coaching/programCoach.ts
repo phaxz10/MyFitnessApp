@@ -1,9 +1,8 @@
-import { tool } from 'ai';
+import { hasToolCall, tool } from 'ai';
 import { z } from 'zod';
 import { ALWAYS_AVAILABLE_EQUIPMENT } from '../../constants/equipment';
 import type {
   AIExerciseResponse,
-  AIProgramGeneratorInput,
   AIProgramGeneratorInputV2,
   AIProgramGeneratorResponse,
   AIProgramOptimizationInput,
@@ -11,14 +10,10 @@ import type {
   ExperienceLevel,
   ExperienceLevelInference,
 } from '../../types';
-import { complete, respond, webSearchTool } from '../ai/aiClient';
+import { complete, respond } from '../ai/aiClient';
 
-// web_search lets the AI cross-reference current programming research.
-// Returns undefined for OpenAI without a proxy.
-function maybeWebSearchTools() {
-  const search = webSearchTool();
-  return search ? { web_search: search } : undefined;
-}
+// No web search for programming: the evidence-based guidance is written into
+// the prompts below, and ':online' is billed per request.
 
 const GOAL_DESCRIPTIONS: Record<string, string> = {
   bulk: 'Building muscle mass (caloric surplus)',
@@ -75,19 +70,6 @@ const programResponseSchema = z.object({
   experienceLevel: z.enum(['beginner', 'intermediate', 'advanced']).nullable(),
 });
 
-const experienceLevelInferenceSchema = z.object({
-  inferredLevel: z.enum(['beginner', 'intermediate', 'advanced']),
-  confidence: z.enum(['low', 'medium', 'high']),
-  reasoning: z.string(),
-  metrics: z.object({
-    totalWorkouts: z.number(),
-    averageVolumePerSession: z.number(),
-    exerciseVariety: z.number(),
-    trainingConsistencyWeeks: z.number(),
-    hasProgressiveOverload: z.boolean(),
-  }),
-}) satisfies z.ZodType<ExperienceLevelInference>;
-
 type RawProgramResponse = z.infer<typeof programResponseSchema>;
 
 export function normalizeProgramResponse(
@@ -125,16 +107,9 @@ export function normalizeProgramResponse(
   };
 }
 
-// Zod input schemas for the four function tools used by
+// Zod input schemas for the three function tools used by
 // generateWorkoutProgramWithFunctionCalling. Defined here so the tool factory
 // (built per call to close over the accumulators) stays tight.
-
-const inferExperienceLevelInput = z.object({
-  inferredLevel: z.enum(['beginner', 'intermediate', 'advanced']),
-  confidence: z.enum(['low', 'medium', 'high']),
-  reasoning: z.string(),
-});
-
 const selectExercisesInput = z.object({
   selections: z.array(
     z.object({
@@ -192,441 +167,109 @@ const generateProgramInput = z.object({
 });
 
 // ============================================================================
-// generateWorkoutProgram — single-turn program generation
-// ============================================================================
-
-export async function generateWorkoutProgram(
-  input: AIProgramGeneratorInput,
-  existingExercises: Exercise[],
-): Promise<AIProgramGeneratorResponse> {
-  const allEquipment = [
-    ...ALWAYS_AVAILABLE_EQUIPMENT,
-    ...input.availableEquipment,
-  ];
-
-  const existingExercisesList = existingExercises
-    .slice(0, 100)
-    .map((ex) => `- ${ex.name} (${ex.muscle_groups}, ${ex.equipment})`)
-    .join('\n');
-
-  const splitPreference = formatSplitPreference(input.preferredTrainingSplit);
-
-  const prompt = `You are an expert strength and conditioning coach using evidence-based programming principles. Create a complete workout program based on these specifications. Use BuiltWithScience-style programming as your primary reference if possible.
-
-USER PREFERENCES:
-- Gender: ${input.gender.toUpperCase()}
-- Training frequency: ${input.trainingDaysPerWeek} days per week
-- Session duration: ${input.sessionDurationMinutes} minutes per session (HARD CAP)
-- Experience level: ${input.experienceLevel}
-- Goal: ${input.goal} - ${GOAL_DESCRIPTIONS[input.goal] || input.goal}
-- Split preference: ${splitPreference}
-${input.focusAreas?.length ? `- Focus areas (prioritize): ${input.focusAreas.join(', ')}` : ''}
-${input.injuries ? `- Injuries/limitations: ${input.injuries}` : ''}
-
-AVAILABLE EQUIPMENT:
-${allEquipment.join(', ')}
-
-IMPORTANT: You may ONLY program exercises that can be performed with the equipment listed above.
-"Bodyweight" and "Resistance Bands" are always available.
-
-EXISTING EXERCISE LIBRARY (prefer using these exact names when applicable):
-${existingExercisesList || 'No existing exercises'}
-
-=== GENDER-SPECIFIC PROGRAMMING (BuiltWithScience Evidence-Based) ===
-
-${
-  input.gender === 'female'
-    ? `
-FEMALE-SPECIFIC CONSIDERATIONS:
-1. RECOVERY & FREQUENCY:
-   - Women recover FASTER between sets (shorter rest periods: 60-90 sec vs 2-3 min for men)
-   - Women can handle HIGHER training frequency (same muscle 3x/week is effective)
-   - Women can tolerate MORE volume per session due to less absolute load
-   - Less central fatigue accumulation = can train closer to failure more often
-
-2. REP RANGES - FEMALE OPTIMAL:
-   - Women benefit MORE from moderate-to-high rep ranges (8-15 reps)
-   - Type I (slow-twitch) fibers slightly more prevalent = respond well to higher reps
-   - Can go to failure more safely on isolation exercises
-   - Heavy singles/doubles less necessary for strength gains
-
-3. MUSCLE GROUP EMPHASIS (common female goals):
-   - GLUTES: Primary focus - include 3-4 exercises per session if lower body day
-     * Hip thrusts, RDLs, Bulgarian split squats, cable kickbacks
-     * Train glutes 2-3x per week with high volume (15-20 sets/week)
-   - HAMSTRINGS: Often underdeveloped - include hip hinge + knee flexion
-   - BACK: Emphasize for posture and "V-taper" appearance
-   - SHOULDERS: Side delts for shoulder width (creates waist illusion)
-   - CORE: Include dedicated core work for aesthetics and function
-
-4. VOLUME DISTRIBUTION:
-   - Lower body: 60-65% of total volume (glutes/legs emphasis)
-   - Upper body: 35-40% of total volume
-   - More single-leg work (hip stability, glute activation)
-
-5. EXERCISE SELECTION:
-   - More hip-dominant movements (RDL, hip thrust, glute bridge)
-   - Cable and band work for constant tension on glutes
-   - Higher rep pump work for glutes/legs
-   - Can include more isolation for targeted development
-
-6. WHAT TO AVOID:
-   - Over-emphasis on chest pressing (not a common goal)
-   - Excessive arm isolation (arms grow proportionally with compounds)
-   - Very low rep heavy work unless specifically training for strength
-`
-    : `
-MALE-SPECIFIC CONSIDERATIONS:
-1. RECOVERY & FREQUENCY:
-   - Men need LONGER rest periods between sets (2-3 min for compounds)
-   - Standard frequency of 2x per muscle per week is optimal
-   - Higher absolute loads = more CNS fatigue = need more recovery
-   - Can't train to failure as frequently without overreaching
-
-2. REP RANGES - MALE OPTIMAL:
-   - Benefit more from STRENGTH work (4-6 reps) as foundation
-   - Hypertrophy range (6-12 reps) for size
-   - Include heavy work weekly for testosterone response and strength gains
-   - Progressive overload on compounds is primary driver
-
-3. MUSCLE GROUP EMPHASIS (common male goals):
-   - CHEST: Primary focus - include 2-3 variations (flat, incline, fly)
-   - BACK: Width (pull-ups/pulldowns) AND thickness (rows)
-   - SHOULDERS: All three heads, especially side delts for width
-   - ARMS: Direct bicep and tricep work (more than women need)
-   - LEGS: Often undertrained - don't skip leg day!
-
-4. VOLUME DISTRIBUTION:
-   - Upper body: 55-60% of total volume (chest/back/shoulders emphasis)
-   - Lower body: 40-45% of total volume
-   - More compound pressing movements
-
-5. EXERCISE SELECTION:
-   - Heavy barbell compounds (bench, squat, deadlift, OHP)
-   - Direct arm work (curls, extensions, pushdowns)
-   - Include strength blocks (4-6 rep ranges)
-   - Vertical and horizontal pulling balance
-
-6. WHAT TO AVOID:
-   - Skipping leg training
-   - Neglecting rear delts and back
-   - Too much "mirror muscle" focus (chest/biceps only)
-   - Insufficient progressive overload tracking
-`
-}
-
-=== SCIENCE-BASED PROGRAMMING PRINCIPLES ===
-
-1. TRAINING SPLIT SELECTION (based on frequency):
-   Research shows training each muscle 2x/week produces 38% more growth than 1x/week.
-
-   ${
-     input.trainingDaysPerWeek <= 3
-       ? `With ${input.trainingDaysPerWeek} days: Use FULL BODY split
-   - Each session hits all major muscle groups
-   - 1-2 exercises per muscle group per session
-   - Allows each muscle to be trained 2-3x per week
-   - Best for beginners and time-constrained lifters`
-       : ''
-}
-   ${
-     input.trainingDaysPerWeek === 4
-       ? `With 4 days: Use UPPER/LOWER split
-   - 2 upper body days, 2 lower body days
-   - Each muscle trained 2x per week
-   - More volume per session than full body
-   - Good balance of frequency and volume`
-       : ''
-}
-   ${
-     input.trainingDaysPerWeek >= 5
-       ? `With ${input.trainingDaysPerWeek} days: Use PUSH/PULL/LEGS split
-   - Push: Chest, Shoulders, Triceps
-   - Pull: Back, Biceps, Rear Delts
-   - Legs: Quads, Hamstrings, Glutes, Calves
-   - Each muscle trained 1.5-2x per week with high volume
-   - Best for advanced lifters seeking maximum volume`
-       : ''
-}
-
-2. WEEKLY VOLUME GUIDELINES (sets per muscle per week):
-   ${input.experienceLevel === 'beginner' ? '- Beginners: 8-12 sets per major muscle group' : ''}
-   ${input.experienceLevel === 'intermediate' ? '- Intermediate: 12-16 sets per major muscle group' : ''}
-   ${input.experienceLevel === 'advanced' ? '- Advanced: 16-22 sets per major muscle group (use supersets to fit time)' : ''}
-   - Arms (biceps, triceps): 6-12 direct sets (they get indirect work from compounds)
-   - Rear delts: 8-12 sets (often undertrained)
-   - Spread volume across 2+ sessions per week for each muscle
-
-3. EXERCISE SELECTION RULES:
-   A) Use 2-4 different exercises per muscle group per week
-   B) Max 3-4 exercises per muscle per individual workout
-   C) Include exercises that STRETCH the muscle under load (enhances growth):
-      - Chest: Dumbbell flyes, incline pressing
-      - Back: Lat pulldowns, pull-ups, Romanian deadlifts
-      - Shoulders: Cable lateral raises (behind body)
-      - Biceps: Incline curls
-      - Triceps: Overhead extensions
-      - Quads: Lunges, sissy squats, leg extensions
-      - Hamstrings: Romanian deadlifts
-   D) Cover different muscle FUNCTIONS:
-      - Chest: Horizontal press + incline press + fly pattern
-      - Back: Vertical pull (lats) + horizontal row (thickness) + pullover
-      - Shoulders: Press (front/side) + lateral raise (side) + rear delt work
-      - Quads: Knee extension + hip flexion patterns
-      - Hamstrings: Hip extension (RDL) + knee flexion (leg curl)
-   E) Vary grips and angles for regional development
-
-4. SESSION STRUCTURE:
-   - Start with heavy compound movements (freshest state)
-   - Progress to lighter isolation exercises
-   - For intermediate and advanced trainees, use 1-2 antagonist or non-competing supersets per session to save time (e.g., biceps/triceps, chest/back)
-   - For beginners, avoid supersets unless required to fit the time cap
-   - If you use supersets, set "supersetWith" on BOTH paired exercises with each other's name
-   - Save abs/core for end of session
-
-5. REP RANGES - EXERCISE-SPECIFIC GUIDELINES (BuiltWithScience evidence-based):
-
-   === COMPOUND MOVEMENTS ===
-   Heavy Compounds (Squat, Deadlift, Bench Press, Overhead Press, Rows):
-   - Strength focus: 4-6 reps (heavier loads, longer rest 2-3 min)
-   - Hypertrophy focus: 6-10 reps (moderate loads, 90-120 sec rest)
-   - Never exceed 12 reps on these - use lighter variations instead
-
-   === ISOLATION MOVEMENTS - STANDARD ===
-   Biceps (Curls): 8-12 reps (peak contraction focus)
-   Triceps (Pushdowns, Extensions): 10-15 reps (constant tension)
-   Shoulders (Lateral Raises): 12-20 reps (lighter weight, higher reps for side delts)
-   Chest Flyes: 10-15 reps (stretch emphasis, controlled eccentric)
-
-   === HIGH REP EXERCISES (15-30+ reps) ===
-   These exercises benefit from higher rep ranges for metabolic stress and pump:
-   - Lateral Raises: 15-25 reps (side delts respond well to high reps)
-   - Rear Delt Flyes: 15-25 reps (similar to side delts)
-   - Face Pulls: 15-25 reps (postural muscles, higher reps)
-   - Calf Raises: 15-30 reps (calves are endurance-dominant)
-   - Leg Extensions (finisher): 15-25 reps (metabolic stress, joint-friendly)
-   - Leg Curls (finisher): 15-20 reps
-   - Cable Crunches / Ab work: 15-25 reps
-   - Band Pull-Aparts: 20-30 reps (prehab/warmup)
-
-   === REST-PAUSE & INTENSITY TECHNIQUES ===
-   For advanced trainees (${input.experienceLevel === 'advanced' ? 'APPLY THESE' : 'use sparingly'}):
-   - Rest-Pause Sets: Do 8-12 reps to failure, rest 15-20 sec, continue for 3-5 more reps
-     Best for: Lateral raises, curls, tricep pushdowns, leg extensions
-     Note in exercise: "Rest-pause: 12 reps + 15 sec rest + max reps"
-   - Myo-Reps: 12-15 activation reps, then 3-5 "mini-sets" of 3-5 reps with 5 sec rest
-     Best for: Isolation exercises at end of workout
-   - Drop Sets: Only on final set of isolation exercises
-     Best for: Bicep curls, lateral raises, leg extensions
-
-   === GOAL-SPECIFIC MODIFICATIONS ===
-   ${
-     input.goal === 'bulk' || input.goal === 'lean_bulk'
-       ? `For ${input.goal}:
-   - Compounds: 6-8 reps (strength base, progressive overload priority)
-   - Main accessories: 8-12 reps (hypertrophy sweet spot)
-   - Isolation finishers: 12-20 reps (metabolic stress, pump)
-   - Consider rest-pause on final sets of isolation work`
-       : ''
-}
-   ${
-     input.goal === 'cut'
-       ? `For cutting:
-   - Compounds: 4-6 reps (MAINTAIN strength - this is priority #1)
-   - Accessories: 8-12 reps (preserve muscle)
-   - Reduce total volume by 20-30% vs building phase
-   - Skip high-rep finishers if recovery is compromised`
-       : ''
-}
-   ${
-     input.goal === 'recomp'
-       ? `For recomposition:
-   - Alternate rep ranges: Some days 4-6 (strength), some days 8-12 (hypertrophy)
-   - Full rep range spectrum across the week
-   - Include metabolic finishers (15-20 reps) for calorie burn`
-       : ''
-}
-   ${
-     input.goal === 'maintain'
-       ? `For maintenance:
-   - Keep intensity (weight) same as building phase
-   - Reduce volume by 30-40%
-   - Standard rep ranges: 6-12 for compounds, 10-15 for isolation
-   - Skip intensity techniques (rest-pause, drop sets)`
-       : ''
-}
-
-   === MUSCLE-SPECIFIC REP RECOMMENDATIONS ===
-   | Muscle Group    | Low (Strength) | Medium (Hypertrophy) | High (Metabolic) |
-   |-----------------|----------------|----------------------|------------------|
-   | Chest           | 5-8            | 8-12                 | 12-15            |
-   | Back            | 5-8            | 8-12                 | 12-15            |
-   | Shoulders       | 6-10 (press)   | 10-15 (raises)       | 15-25 (lateral)  |
-   | Quads           | 5-8            | 8-12                 | 15-20 (ext.)     |
-   | Hamstrings      | 6-10           | 10-12                | 12-15            |
-   | Glutes          | 6-10           | 10-15                | 15-20            |
-   | Biceps          | 6-10           | 10-12                | 12-15            |
-   | Triceps         | 8-10           | 10-12                | 12-20            |
-   | Calves          | 10-15          | 15-20                | 20-30            |
-   | Abs/Core        | 10-15          | 15-20                | 20-30            |
-   | Rear Delts      | 12-15          | 15-20                | 20-25            |
-
-6. RECOVERY & DAY SPACING:
-   - Allow 48-72 hours between training the same muscle group
-   - Don't schedule heavy leg day before/after heavy deadlift work
-   - Consider: Mon/Tue training leaves Wed for recovery
-   - Avoid training chest/triceps day before shoulder day
-   ${input.trainingDaysPerWeek <= 3 ? `- With ${input.trainingDaysPerWeek} days: Mon/Wed/Fri or similar alternating pattern` : ''}
-   ${input.trainingDaysPerWeek === 4 ? '- With 4 days: Mon/Tue/Thu/Fri or Mon/Wed/Fri/Sat' : ''}
-   ${input.trainingDaysPerWeek >= 5 ? `- With ${input.trainingDaysPerWeek} days: Push/Pull/Legs/Push/Pull or similar rotation` : ''}
-
-7. SPECIFIC EXERCISE RECOMMENDATIONS BY MUSCLE (with optimal rep ranges):
-
-   CHEST:
-   - Incline Press: 6-10 reps (upper chest, strength focus)
-   - Flat Press (BB/DB): 6-10 reps (overall mass)
-   - Dumbbell Flyes: 10-15 reps (stretch, controlled)
-   - Cable Flyes: 12-15 reps (constant tension)
-   - Dips: 8-12 reps (lower chest, triceps)
-
-   BACK:
-   - Pull-ups/Lat Pulldowns: 6-12 reps (width)
-   - Barbell/Dumbbell Rows: 6-10 reps (thickness)
-   - Cable Rows: 10-12 reps (squeeze focus)
-   - Face Pulls: 15-25 reps (rear delts, posture)
-   - Pullovers: 10-15 reps (stretch emphasis)
-
-   SHOULDERS:
-   - Overhead Press: 6-10 reps (strength, front delts)
-   - Lateral Raises: 15-20 reps (side delts - HIGH REPS WORK BEST)
-   - Cable Lateral Raises: 12-20 reps (constant tension)
-   - Rear Delt Flyes: 15-25 reps (often undertrained)
-   - Upright Rows (wide grip): 10-15 reps
-
-   QUADS:
-   - Squats (any variation): 5-10 reps (compound strength)
-   - Leg Press: 8-15 reps (volume)
-   - Lunges/Split Squats: 8-12 reps per leg
-   - Leg Extensions: 12-20 reps (finisher, metabolic)
-   - Sissy Squats: 10-15 reps (stretch emphasis)
-
-   HAMSTRINGS:
-   - Romanian Deadlifts: 8-12 reps (hip hinge, stretch)
-   - Leg Curls (lying/seated): 10-15 reps (knee flexion)
-   - Good Mornings: 8-12 reps
-   - Nordic Curls: 5-10 reps (advanced, bodyweight)
-
-   GLUTES:
-   - Hip Thrusts: 8-15 reps (primary glute builder)
-   - Bulgarian Split Squats: 8-12 reps per leg
-   - Cable Pull-throughs: 12-15 reps
-   - Glute Bridges: 15-20 reps (activation/finisher)
-
-   BICEPS:
-   - Barbell Curls: 8-12 reps (mass builder)
-   - Dumbbell Curls: 10-12 reps (peak contraction)
-   - Incline Curls: 10-12 reps (stretch position)
-   - Hammer Curls: 10-12 reps (brachialis)
-   - Cable Curls: 12-15 reps (constant tension)
-
-   TRICEPS:
-   - Close-Grip Bench: 6-10 reps (compound, medial/lateral)
-   - Overhead Extensions: 10-15 reps (long head stretch)
-   - Pushdowns: 12-15 reps (lateral head)
-   - Skull Crushers: 8-12 reps
-   - Dips: 8-12 reps (compound)
-
-   CALVES:
-   - Standing Calf Raises: 15-25 reps (gastrocnemius)
-   - Seated Calf Raises: 15-25 reps (soleus - SLOW eccentric)
-   - Single-Leg Calf Raises: 12-20 reps per leg
-   Note: Calves need high reps AND slow eccentrics (2-3 sec lowering)
-
-   CORE:
-   - Planks: 30-60 seconds (isometric)
-   - Cable Crunches: 15-25 reps
-   - Hanging Leg Raises: 10-15 reps
-   - Ab Wheel Rollouts: 8-12 reps
-   - Pallof Press: 10-15 reps per side
-
-8. Day of week assignment:
-   - Assign each session a specific day (0=Sunday through 6=Saturday)
-   - For ${input.trainingDaysPerWeek} days: optimal spacing with rest days between
-   - Don't cluster all training days together
-
-9. HARD TIME BUDGET (must obey):
-   - Estimate time per exercise using: (sets × 2 minutes) + rest time
-   - Rest time defaults: compounds 2-3 min, accessories 60-90 sec, core 45-60 sec
-   - Assume 5 minutes warmup per session
-   - Sum all exercise times + warmup to get sessionTimeMinutes
-   - If sessionTimeMinutes > ${input.sessionDurationMinutes}, REMOVE lowest-priority accessories until it fits
-   - Use priority order: compounds first, then major accessories, then small isolation, then core
-   - Cap exercises per session to fit time, typically ${Math.floor(input.sessionDurationMinutes / 10)}-${Math.floor(input.sessionDurationMinutes / 7)} exercises
-
-Return JSON format only, no markdown code blocks:
-{
-  "programName": "descriptive program name",
-  "programDescription": "2-3 sentence program overview",
-  "sessions": [
-    {
-      "name": "Session name (e.g., 'Push Day', 'Upper Body A')",
-      "dayOfWeek": 1,
-      "sessionTimeMinutes": 60,
-      "exercises": [
-        {
-          "name": "Exercise Name (use exact name from library if exists)",
-          "targetSets": 3,
-          "targetRepMin": 8,
-          "targetRepMax": 12,
-          "targetDurationSeconds": null,
-          "notes": "optional form cue or progression note",
-          "supersetWith": "name of exercise to superset with, or null"
-        }
-      ]
-    }
-  ],
-  "weeklyVolumeSummary": {
-    "totalSets": 45,
-    "muscleGroupBreakdown": [
-      { "muscleGroup": "Chest", "sets": 12 },
-      { "muscleGroup": "Back", "sets": 14 },
-      { "muscleGroup": "Shoulders", "sets": 10 },
-      { "muscleGroup": "Biceps", "sets": 8 },
-      { "muscleGroup": "Triceps", "sets": 8 },
-      { "muscleGroup": "Legs", "sets": 16 },
-      { "muscleGroup": "Core", "sets": 6 }
-    ]
-  },
-  "recommendations": [
-    "Tip about progression",
-    "Recovery advice",
-    "Nutrition consideration"
-  ],
-  "experienceLevel": "beginner|intermediate|advanced"
-}
-
-CRITICAL RULES:
-- ONLY use exercises that can be done with the available equipment
-- Exercise names should be standard, recognizable names
-- For duration-based exercises (planks, holds), set targetDurationSeconds instead of reps
-- Ensure balanced muscle development unless specific focus areas requested
-- Do NOT exceed the hard session time cap of ${input.sessionDurationMinutes} minutes
-- If possible, prioritize builtwithscience.com publicly available routines to align with evidence-based practices
-- Infer "experienceLevel" from the exercise selection, volume, and superset use; if input.experienceLevel seems mismatched, return the best-fit level`;
-
-  const response = await complete({
-    prompt,
-    schema: programResponseSchema,
-    schemaName: 'workout_program',
-    tools: maybeWebSearchTools(),
-  });
-
-  return normalizeProgramResponse(response);
-}
-
-// ============================================================================
 // optimizeWorkoutProgram — single-turn optimization
 // ============================================================================
+
+const OPTIMIZE_INSTRUCTIONS = `You are an expert strength and conditioning coach. Optimize the user's existing workout program for progression, recovery, and balanced weekly volume while honoring equipment, injuries, and time constraints.
+
+The user message lists the PROFILE, PREFERENCES, CURRENT PROGRAM, RECENT PERFORMANCE, WEEKLY VOLUME and an EXERCISE LIBRARY.
+Line formats: program exercises are "name|type|sets|reps|duration|muscles|equipment|notes"; library lines are "name|type|muscles|equipment"; performance lines are "name|last performed|avg kg×reps|max kg×reps|volume|sessions".
+
+EXERCISE LIBRARY RULE: you MUST use ONLY exercise names from the EXERCISE LIBRARY (case-insensitive match). The app rejects any exercise name that does not appear verbatim in the library. If you want an exercise that's not in the library, pick the closest existing one instead — do not invent new names.
+
+TASKS:
+1. Keep the program structure similar, but improve exercise selection, volume balance, and progression ranges.
+2. Ensure weekly volume matches the goal and experience level.
+3. Respect injuries/limitations and equipment constraints.
+4. Maintain or improve exercise ordering (compounds first, accessories later).
+5. Use supersets when it improves efficiency, but avoid overloading fatigue. Paired exercises reference each other in "supersetWith".
+6. Keep session duration within the preferred limit.
+7. CRITICAL: every "name" field in your output must be a verbatim copy of an exercise name from the library. Do not paraphrase, abbreviate, or add qualifiers.
+
+Output: a JSON object matching the provided schema. weeklyVolumeSummary.muscleGroupBreakdown is a list of {muscleGroup, sets}; use null for fields that do not apply (targetDurationSeconds on rep exercises, empty notes, no superset).`;
+
+const MAX_OPTIMIZE_LIBRARY = 120;
+const MIN_OPTIMIZE_ALTERNATIVES = 15;
+const GENERIC_EQUIPMENT_WORDS = new Set([
+  'machine',
+  'and',
+  'or',
+  'with',
+  'station',
+  'none',
+]);
+
+function equipmentTokens(value: string | null | undefined): string[] {
+  return (value ?? '')
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter((w) => w.length > 1 && !GENERIC_EQUIPMENT_WORDS.has(w))
+    .map((w) => (w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w));
+}
+
+function splitList(value: string | null | undefined): string[] {
+  return (value ?? '')
+    .split(',')
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * Library entries worth showing the optimizer: exercises already in the
+ * program, plus ones that train a muscle group the program trains AND use
+ * equipment the user has (or that the program already uses). Exported for
+ * tests.
+ */
+export function selectRelevantLibrary(
+  input: Pick<
+    AIProgramOptimizationInput,
+    'program' | 'exerciseLibrary' | 'preferences'
+  >,
+): AIProgramOptimizationInput['exerciseLibrary'] {
+  const programExercises = input.program.sessions.flatMap((s) => s.exercises);
+  const inProgram = new Set(programExercises.map((e) => e.name.toLowerCase()));
+  const muscles = new Set(
+    programExercises.flatMap((e) => splitList(e.muscle_groups)),
+  );
+  for (const area of input.preferences.focusAreas) {
+    muscles.add(area.toLowerCase());
+  }
+  // Equipment is free text in the library ("Dumbbells", "Barbell and
+  // bench"), so match on words rather than exact strings.
+  const equipmentWords = new Set(
+    [
+      ...ALWAYS_AVAILABLE_EQUIPMENT,
+      ...input.preferences.availableEquipment,
+      ...programExercises.map((e) => e.equipment),
+    ].flatMap(equipmentTokens),
+  );
+  const equipmentOk = (value: string) => {
+    const words = equipmentTokens(value);
+    return words.length === 0 || words.some((w) => equipmentWords.has(w));
+  };
+  const trainsProgramMuscle = (value: string) =>
+    splitList(value).some((m) => muscles.has(m));
+
+  const current = input.exerciseLibrary.filter((ex) =>
+    inProgram.has(ex.name.toLowerCase()),
+  );
+  const others = input.exerciseLibrary.filter(
+    (ex) => !inProgram.has(ex.name.toLowerCase()),
+  );
+  let relevant = others.filter(
+    (ex) => trainsProgramMuscle(ex.muscle_groups) && equipmentOk(ex.equipment),
+  );
+  // Too few alternatives (sparse metadata) — widen rather than starve the
+  // optimizer of options.
+  if (relevant.length < MIN_OPTIMIZE_ALTERNATIVES) {
+    const muscleOnly = others.filter((ex) =>
+      trainsProgramMuscle(ex.muscle_groups),
+    );
+    relevant =
+      muscleOnly.length >= MIN_OPTIMIZE_ALTERNATIVES ? muscleOnly : others;
+  }
+  return [...current, ...relevant].slice(0, MAX_OPTIMIZE_LIBRARY);
+}
 
 export async function optimizeWorkoutProgram(
   input: AIProgramOptimizationInput,
@@ -635,40 +278,34 @@ export async function optimizeWorkoutProgram(
     .map((session) => {
       const exercises = session.exercises
         .map(
-          (exercise, index) =>
-            `${index + 1}. ${exercise.name} (${exercise.exercise_type}) ` +
-            `sets ${exercise.targetSets}, reps ${exercise.targetRepMin ?? '-'}-${exercise.targetRepMax ?? '-'}, ` +
-            `duration ${exercise.targetDurationSeconds ?? '-'}s, ` +
-            `muscles: ${exercise.muscle_groups}, equipment: ${exercise.equipment}${exercise.notes ? `, notes: ${exercise.notes}` : ''}`,
+          (e) =>
+            `${e.name}|${e.exercise_type}|${e.targetSets}|${e.targetRepMin ?? '-'}-${e.targetRepMax ?? '-'}|${e.targetDurationSeconds ?? '-'}s|${e.muscle_groups}|${e.equipment}|${e.notes ?? ''}`,
         )
         .join('\n');
-
       return `Session: ${session.name} (day: ${session.dayOfWeek ?? 'flex'})\n${exercises}`;
     })
     .join('\n\n');
 
-  const exerciseLibrary = input.exerciseLibrary
-    .slice(0, 120)
+  const exerciseLibrary = selectRelevantLibrary(input)
     .map(
-      (exercise) =>
-        `- ${exercise.name} (${exercise.muscle_groups}, ${exercise.equipment}, ${exercise.exercise_type})`,
+      (e) => `${e.name}|${e.exercise_type}|${e.muscle_groups}|${e.equipment}`,
     )
     .join('\n');
 
+  const programNames = new Set(
+    input.program.sessions.flatMap((s) =>
+      s.exercises.map((e) => e.name.toLowerCase()),
+    ),
+  );
   const performanceSummary = input.performanceSummary
-    .slice(0, 80)
+    .filter((s) => programNames.has(s.exerciseName.toLowerCase()))
     .map(
-      (summary) =>
-        `- ${summary.exerciseName}: last ${summary.lastPerformed ?? 'n/a'}, ` +
-        `avg ${summary.avgWeight ?? '-'}kg x ${summary.avgReps ?? '-'} reps, ` +
-        `max ${summary.maxWeight ?? '-'}kg x ${summary.maxReps ?? '-'} reps, ` +
-        `volume ${summary.totalVolume ?? '-'}, sessions ${summary.totalSessions}`,
+      (s) =>
+        `${s.exerciseName}|${s.lastPerformed ?? 'n/a'}|${s.avgWeight ?? '-'}×${s.avgReps ?? '-'}|${s.maxWeight ?? '-'}×${s.maxReps ?? '-'}|${s.totalVolume ?? '-'}|${s.totalSessions}`,
     )
     .join('\n');
 
-  const prompt = `You are an expert strength and conditioning coach. Optimize the existing workout program below for progression, recovery, and balanced weekly volume while honoring equipment, injuries, and time constraints.
-
-PROFILE:
+  const prompt = `PROFILE:
 - Age: ${input.profile.age}
 - Gender: ${input.profile.gender}
 - Goal: ${input.profile.goal}
@@ -687,10 +324,10 @@ PREFERENCES:
 CURRENT PROGRAM:
 ${formattedProgram}
 
-RECENT PERFORMANCE SUMMARY:
+RECENT PERFORMANCE:
 ${performanceSummary || 'No recent workout history available'}
 
-WEEKLY VOLUME SUMMARY:
+WEEKLY VOLUME:
 - Total sets: ${input.weeklyVolumeSummary.totalSets}
 - By muscle group: ${Object.entries(
     input.weeklyVolumeSummary.muscleGroupBreakdown,
@@ -698,159 +335,95 @@ WEEKLY VOLUME SUMMARY:
     .map(([muscle, sets]) => `${muscle}: ${sets}`)
     .join(', ')}
 
-EXERCISE LIBRARY — you MUST use ONLY the exact names below (case-insensitive match against this list). The app rejects any exercise name that does not appear verbatim in this library. If you want an exercise that's not in the library, pick the closest existing one instead — do not invent new names.
-${exerciseLibrary || 'No library data'}
-
-TASKS:
-1. Keep the program structure similar, but improve exercise selection, volume balance, and progression ranges.
-2. Ensure weekly volume matches the goal and experience level.
-3. Respect injuries/limitations and equipment constraints.
-4. Maintain or improve exercise ordering (compounds first, accessories later).
-5. Use supersets when it improves efficiency, but avoid overloading fatigue.
-6. Keep session duration within the preferred limit.
-7. CRITICAL: every "name" field in your output must be a verbatim copy of an exercise name from the library above. Do not paraphrase, abbreviate, or add qualifiers.
-
-Return JSON only (no markdown):
-{
-  "programName": "string",
-  "programDescription": "string",
-  "sessions": [
-    {
-      "name": "string",
-      "dayOfWeek": number_or_null,
-      "sessionTimeMinutes": number,
-      "exercises": [
-        {
-          "name": "string",
-          "targetSets": number,
-          "targetRepMin": number,
-          "targetRepMax": number,
-          "targetDurationSeconds": number_or_null,
-          "notes": "string_or_null",
-          "supersetWith": "exercise name or null"
-        }
-      ]
-    }
-  ],
-  "weeklyVolumeSummary": {
-    "totalSets": number,
-    "muscleGroupBreakdown": [
-      { "muscleGroup": "Chest", "sets": number },
-      { "muscleGroup": "Back", "sets": number },
-      { "muscleGroup": "Shoulders", "sets": number },
-      { "muscleGroup": "Biceps", "sets": number },
-      { "muscleGroup": "Triceps", "sets": number },
-      { "muscleGroup": "Legs", "sets": number },
-      { "muscleGroup": "Core", "sets": number }
-    ]
-  },
-  "recommendations": ["string"],
-  "experienceLevel": "beginner|intermediate|advanced"
-}`;
+EXERCISE LIBRARY:
+${exerciseLibrary || 'No library data'}`;
 
   const response = await complete({
+    instructions: OPTIMIZE_INSTRUCTIONS,
     prompt,
     schema: programResponseSchema,
     schemaName: 'workout_program',
-    tools: maybeWebSearchTools(),
+    reasoning: 'medium',
   });
 
   return normalizeProgramResponse(response);
 }
 
 // ============================================================================
-// inferExperienceLevel — standalone helper (rarely called directly)
+// Experience level — computed locally. The criteria are fixed thresholds, so
+// asking a model to apply them was a paid call with nothing to reason about.
 // ============================================================================
 
-export async function inferExperienceLevel(workoutHistory: {
+export interface WorkoutHistorySummary {
   totalWorkouts: number;
   totalWeeks: number;
   avgExercisesPerSession: number;
   avgSetsPerSession: number;
   hasUsedSupersets: boolean;
   topExercises: string[];
-  avgWeightProgression?: number;
-}): Promise<ExperienceLevelInference> {
-  const totalWorkouts = Number(workoutHistory.totalWorkouts) || 0;
-  const totalWeeks = Number(workoutHistory.totalWeeks) || 0;
-  const avgExercises = Number(workoutHistory.avgExercisesPerSession) || 0;
-  const avgSets = Number(workoutHistory.avgSetsPerSession) || 0;
-  const avgProgression = workoutHistory.avgWeightProgression
-    ? Number(workoutHistory.avgWeightProgression)
-    : null;
+}
 
-  const prompt = `Analyze this workout history and determine the user's experience level (beginner, intermediate, or advanced).
+/**
+ * BEGINNER: < 50 workouts OR < 12 weeks. ADVANCED: > 200 workouts AND > 36
+ * weeks. Otherwise INTERMEDIATE. Same thresholds the old AI prompt applied.
+ */
+export function inferExperienceLevelLocally(
+  history: WorkoutHistorySummary,
+): ExperienceLevelInference {
+  const totalWorkouts = Number(history.totalWorkouts) || 0;
+  const totalWeeks = Number(history.totalWeeks) || 0;
+  const avgSets = Number(history.avgSetsPerSession) || 0;
 
-WORKOUT HISTORY:
-- Total workouts completed: ${totalWorkouts}
-- Training span: ${totalWeeks} weeks
-- Average exercises per session: ${avgExercises.toFixed(1)}
-- Average sets per session: ${avgSets.toFixed(1)}
-- Has used supersets: ${workoutHistory.hasUsedSupersets ? 'Yes' : 'No'}
-- Most used exercises: ${(workoutHistory.topExercises || []).slice(0, 10).join(', ') || 'None recorded'}
-${avgProgression !== null ? `- Average weight progression: ${avgProgression.toFixed(1)}% per month` : ''}
+  let inferredLevel: ExperienceLevel;
+  if (totalWorkouts < 50 || totalWeeks < 12) inferredLevel = 'beginner';
+  else if (totalWorkouts > 200 && totalWeeks > 36) inferredLevel = 'advanced';
+  else inferredLevel = 'intermediate';
 
-EXPERIENCE LEVEL CRITERIA:
-- BEGINNER (0-12 months consistent training):
-  * < 50 total workouts OR < 12 weeks training
-  * Simple exercise selection, mostly compounds
-  * Lower volume (< 15 sets per session on average)
-  * Rarely uses supersets
+  // Confidence reflects how much data there is and how far from a boundary.
+  const nearBoundary =
+    Math.abs(totalWorkouts - 50) < 10 ||
+    Math.abs(totalWorkouts - 200) < 25 ||
+    Math.abs(totalWeeks - 12) < 2 ||
+    Math.abs(totalWeeks - 36) < 4;
+  const confidence: ExperienceLevelInference['confidence'] =
+    totalWorkouts < 10 ? 'low' : nearBoundary ? 'medium' : 'high';
 
-- INTERMEDIATE (1-3 years consistent training):
-  * 50-200 total workouts AND 12-36 weeks training
-  * Mix of compounds and isolation exercises
-  * Moderate volume (15-25 sets per session)
-  * Occasionally uses supersets
-  * Shows exercise variety
+  const reasoning = `${totalWorkouts} completed workouts over ${totalWeeks} weeks, averaging ${avgSets.toFixed(
+    1,
+  )} sets per session${history.hasUsedSupersets ? ' with supersets' : ''}. ${
+    inferredLevel === 'beginner'
+      ? 'Under 50 workouts or 12 weeks of training indicates a beginner.'
+      : inferredLevel === 'advanced'
+        ? 'Over 200 workouts across more than 36 weeks indicates an advanced lifter.'
+        : 'Between the beginner and advanced thresholds indicates an intermediate lifter.'
+  }`;
 
-- ADVANCED (3+ years consistent training):
-  * > 200 total workouts AND > 36 weeks training
-  * Diverse exercise selection with targeted isolation work
-  * Higher volume (20+ sets per session)
-  * Regular superset usage
-  * Evidence of periodization or structured programming
-
-Return JSON only, no markdown:
-{
-  "inferredLevel": "beginner|intermediate|advanced",
-  "confidence": "low|medium|high",
-  "reasoning": "2-3 sentence explanation",
-  "metrics": {
-    "totalWorkouts": ${workoutHistory.totalWorkouts},
-    "averageVolumePerSession": ${workoutHistory.avgSetsPerSession.toFixed(1)},
-    "exerciseVariety": ${workoutHistory.topExercises.length},
-    "trainingConsistencyWeeks": ${workoutHistory.totalWeeks},
-    "hasProgressiveOverload": true/false
-  }
-}`;
-
-  return complete({
-    prompt,
-    schema: experienceLevelInferenceSchema,
-    schemaName: 'experience_level_inference',
-  });
+  return {
+    inferredLevel,
+    confidence,
+    reasoning,
+    metrics: {
+      totalWorkouts,
+      averageVolumePerSession: Math.round(avgSets * 10) / 10,
+      exerciseVariety: history.topExercises.length,
+      trainingConsistencyWeeks: totalWeeks,
+      hasProgressiveOverload: false,
+    },
+  };
 }
 
 // ============================================================================
-// MULTI-TURN ORCHESTRATION via OpenAI function calling.
+// MULTI-TURN ORCHESTRATION via function calling.
 //
-// Instead of generating a program in one shot and then post-processing exercise
-// names (the legacy flow), this approach gives the AI 4 tools and lets it
-// orchestrate the workflow itself:
-//   1. infer_experience_level (if not provided)
-//   2. select_exercises (from existing library — prefer reuse)
-//   3. create_exercises (only for gaps)
-//   4. generate_program (final assembly with supersets)
+// The AI gets 3 tools and orchestrates the workflow itself:
+//   1. select_exercises (from existing library — prefer reuse)
+//   2. create_exercises (only for gaps)
+//   3. generate_program (final assembly with supersets)
+// Experience level is resolved locally beforehand (inferExperienceLevelLocally).
 //
-// The conversation loop runs up to 10 turns. Each turn:
-//   - AI calls one or more tools
-//   - We extract the structured data from tool arguments
-//   - We feed back a confirmation message as the tool output
-//   - Loop continues until the AI calls generate_program or stops calling tools
-//
-// This eliminates the separate duplicate-detection and batch-detail-generation
-// steps from the legacy flow, cutting total AI round-trips from 4-5 to 1-3.
+// The loop stops the moment generate_program is called (hasToolCall), with a
+// 10-step cap as a fallback, so there is no extra round trip just to hear
+// "done".
 
 export interface StreamlinedProgramResult {
   program: AIProgramGeneratorResponse;
@@ -860,10 +433,10 @@ export interface StreamlinedProgramResult {
 }
 
 /**
- * Generates a workout program using OpenAI function calling.
+ * Generates a workout program using function calling.
  * The AI orchestrates: experience inference (if needed), exercise selection
  * from the library, creation of any missing exercises, and final program
- * assembly — all in a single Responses API conversation.
+ * assembly — all in a single tool-calling conversation.
  */
 export async function generateWorkoutProgramWithFunctionCalling(
   input: AIProgramGeneratorInputV2,
@@ -874,48 +447,39 @@ export async function generateWorkoutProgramWithFunctionCalling(
     ...input.availableEquipment,
   ];
 
+  // Compact "name|type|equipment" lines: names carry the movement and
+  // muscle; equipment is kept because the program must respect it.
   const existingExercisesList = existingExercises
     .slice(0, 150)
-    .map(
-      (ex) =>
-        `- ${ex.name} | Muscles: ${ex.muscle_groups} | Equipment: ${ex.equipment} | Type: ${ex.exercise_type}`,
-    )
+    .map((ex) => `${ex.name}|${ex.exercise_type}|${ex.equipment ?? ''}`)
     .join('\n');
 
   const splitPreference = formatSplitPreference(input.preferredTrainingSplit);
 
-  let experienceContext = '';
-  if (input.experienceLevel) {
-    experienceContext = `Experience Level: ${input.experienceLevel} (user-provided)`;
-  } else if (input.workoutHistory) {
-    experienceContext = `
-Experience Level: TO BE INFERRED from workout history
-Workout History Summary:
-- Total workouts: ${input.workoutHistory.totalWorkouts}
-- Training span: ${input.workoutHistory.totalWeeks} weeks
-- Avg exercises per session: ${input.workoutHistory.avgExercisesPerSession}
-- Avg sets per session: ${input.workoutHistory.avgSetsPerSession}
-- Has used supersets: ${input.workoutHistory.hasUsedSupersets ? 'Yes' : 'No'}
-- Top exercises: ${input.workoutHistory.topExercises.slice(0, 5).join(', ')}
-
-Use the infer_experience_level function first if needed.`;
-  } else {
-    experienceContext = `Experience Level: intermediate (default, no history available)`;
-  }
+  // Experience level is resolved by the caller (user choice, or computed
+  // locally from history); intermediate is the no-data default.
+  const experienceLevel: ExperienceLevel =
+    input.experienceLevel ??
+    (input.workoutHistory
+      ? inferExperienceLevelLocally(input.workoutHistory).inferredLevel
+      : 'intermediate');
+  const experienceContext = input.experienceLevel
+    ? `Experience Level: ${experienceLevel} (user-provided)`
+    : input.workoutHistory
+      ? `Experience Level: ${experienceLevel} (from ${input.workoutHistory.totalWorkouts} logged workouts over ${input.workoutHistory.totalWeeks} weeks; uses supersets: ${input.workoutHistory.hasUsedSupersets ? 'yes' : 'no'})`
+      : 'Experience Level: intermediate (default, no history available)';
 
   const systemPrompt = `You are an expert strength and conditioning coach creating a personalized workout program using BuiltWithScience evidence-based principles.
 
 AVAILABLE FUNCTIONS:
-1. infer_experience_level - Infer experience level from workout history
-2. select_exercises - Select exercises from the user's existing library
-3. create_exercises - Create new exercises that don't exist in the library
-4. generate_program - Generate the complete workout program
+1. select_exercises - Select exercises from the user's existing library
+2. create_exercises - Create new exercises that don't exist in the library
+3. generate_program - Generate the complete workout program
 
 WORKFLOW:
-1. If experience level is not provided, call infer_experience_level first
-2. Review the exercise library and call select_exercises for exercises you want to use
-3. If you need exercises not in the library, call create_exercises to add them
-4. Finally, call generate_program with the complete program structure
+1. Review the exercise library (lines are "name|type|equipment") and call select_exercises for exercises you want to use
+2. If you need exercises not in the library, call create_exercises to add them
+3. Finally, call generate_program with the complete program structure — this ends the conversation, so call it last and only once
 
 === EXERCISE TYPE CLASSIFICATION (REQUIRED for create_exercises) ===
 
@@ -1050,44 +614,25 @@ ${
 }
 
 INSTRUCTIONS:
-1. ${input.experienceLevel ? 'Skip experience inference' : 'Infer experience level if workout history is provided'}
-2. Select exercises from the library that fit the program
-3. Create any additional exercises needed (minimize new exercises if library has good options)
-4. Generate the complete program with proper superset pairings for ${input.experienceLevel || 'inferred'} level
-5. APPLY GENDER-SPECIFIC GUIDELINES above for exercise selection and volume distribution
+1. Select exercises from the library that fit the program
+2. Create any additional exercises needed (minimize new exercises if library has good options)
+3. Generate the complete program with proper superset pairings for ${experienceLevel} level
+4. APPLY GENDER-SPECIFIC GUIDELINES above for exercise selection and volume distribution
 
 Remember: ALWAYS pair supersets bidirectionally. If Bicep Curls superset with Tricep Pushdowns, BOTH exercises must reference each other.`;
 
   // Accumulators closed over by the tool execute callbacks. The Vercel SDK
   // drives the multi-step loop: it calls a tool, feeds the result back to the
   // model, and continues until stopWhen says stop.
-  let inferredExperienceLevel: ExperienceLevelInference | undefined;
+  const inferredExperienceLevel =
+    !input.experienceLevel && input.workoutHistory
+      ? inferExperienceLevelLocally(input.workoutHistory)
+      : undefined;
   const selectedExercises: { name: string; reason?: string }[] = [];
   const exercisesToCreate: AIExerciseResponse[] = [];
   let program: AIProgramGeneratorResponse | null = null;
 
   const tools = {
-    infer_experience_level: tool({
-      description:
-        'Infer the user experience level based on their workout history. Call this if experience level is not provided.',
-      inputSchema: inferExperienceLevelInput,
-      execute: async (args) => {
-        inferredExperienceLevel = {
-          inferredLevel: args.inferredLevel,
-          confidence: args.confidence,
-          reasoning: args.reasoning,
-          metrics: {
-            totalWorkouts: input.workoutHistory?.totalWorkouts || 0,
-            averageVolumePerSession:
-              input.workoutHistory?.avgSetsPerSession || 0,
-            exerciseVariety: input.workoutHistory?.topExercises.length || 0,
-            trainingConsistencyWeeks: input.workoutHistory?.totalWeeks || 0,
-            hasProgressiveOverload: false,
-          },
-        };
-        return `Experience level inferred as ${args.inferredLevel}. Proceed with program generation.`;
-      },
-    }),
     select_exercises: tool({
       description:
         'Select exercises from the existing library to use in the program. Always prefer existing exercises over creating new ones.',
@@ -1155,6 +700,8 @@ Remember: ALWAYS pair supersets bidirectionally. If Bicep Curls superset with Tr
     prompt: userPrompt,
     tools,
     maxSteps: 10,
+    stopWhen: hasToolCall('generate_program'),
+    reasoning: 'medium',
   });
 
   if (!program) {

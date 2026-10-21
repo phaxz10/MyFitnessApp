@@ -12,9 +12,11 @@ import {
 } from '../../utils/units';
 import { complete } from '../ai/aiClient';
 
-// Coaching responses are cached for 7 days because progression recommendations
-// only change meaningfully between workout sessions, not between page loads.
-// Cache key includes the exercise history, so new sessions invalidate it.
+// One batched call per workout session covers every rep-based exercise.
+// Responses are cached for 7 days because progression recommendations only
+// change meaningfully between workout sessions, not between page loads. The
+// cache key is the prompt, which carries every exercise's history, targets
+// and notes — a newly completed session invalidates it.
 //
 // Units: the prompt sends and asks for weights in the user's display unit
 // (so the coaching tip reads naturally), and suggestedWeight is converted
@@ -38,113 +40,122 @@ const exerciseCoachingSchema = z.object({
   coachingTip: z.string(),
 }) satisfies z.ZodType<AIExerciseCoachingResponse>;
 
-/**
- * Get AI coaching recommendations for exercise progression.
- * High-stakes — the response drives the UI showing recommended weights/reps
- * for the next set, so we validate the shape.
- */
-export async function getExerciseCoaching(
-  exerciseName: string,
-  exerciseHistory: { date: string; sets: WorkoutSet[] }[],
-  targetRepMin: number,
-  targetRepMax: number,
-  targetSets: number,
-  exerciseNotes: ExerciseNote[] = [],
-  unit: WeightUnit = 'kg',
-): Promise<AIExerciseCoachingResponse> {
-  const u = unitLabel(unit);
-  const w = (kg: number | null) => toDisplayWeight(kg ?? 0, unit, 'lift');
-  const [smallStep, bigStep] = unit === 'lbs' ? [5, 10] : [2.5, 5];
-  const historyFormatted = exerciseHistory
-    .slice(-5)
-    .map((session) => {
-      const setsStr = session.sets
-        .map((s, i) => `Set ${i + 1}: ${w(s.weight_kg)} ${u} × ${s.reps ?? 0}`)
-        .join(', ');
-      return `${session.date}: ${setsStr}`;
-    })
-    .join('\n');
+// Object root (not a bare array) so strict structured-output mode applies.
+const sessionCoachingSchema = z.object({
+  exercises: z.array(exerciseCoachingSchema),
+});
 
-  const lastSession = exerciseHistory[exerciseHistory.length - 1];
-  const lastSets = lastSession?.sets || [];
-  const notesSummary = exerciseNotes.length
-    ? exerciseNotes
-        .slice(-5)
-        .map((note) => `- ${note.content}`)
-        .join('\n')
-    : 'No exercise notes available';
-
-  // temperature: 0.2 keeps progression recommendations consistent and conservative.
-  // The double-rep-range model (double progression): increase reps first within the
-  // target range, then increase weight when top of range is hit on all sets.
-  const prompt = `You are an evidence-based strength coach specializing in progressive overload programming. Analyze the training data below and recommend weights/reps for the next workout session.
-
-UNITS: every weight below is in ${u}, and every weight you return must be in ${u}.
-
-EXERCISE: ${exerciseName}
-TARGET: ${targetSets} sets × ${targetRepMin}-${targetRepMax} reps
-
-ATHLETE NOTES (most recent last):
-${notesSummary}
-
-RECENT TRAINING HISTORY (most recent last, up to 5 sessions):
-${historyFormatted || 'No previous history — this is their first session'}
-
-LAST SESSION DETAIL:
-${lastSets.map((s, i) => `Set ${i + 1}: ${w(s.weight_kg)} ${u} × ${s.reps ?? 0} reps`).join('\n') || 'No data'}
-
-DOUBLE PROGRESSION MODEL:
-1. All sets hit ${targetRepMax} reps (top of range) → INCREASE weight by ${smallStep} ${u} (upper body) or ${bigStep} ${u} (lower body)
-2. All sets hit ${Math.floor((targetRepMin + targetRepMax) / 2)}+ reps (mid-range) → MAINTAIN weight, aim for +1 rep per set
-3. Any set below ${targetRepMin} reps (below range) → DECREASE weight by ${smallStep} ${u} or maintain and prioritize form
-4. Multiple sessions at same weight hitting top of range → definitely ready to progress (overdue)
-5. Normal set-to-set fatigue: 1-2 rep drop per set is expected. A 4+ rep drop suggests the weight is too heavy.
-
-TREND DETECTION:
-- Progressing: weight or reps increasing over the last 3+ sessions
-- Plateau: same weight and reps for 3+ sessions
-- Regressing: weight or reps decreasing, or failure to hit minimum reps
-
-Return JSON format only, no markdown code blocks:
-{
-  "exerciseId": 0,
-  "overallTrend": "progressing|plateau|regressing",
-  "sets": [
-    {
-      "setNumber": 1,
-      "weight": "increase|maintain|decrease",
-      "reps": "increase|maintain|decrease",
-      "suggestedWeight": number_in_${u},
-      "suggestedReps": number
-    }
-  ],
-  "coachingTip": "One sentence of actionable advice (e.g. 'Focus on controlled eccentric' or 'Ready to move up to ${unit === 'lbs' ? '135' : '60'} ${u}')"
+export interface CoachingRequest {
+  exerciseId: number;
+  exerciseName: string;
+  /** Chronological (oldest first). */
+  history: { date: string; sets: WorkoutSet[] }[];
+  targetRepMin: number;
+  targetRepMax: number;
+  targetSets: number;
+  notes?: ExerciseNote[];
 }
 
+// Fixed coaching rules go in `system` so the prefix is identical on every
+// call (provider prompt caching); per-exercise data goes in the prompt.
+function coachingInstructions(unit: WeightUnit): string {
+  const u = unitLabel(unit);
+  const [smallStep, bigStep] = unit === 'lbs' ? [5, 10] : [2.5, 5];
+  return `You are an evidence-based strength coach specializing in progressive overload programming. For EACH exercise in the user's message, analyze its training data and recommend weights/reps for the next workout session. Reason about each exercise independently.
+
+UNITS: every weight is in ${u}, and every weight you return must be in ${u}.
+
+DOUBLE PROGRESSION MODEL (per exercise, using its own target range):
+1. All sets hit the top of the rep range → INCREASE weight by ${smallStep} ${u} (upper body) or ${bigStep} ${u} (lower body)
+2. All sets hit mid-range or better → MAINTAIN weight, aim for +1 rep per set
+3. Any set below the bottom of the range → DECREASE weight by ${smallStep} ${u} or maintain and prioritize form
+4. Multiple sessions at the same weight hitting the top of the range → definitely ready to progress (overdue)
+5. Normal set-to-set fatigue: a 1-2 rep drop per set is expected. A 4+ rep drop suggests the weight is too heavy.
+
+TREND DETECTION:
+- progressing: weight or reps increasing over the last 3+ sessions
+- plateau: same weight and reps for 3+ sessions
+- regressing: weight or reps decreasing, or failure to hit minimum reps
+
 HARD RULES:
-- Return EXACTLY ${targetSets} sets
-- suggestedWeight must be based on last session's weight (not invented)
-- suggestedReps must be within ${targetRepMin}-${targetRepMax}
-- If no history exists, suggest a conservative starting weight and "maintain" for all directions
+- Return one entry per exercise, with "exerciseId" copied exactly from the input
+- Each entry has EXACTLY that exercise's target number of sets
+- suggestedWeight must be based on the last session's weight (not invented)
+- suggestedReps must be within that exercise's target rep range
 - Weight increments: ${smallStep} ${u} for upper body isolation, ${smallStep}-${bigStep} ${u} for compound movements
 - Account for athlete notes (e.g. "felt easy" → more aggressive progression, "shoulder pain" → deload)
-- coachingTip should be specific to this exercise, not generic advice`;
+- coachingTip: one sentence of actionable advice specific to that exercise, not generic advice
 
+Output: a JSON object matching the provided schema — {"exercises": [...]}.`;
+}
+
+function formatExercise(req: CoachingRequest, unit: WeightUnit): string {
+  const u = unitLabel(unit);
+  const w = (kg: number | null) => toDisplayWeight(kg ?? 0, unit, 'lift');
+  const history = req.history
+    .slice(-5)
+    .map(
+      (session) =>
+        `  ${session.date}: ${session.sets
+          .map((s) => `${w(s.weight_kg)}×${s.reps ?? 0}`)
+          .join(', ')}`,
+    )
+    .join('\n');
+  const notes = (req.notes ?? [])
+    .slice(-5)
+    .map((note) => `  - ${note.content}`)
+    .join('\n');
+  return `exerciseId ${req.exerciseId}: ${req.exerciseName}
+TARGET: ${req.targetSets} sets × ${req.targetRepMin}-${req.targetRepMax} reps
+HISTORY (${u} × reps, oldest first, last entry = last session):
+${history || '  none — first session (suggest a conservative start, "maintain" everywhere)'}
+NOTES:
+${notes || '  none'}`;
+}
+
+/**
+ * Get AI progression coaching for every exercise in a session in ONE call.
+ * High-stakes — the response drives the UI showing recommended weights/reps
+ * for the next set, so we validate the shape. Entries the model omits or
+ * whose exerciseId doesn't match a request are dropped.
+ */
+export async function getSessionCoaching(
+  requests: CoachingRequest[],
+  unit: WeightUnit = 'kg',
+): Promise<Map<number, AIExerciseCoachingResponse>> {
+  const result = new Map<number, AIExerciseCoachingResponse>();
+  if (requests.length === 0) return result;
+
+  // Sorted so the same set of exercises always produces the same prompt
+  // (and therefore the same cache key), whatever order the UI lists them in.
+  const sorted = [...requests].sort((a, b) => a.exerciseId - b.exerciseId);
+  const prompt = sorted.map((req) => formatExercise(req, unit)).join('\n\n');
+
+  // temperature 0.2 keeps progression recommendations consistent and
+  // conservative.
   const response = await complete({
+    instructions: coachingInstructions(unit),
     prompt,
-    schema: exerciseCoachingSchema,
-    schemaName: 'exercise_coaching',
+    schema: sessionCoachingSchema,
+    schemaName: 'session_coaching',
+    reasoning: 'medium',
     temperature: 0.2,
     cache: {
-      namespace: 'exercise_coaching',
+      namespace: 'session_coaching',
       ttlMs: COACHING_CACHE_TTL_MS,
     },
   });
-  return {
-    ...response,
-    sets: response.sets.map((set) => ({
-      ...set,
-      suggestedWeight: fromInputWeight(set.suggestedWeight, unit),
-    })),
-  };
+
+  const requested = new Set(requests.map((r) => r.exerciseId));
+  for (const coaching of response.exercises) {
+    if (!requested.has(coaching.exerciseId)) continue;
+    result.set(coaching.exerciseId, {
+      ...coaching,
+      sets: coaching.sets.map((set) => ({
+        ...set,
+        suggestedWeight: fromInputWeight(set.suggestedWeight, unit),
+      })),
+    });
+  }
+  return result;
 }

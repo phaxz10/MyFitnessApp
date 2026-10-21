@@ -5,10 +5,17 @@ import type {
   AITargetResponse,
   DietType,
 } from '../../types';
-import { complete, webSearchTool } from '../ai/aiClient';
+import {
+  complete,
+  hashString,
+  normalizeCacheText,
+  webSearchTool,
+} from '../ai/aiClient';
 
-// Helper: builds a tools map with web search included only when the active
-// provider exposes one in the current configuration. Returns undefined when
+// Food text + food photo are the ONLY calls that request web search (paid per
+// request on OpenRouter): branded/restaurant items need current nutrition
+// facts. Helper: builds a tools map with web search included only when the
+// active provider exposes one in the current configuration. Returns undefined when
 // the model would have no tools to call (so generateText skips the tool path).
 function maybeWebSearchTools() {
   const search = webSearchTool();
@@ -33,20 +40,22 @@ const foodItemSchema = z.object({
 // structured-output mode rejects optional fields — every property must appear
 // in `required`. Using .nullable() means the AI must always emit the key,
 // either as null (when input IS food) or a refusal string (when it isn't).
+//
+// No `total` field: normalizeFoodAnalysis() recomputes totals from the items,
+// so asking the model for them only costs output tokens.
 const foodAnalysisSchema = z.object({
   items: z.array(foodItemSchema),
-  total: z.object({
-    calories: z.number().nonnegative(),
-    protein_g: z.number().nonnegative(),
-    carbs_g: z.number().nonnegative(),
-    fat_g: z.number().nonnegative(),
-  }),
   not_food_reason: z.string().nullable(),
 });
 
 const targetReasoningSchema = z.object({
   reasoning: z.string(),
 });
+
+// Food estimates rarely change; a 30-day cache means re-logging "2 eggs and
+// toast" or re-analysing the same photo costs nothing.
+const FOOD_CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 30;
+const TARGETS_CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 
 type TargetProfile = {
   age: number;
@@ -59,54 +68,50 @@ type TargetProfile = {
   diet_type?: DietType;
 };
 
+// Fixed instruction blocks live in `system` (first, identical every call) so
+// provider prefix caching can reuse them; only the food itself varies.
+const FOOD_OUTPUT_RULES = `Output: one JSON object matching the provided schema — an "items" array (name, portion_grams, calories, protein_g, carbs_g, fat_g per distinct food) and "not_food_reason". All numeric values must be plain pre-computed numbers (e.g. 279, not "1.5 * 186"). No markdown.
+
+"not_food_reason" is REQUIRED: null when the input is valid food or drink; otherwise items must be [] and not_food_reason a short explanation of what was provided instead.`;
+
+const FOOD_TEXT_INSTRUCTIONS = `You estimate nutrition for food descriptions.
+
+If the description is clearly NOT food or drink (e.g. "my dog", "happy thoughts", random characters, an object), return no items and explain in not_food_reason.
+
+For valid food, use web search for branded/restaurant/package items when available. Prefer official nutrition facts, USDA-style references, or common serving databases. If exact data is unavailable, use a conservative generic estimate.
+
+${FOOD_OUTPUT_RULES}`;
+
+const FOOD_IMAGE_INSTRUCTIONS = `You estimate nutrition from food photos.
+
+If the image does NOT contain food (e.g. a pet, a person, an object, a landscape, blurry/unrecognizable content), return no items and describe what is in the image in not_food_reason.
+
+For valid food images, estimate visible portions in grams. Prefer conservative estimates and split distinct foods into separate items. Use web search for branded/restaurant items visible in the photo (logos, wrappers, packaging) for accurate data.
+
+${FOOD_OUTPUT_RULES}`;
+
 export async function analyzeFoodText(
   foodDescription: string,
 ): Promise<AIFoodAnalysisResponse> {
-  const prompt = `Analyze the following food description and estimate nutritional information.
-
-If the description is clearly NOT food or drink (e.g. "my dog", "happy thoughts", random characters, an object), respond with:
-{
-  "items": [],
-  "total": { "calories": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0 },
-  "not_food_reason": "brief explanation of what was provided instead of food"
-}
-
-For valid food descriptions, use web search for branded/restaurant/package items when available. Prefer official nutrition facts, USDA-style references, or common serving databases. If exact data is unavailable, use a conservative generic estimate.
-
-Return valid JSON only. All numeric values must be pre-computed numbers (e.g. 279, not "1.5 * 186"). No arithmetic expressions. No markdown code blocks.
-
-The "not_food_reason" field is REQUIRED: emit null when the input describes valid food, or a short string explaining what was provided instead.
-
-Food: ${foodDescription}
-
-Return format for food:
-{
-  "items": [
-    {
-      "name": "food item name",
-      "portion_grams": grams,
-      "calories": calories,
-      "protein_g": protein,
-      "carbs_g": carbs,
-      "fat_g": fat
-    }
-  ],
-  "total": {
-    "calories": total_calories,
-    "protein_g": total_protein,
-    "carbs_g": total_carbs,
-    "fat_g": total_fat
-  },
-  "not_food_reason": null
-}`;
-
   return complete({
-    prompt,
+    instructions: FOOD_TEXT_INSTRUCTIONS,
+    prompt: `Food: ${foodDescription}`,
     schema: foodAnalysisSchema,
     schemaName: 'food_analysis',
+    reasoning: 'low',
     tools: maybeWebSearchTools(),
     temperature: 0.2,
+    cache: {
+      namespace: 'food_text',
+      ttlMs: FOOD_CACHE_TTL_MS,
+      key: foodTextCacheKey(foodDescription),
+    },
   }).then(normalizeFoodAnalysis);
+}
+
+/** Cache identity for a food description: case/whitespace-insensitive. */
+export function foodTextCacheKey(foodDescription: string): string {
+  return normalizeCacheText(foodDescription);
 }
 
 export async function analyzeFoodImage(
@@ -114,47 +119,17 @@ export async function analyzeFoodImage(
   mimeType: string,
   textDescription?: string,
 ): Promise<AIFoodAnalysisResponse> {
-  const prompt = `Analyze this food image and estimate nutritional information.
-
-If the image does NOT contain food (e.g. a pet, a person, an object, a landscape, blurry/unrecognizable content), respond with:
-{
-  "items": [],
-  "total": { "calories": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0 },
-  "not_food_reason": "brief description of what is in the image instead of food"
-}
-${textDescription ? `Additional context from user: ${textDescription}` : ''}
-
-For valid food images, estimate visible portions in grams. Prefer conservative estimates and split distinct foods into separate items. Use web search for branded/restaurant items visible in the photo (logos, wrappers, packaging) for accurate data. All numeric values must be pre-computed numbers; no arithmetic expressions.
-
-The "not_food_reason" field is REQUIRED: emit null when the image contains valid food, or a short string describing what's in the image instead.
-
-Return JSON format only, no markdown code blocks. Return format for food:
-{
-  "items": [
-    {
-      "name": "identified food item",
-      "portion_grams": estimated_grams,
-      "calories": estimated_calories,
-      "protein_g": estimated_protein,
-      "carbs_g": estimated_carbs,
-      "fat_g": estimated_fat
-    }
-  ],
-  "total": {
-    "calories": total_calories,
-    "protein_g": total_protein,
-    "carbs_g": total_carbs,
-    "fat_g": total_fat
-  },
-  "not_food_reason": null
-}`;
+  const context = textDescription?.trim()
+    ? `Additional context from user: ${textDescription.trim()}`
+    : 'Analyze this food image.';
 
   return complete({
+    instructions: FOOD_IMAGE_INSTRUCTIONS,
     prompt: [
       {
         role: 'user',
         content: [
-          { type: 'text', text: prompt },
+          { type: 'text', text: context },
           {
             type: 'image',
             image: `data:${mimeType};base64,${imageBase64}`,
@@ -164,18 +139,38 @@ Return JSON format only, no markdown code blocks. Return format for food:
     ],
     schema: foodAnalysisSchema,
     schemaName: 'food_analysis',
+    reasoning: 'low',
     tools: maybeWebSearchTools(),
     temperature: 0.2,
+    cache: {
+      namespace: 'food_image',
+      ttlMs: FOOD_CACHE_TTL_MS,
+      // The image arrives already downscaled (prepareFoodImage), so the same
+      // photo hashes the same regardless of the original camera resolution.
+      key: {
+        image: hashString(imageBase64),
+        mimeType,
+        context: textDescription ? normalizeCacheText(textDescription) : '',
+      },
+    },
   }).then(normalizeFoodAnalysis);
 }
+
+const TARGET_REASONING_INSTRUCTIONS = `Write a concise explanation for already-computed calorie and macro targets. Do not change the numbers.
+
+The targets were computed with:
+- Mifflin-St Jeor BMR
+- Activity multiplier based on activity level
+- Goal adjustment based on sustainable rate of change
+- Protein from body weight; carbs set by diet type (balanced = remaining calories), fat fills the rest
+
+Output: a JSON object with a single "reasoning" string. No markdown.`;
 
 export async function calculateTargets(
   profile: TargetProfile,
 ): Promise<AITargetResponse> {
   const targets = calculateDeterministicTargets(profile);
-  const prompt = `Write a concise explanation for these already-computed calorie and macro targets. Do not change the numbers.
-
-Profile:
+  const prompt = `Profile:
 - Age: ${profile.age}
 - Gender: ${profile.gender}
 - Height: ${profile.height_cm}cm
@@ -184,29 +179,22 @@ Profile:
 - Goal: ${profile.goal}
 - Diet type: ${profile.diet_type ?? 'balanced'}
 
-Computed formula:
-- Mifflin-St Jeor BMR
-- Activity multiplier based on activity level
-- Goal adjustment based on sustainable rate of change
-- Protein from body weight; carbs set by diet type (balanced = remaining calories), fat fills the rest
-
 Computed targets:
 - Calories: ${targets.calorie_target} kcal/day
 - Protein: ${targets.protein_g}g/day
 - Carbs: ${targets.carbs_g}g/day
-- Fat: ${targets.fat_g}g/day
-
-Return JSON format only, no markdown code blocks:
-{
-  "reasoning": "brief explanation of the calculation"
-}`;
+- Fat: ${targets.fat_g}g/day`;
 
   try {
     const result = await complete({
+      instructions: TARGET_REASONING_INSTRUCTIONS,
       prompt,
       schema: targetReasoningSchema,
       schemaName: 'target_reasoning',
       temperature: 0.2,
+      // Key is the full prompt (profile + computed numbers): any change to
+      // either produces a fresh explanation.
+      cache: { namespace: 'target_reasoning', ttlMs: TARGETS_CACHE_TTL_MS },
     });
     return { ...targets, reasoning: result.reasoning };
   } catch (err) {
@@ -345,10 +333,13 @@ export function weightForMacros(profile: TargetProfile): number {
 // the refusal reason so the UI can render a friendly message. Accepts both
 // `null` (from the schema-validated structured output) and `undefined` (from
 // legacy callers / tests) for not_food_reason, normalizing to undefined.
+// `total` is optional on input: the model no longer returns it (the schema
+// dropped it) and any value supplied is ignored in favour of the recompute.
 type NormalizableFoodAnalysis = Omit<
   AIFoodAnalysisResponse,
-  'not_food_reason'
+  'not_food_reason' | 'total'
 > & {
+  total?: AIFoodAnalysisResponse['total'];
   not_food_reason?: string | null;
 };
 

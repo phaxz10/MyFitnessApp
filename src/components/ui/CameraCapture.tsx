@@ -6,6 +6,10 @@ import {
   useRef,
   useState,
 } from 'react';
+import {
+  encodeDownscaledJpeg,
+  prepareFoodImageFile,
+} from '../../utils/foodImage';
 import { Button } from './Button';
 
 interface CameraCaptureProps {
@@ -75,8 +79,6 @@ export function CameraCapture({ onCapture, overlay }: CameraCaptureProps) {
     if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
 
     const viewfinderAR = 5 / 7;
     const videoAR = video.videoWidth / video.videoHeight;
@@ -94,26 +96,22 @@ export function CameraCapture({ onCapture, overlay }: CameraCaptureProps) {
       sy = (video.videoHeight - sh) / 2;
     }
 
-    canvas.width = sw;
-    canvas.height = sh;
-    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-    const base64 = dataUrl.split(',')[1];
-    onCapture({ base64, mimeType: 'image/jpeg' });
+    // Downscaled to 1024px long edge before it is ever sent to the model.
+    const encoded = encodeDownscaledJpeg(video, { sx, sy, sw, sh }, canvas);
+    if (encoded) onCapture(encoded);
   }, [onCapture]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
     if (!file.type.startsWith('image/')) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      const base64 = result.split(',')[1];
-      onCapture({ base64, mimeType: file.type });
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
+    // Downscale + re-encode (also converts HEIC where the browser decodes it).
+    void prepareFoodImageFile(file)
+      .then((encoded) => {
+        if (mountedRef.current) onCapture(encoded);
+      })
+      .catch((err) => console.error('Failed to read image file:', err));
   };
 
   useEffect(() => {

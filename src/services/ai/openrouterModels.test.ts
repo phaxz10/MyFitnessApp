@@ -37,6 +37,7 @@ const entry = (over: Partial<ModelCatalogEntry>): ModelCatalogEntry => ({
   name: 'Vendor Model',
   vision: false,
   tools: true,
+  reasoning: false,
   free: false,
   inputPricePerM: 1,
   outputPricePerM: 2,

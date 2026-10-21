@@ -17,6 +17,7 @@ import { type ExerciseFormData, exerciseFormSchema } from '../schemas/forms';
 import { useAICapability } from '../services/ai/useAICapability';
 import {
   findDuplicateExercises,
+  findDuplicateExercisesBatch,
   generateExerciseDetails,
   generateExerciseDetailsBatch,
 } from '../services/coaching/exerciseLibraryCoach';
@@ -379,13 +380,12 @@ export function ExerciseLibrary() {
     // Batch duplicate check – per row, no global confirm
     if (exercises.length > 0) {
       try {
-        const duplicateMap: Record<string, Exercise[]> = {};
-        for (const ex of pendingExercises) {
-          const duplicates = await findDuplicateExercises(ex.name, exercises);
-          if (duplicates.length > 0) {
-            duplicateMap[ex.name] = duplicates;
-          }
-        }
+        // One local screen + at most ONE batched AI call for all rows.
+        const duplicateMap: Record<string, Exercise[]> =
+          await findDuplicateExercisesBatch(
+            pendingExercises.map((ex) => ex.name),
+            exercises,
+          );
         setBatchExercises((prev) =>
           prev.map((ex) => ({
             ...ex,

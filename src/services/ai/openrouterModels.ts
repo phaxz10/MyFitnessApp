@@ -10,8 +10,10 @@ import { OPENROUTER_MODELS_URL } from '../../constants/aiProviders';
 // 24h TTL, same pattern as the AI response cache in aiClient) keeps cold
 // starts cheap and offline starts usable.
 
-const CACHE_PREFIX = 'mypersonalfitness.openrouterModelCatalog.v2';
+// v3: entries gained `reasoning`; older cached catalogs would read as false.
+const CACHE_PREFIX = 'mypersonalfitness.openrouterModelCatalog.v3';
 const DEFAULT_CATALOG_TTL_MS = 1000 * 60 * 60 * 24; // 24 hours
+const CAPABILITY_LOOKUP_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
 
 export interface ModelCatalogEntry {
   id: string;
@@ -20,6 +22,8 @@ export interface ModelCatalogEntry {
   vision: boolean;
   /** Supports tool calling — program generation needs it. */
   tools: boolean;
+  /** Accepts OpenRouter's `reasoning` request parameter. */
+  reasoning: boolean;
   /** Free models (pricing.prompt + completion === "0"), tagged in the UI. */
   free: boolean;
   /** Rough price bucket for UI sorting/tagging, in $ per 1M prompt tokens. */
@@ -47,6 +51,7 @@ function normalize(raw: OpenRouterModelsResponse): ModelCatalogEntry[] {
       // Vision matters for food-photo analysis; surfaced as a UI hint.
       vision: (model.architecture?.input_modalities ?? []).includes('image'),
       tools: (model.supported_parameters ?? []).includes('tools'),
+      reasoning: (model.supported_parameters ?? []).includes('reasoning'),
       free: model.id.endsWith(':free') || (input === 0 && output === 0),
       inputPricePerM: input * 1_000_000,
       outputPricePerM: output * 1_000_000,
@@ -117,6 +122,22 @@ function writeCache(key: string, entries: ModelCatalogEntry[]): void {
 /** Test/teardown hook: clear the in-memory catalog cache. */
 export function clearModelCatalogCache(): void {
   memoryCache.delete(CACHE_PREFIX);
+}
+
+/**
+ * Whether the cached catalog says `modelId` accepts the `reasoning` request
+ * parameter. Synchronous (reads the memory/localStorage cache only), so the
+ * AI request path never waits on the network. Unknown model or no cached
+ * catalog → false: we only send `reasoning` to models that advertise it.
+ */
+export function modelSupportsReasoning(modelId: string): boolean {
+  const id = modelId.endsWith(':online')
+    ? modelId.slice(0, -':online'.length)
+    : modelId;
+  // Capabilities change rarely: accept a catalog up to 30 days old here so an
+  // un-refreshed cache doesn't silently switch reasoning off after a day.
+  const entries = readCache(CACHE_PREFIX, CAPABILITY_LOOKUP_TTL_MS);
+  return entries?.some((e) => e.id === id && e.reasoning === true) ?? false;
 }
 
 // ------------------------------ Fetching -----------------------------------

@@ -1,41 +1,27 @@
 import { useCallback, useState } from 'react';
 import {
-  findDuplicateExercises,
-  generateExerciseDetailsBatch,
-} from '../services/coaching/exerciseLibraryCoach';
-import {
-  generateWorkoutProgram,
   generateWorkoutProgramWithFunctionCalling,
-  inferExperienceLevel,
+  inferExperienceLevelLocally,
   type StreamlinedProgramResult,
 } from '../services/coaching/programCoach';
 import { getDB } from '../services/db';
 import type {
   AIExerciseResponse,
-  AIProgramGeneratorInput,
   AIProgramGeneratorInputV2,
   AIProgramGeneratorResponse,
   Exercise,
   ExperienceLevelInference,
 } from '../types';
 
-// State machine for the program generation pipeline.
-// Two generation paths share these states:
-//
-// LEGACY (generateProgram): idle -> generating_program -> checking_exercises
-//   -> generating_exercise_details -> complete -> saving_exercises -> saving_program -> complete
-//
-// STREAMLINED (generateProgramStreamlined): idle -> inferring_experience
-//   -> generating_program -> complete (AI handles exercise selection/creation internally
-//   via function calling, so checking/generating steps are skipped)
-//
-// Both paths: any step can transition to 'error'; resetState() returns to 'idle'.
+// State machine for the program generation pipeline (generateProgramStreamlined):
+//   idle -> inferring_experience -> generating_program -> complete
+//   -> saving_exercises -> saving_program -> complete
+// The AI handles exercise selection/creation internally via function calling.
+// Any step can transition to 'error'; resetState() returns to 'idle'.
 export type GeneratorStep =
   | 'idle'
   | 'inferring_experience'
   | 'generating_program'
-  | 'checking_exercises'
-  | 'generating_exercise_details'
   | 'saving_exercises'
   | 'saving_program'
   | 'complete'
@@ -110,205 +96,6 @@ export function useProgramGenerator() {
     const result = await db.query('SELECT * FROM exercises ORDER BY name');
     return result.rows as Exercise[];
   }, []);
-
-  // Extract unique exercise names from AI-generated program
-  const extractUniqueExercises = useCallback(
-    (program: AIProgramGeneratorResponse): string[] => {
-      const exerciseSet = new Set<string>();
-      for (const session of program.sessions) {
-        for (const exercise of session.exercises) {
-          exerciseSet.add(exercise.name);
-        }
-      }
-      return Array.from(exerciseSet);
-    },
-    [],
-  );
-
-  // Find exact match in existing exercises (case-insensitive)
-  const findExactMatch = useCallback(
-    (name: string, existingExercises: Exercise[]): Exercise | null => {
-      const lowerName = name.toLowerCase().trim();
-      return (
-        existingExercises.find(
-          (ex) => ex.name.toLowerCase().trim() === lowerName,
-        ) || null
-      );
-    },
-    [],
-  );
-
-  // Main generation function
-  const generateProgram = useCallback(
-    async (input: AIProgramGeneratorInput): Promise<void> => {
-      try {
-        // Step 1: Generate the workout program
-        setState((prev) => ({
-          ...prev,
-          step: 'generating_program',
-          progress: 'Creating your personalized workout program...',
-          error: null,
-        }));
-
-        const existingExercises = await fetchExistingExercises();
-        const generatedProgram = await generateWorkoutProgram(
-          input,
-          existingExercises,
-        );
-
-        setState((prev) => ({
-          ...prev,
-          generatedProgram,
-          progress: 'Program created! Checking exercise library...',
-        }));
-
-        // Step 2: Check which exercises exist and which need to be created
-        setState((prev) => ({
-          ...prev,
-          step: 'checking_exercises',
-          progress: 'Checking exercise library for matches...',
-        }));
-
-        const uniqueExerciseNames = extractUniqueExercises(generatedProgram);
-        const mappings: ExerciseMapping[] = [];
-
-        for (const exerciseName of uniqueExerciseNames) {
-          // First, check for exact match
-          const exactMatch = findExactMatch(exerciseName, existingExercises);
-
-          if (exactMatch) {
-            mappings.push({
-              originalName: exerciseName,
-              exerciseId: exactMatch.id,
-              existingExercise: exactMatch,
-              duplicateOf: null,
-              aiDetails: null,
-              status: 'matched',
-            });
-          } else {
-            // Check for duplicates using AI
-            const duplicates = await findDuplicateExercises(
-              exerciseName,
-              existingExercises,
-            );
-
-            if (duplicates.length > 0) {
-              // Use the first duplicate as the match
-              mappings.push({
-                originalName: exerciseName,
-                exerciseId: duplicates[0].id,
-                existingExercise: duplicates[0],
-                duplicateOf: duplicates[0],
-                aiDetails: null,
-                status: 'duplicate_found',
-              });
-            } else {
-              // Exercise doesn't exist, needs creation
-              mappings.push({
-                originalName: exerciseName,
-                exerciseId: null,
-                existingExercise: null,
-                duplicateOf: null,
-                aiDetails: null,
-                status: 'needs_creation',
-              });
-            }
-          }
-        }
-
-        setState((prev) => ({
-          ...prev,
-          exerciseMappings: mappings,
-        }));
-
-        // Step 3: Generate details for exercises that need creation
-        const exercisesNeedingCreation = mappings.filter(
-          (m) => m.status === 'needs_creation',
-        );
-
-        if (exercisesNeedingCreation.length > 0) {
-          setState((prev) => ({
-            ...prev,
-            step: 'generating_exercise_details',
-            progress: `Generating details for ${exercisesNeedingCreation.length} new exercises...`,
-          }));
-
-          const exerciseNames = exercisesNeedingCreation.map(
-            (m) => m.originalName,
-          );
-          const aiDetails = await generateExerciseDetailsBatch(exerciseNames);
-
-          // Map AI details back to mappings
-          const updatedMappings = mappings.map((mapping) => {
-            if (mapping.status !== 'needs_creation') return mapping;
-
-            const detailIndex = exerciseNames.indexOf(mapping.originalName);
-            if (detailIndex !== -1 && aiDetails[detailIndex]) {
-              return {
-                ...mapping,
-                aiDetails: aiDetails[detailIndex],
-              };
-            }
-            return mapping;
-          });
-
-          setState((prev) => ({
-            ...prev,
-            exerciseMappings: updatedMappings,
-          }));
-        }
-
-        setState((prev) => ({
-          ...prev,
-          step: 'complete',
-          progress: 'Program ready for review!',
-        }));
-      } catch (err) {
-        setState((prev) => ({
-          ...prev,
-          step: 'error',
-          error:
-            err instanceof Error ? err.message : 'Failed to generate program',
-        }));
-      }
-    },
-    [fetchExistingExercises, extractUniqueExercises, findExactMatch],
-  );
-
-  // Allow user to override duplicate detection (use AI suggestion or create new)
-  const overrideDuplicateMapping = useCallback(
-    (
-      originalName: string,
-      useExisting: boolean,
-      existingExercise?: Exercise,
-    ) => {
-      setState((prev) => {
-        const updatedMappings = prev.exerciseMappings.map((mapping) => {
-          if (mapping.originalName !== originalName) return mapping;
-
-          if (useExisting && existingExercise) {
-            return {
-              ...mapping,
-              exerciseId: existingExercise.id,
-              existingExercise,
-              status: 'matched' as const,
-            };
-          } else {
-            return {
-              ...mapping,
-              exerciseId: null,
-              existingExercise: null,
-              duplicateOf: null,
-              status: 'needs_creation' as const,
-            };
-          }
-        });
-
-        return { ...prev, exerciseMappings: updatedMappings };
-      });
-    },
-    [],
-  );
 
   // Save the program to the database
   const saveProgram = useCallback(async (): Promise<number | null> => {
@@ -630,8 +417,8 @@ export function useProgramGenerator() {
         // If we still don't have experience level and no history, infer from other signals
         let experienceLevel = input.experienceLevel;
         if (!experienceLevel && workoutHistory) {
-          // Use standalone inference for better experience
-          const inference = await inferExperienceLevel(workoutHistory);
+          // Fixed thresholds — computed locally, no AI call.
+          const inference = inferExperienceLevelLocally(workoutHistory);
           experienceLevel = inference.inferredLevel;
           setState((prev) => ({
             ...prev,
@@ -743,12 +530,10 @@ export function useProgramGenerator() {
 
   return {
     state,
-    generateProgram,
     generateProgramStreamlined,
     saveProgram,
     saveProgramWithAutoActivation,
     activateProgram,
-    overrideDuplicateMapping,
     resetState,
     checkProgramCount,
   };

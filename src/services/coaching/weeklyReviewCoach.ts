@@ -1,38 +1,22 @@
 import { z } from 'zod';
 import type {
-  AIGoalReviewResponse,
   AIWeeklyReviewResponse,
   UserProfile,
   WeeklyReviewData,
-  WeightLog,
 } from '../../types';
 import { calculateAgeFromBirthdate } from '../../utils/date';
-import { complete, webSearchTool } from '../ai/aiClient';
+import { complete } from '../ai/aiClient';
 
-// web_search enables the AI to reference current nutrition science and
-// metabolic adaptation research. Returns undefined for OpenAI without proxy.
-function maybeWebSearchTools() {
-  const search = webSearchTool();
-  return search ? { web_search: search } : undefined;
-}
-
-// SCHEMAS — review responses drive UI modals that adjust user targets,
+// No web search: the metabolic-adaptation guidance below is fixed knowledge,
+// and ':online' is billed per request.
+//
+// SCHEMA — review responses drive UI modals that adjust user targets,
 // so validating shape catches regressions before they corrupt the Profile.
 // Every nullable field is intentional: null means "no change recommended."
 
-const goalReviewSchema = z.object({
-  assessment: z.string(),
-  on_track: z.boolean(),
-  recommendations: z.object({
-    calorie_target: z.number().nullable(),
-    protein_g: z.number().nullable(),
-    carbs_g: z.number().nullable(),
-    fat_g: z.number().nullable(),
-    goal_change: z.string().nullable(),
-    reasoning: z.string(),
-  }),
-  program_suggestions: z.string(),
-}) satisfies z.ZodType<AIGoalReviewResponse>;
+// A week's review only changes when the week's data or the profile does —
+// both are in the prompt, which is the cache key.
+const WEEKLY_REVIEW_CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
 const weeklyReviewSchema = z.object({
   summary: z.string(),
@@ -70,135 +54,12 @@ const weeklyReviewSchema = z.object({
 }) satisfies z.ZodType<AIWeeklyReviewResponse>;
 
 // ============================================================================
-// reviewGoals — broader, multi-week goal/calorie review
-// ============================================================================
-
-export async function reviewGoals(
-  profile: UserProfile,
-  weightHistory: WeightLog[],
-  avgCalories: number,
-  daysLogged: number,
-  adherencePct: number,
-): Promise<AIGoalReviewResponse> {
-  const startWeight = weightHistory.length > 0 ? weightHistory[0].weight_kg : 0;
-  const currentWeight =
-    weightHistory.length > 0
-      ? weightHistory[weightHistory.length - 1].weight_kg
-      : 0;
-  const weightChange = currentWeight - startWeight;
-  const periodDays =
-    weightHistory.length > 1
-      ? Math.ceil(
-          (new Date(weightHistory[weightHistory.length - 1].date).getTime() -
-            new Date(weightHistory[0].date).getTime()) /
-            (1000 * 60 * 60 * 24),
-        )
-      : 0;
-
-  const weightDataSummary = weightHistory
-    .slice(-30)
-    .map((w) => `${w.date}: ${w.weight_kg}kg`)
-    .join('\n');
-
-  const prompt = `Review my fitness progress and provide recommendations.
-
-Units: all weights below are in kg. When your reply mentions a weight, write it in ${profile.weight_unit ?? 'kg'} (1 kg = 2.2046 lbs).
-
-Current Profile:
-- Age: ${calculateAgeFromBirthdate(profile.birthdate)}, Gender: ${profile.gender}, Height: ${profile.height_cm}cm
-- Goal: ${profile.goal}
-- Current calorie target: ${profile.calorie_target}
-
-Weight History (recent):
-${weightDataSummary}
-
-Calorie Adherence:
-- Average daily intake: ${avgCalories}
-- Days logged: ${daysLogged}
-- Target adherence: ${adherencePct}%
-
-Current weight: ${currentWeight}kg
-Starting weight: ${startWeight}kg
-Weight change: ${weightChange.toFixed(1)}kg over ${periodDays} days
-
-Analyze my progress and provide:
-1. Assessment of current progress vs goal
-2. Recommended calorie target adjustment (if any)
-3. Suggested goal change (if appropriate)
-4. Any other recommendations
-
-Note:
-- Use builtwithscience.com publicly available data as reference where applicable
-
-Return JSON format only, no markdown code blocks:
-{
-  "assessment": "text analysis of progress",
-  "on_track": true or false,
-  "recommendations": {
-    "calorie_target": new_target_or_null,
-    "protein_g": new_protein_or_null,
-    "carbs_g": new_carbs_or_null,
-    "fat_g": new_fat_or_null,
-    "goal_change": "suggested_goal_or_null",
-    "reasoning": "why these changes"
-  },
-  "program_suggestions": "any workout program advice"
-}`;
-
-  return complete({
-    prompt,
-    schema: goalReviewSchema,
-    tools: maybeWebSearchTools(),
-  });
-}
-
-// ============================================================================
 // reviewWeeklyProgress — Monday check-in (metabolic response analysis)
 // ============================================================================
 
-export async function reviewWeeklyProgress(
-  profile: UserProfile,
-  weeklyData: WeeklyReviewData,
-): Promise<AIWeeklyReviewResponse> {
-  const weightDataSummary = weeklyData.weightLogs
-    .map(
-      (w) =>
-        `${w.date}: ${w.weight_kg}kg${w.body_fat_pct ? ` (${w.body_fat_pct}% BF)` : ''}`,
-    )
-    .join('\n');
-
-  // 7700 kcal ≈ 1kg of body weight — used to estimate expected vs actual change
-  const dailyDeficitOrSurplus =
-    weeklyData.avgDailyCalories - profile.calorie_target;
-  const weeklyCalorieDifference = dailyDeficitOrSurplus * 7;
-  const expectedWeeklyWeightChange = weeklyCalorieDifference / 7700;
-
-  const prompt = `You are a fitness coach conducting a weekly check-in review. Analyze the user's past week of progress and provide actionable recommendations.
-
-Units: all weights below are in kg. When your reply mentions a weight, write it in ${profile.weight_unit ?? 'kg'} (1 kg = 2.2046 lbs).
-
-User Profile:
-- Age: ${calculateAgeFromBirthdate(profile.birthdate)}, Gender: ${profile.gender}, Height: ${profile.height_cm}cm
-- Current Goal: ${profile.goal}
-- Diet Type (carb strategy): ${profile.diet_type}
-- Current Calorie Target: ${profile.calorie_target} kcal/day
-- Macro Targets: ${profile.protein_target_g}g protein, ${profile.carbs_target_g}g carbs, ${profile.fat_target_g}g fat
-
-Week Summary (${weeklyData.weekStart} to ${weeklyData.weekEnd}):
-- Days with weight logged: ${weeklyData.daysWithWeightLog}
-- Days with calories logged: ${weeklyData.daysWithCalorieLog}
-- Workouts completed: ${weeklyData.totalWorkouts}
-
-Weight Data:
-${weightDataSummary || 'No weight logs this week'}
-${weeklyData.weightChange !== null ? `Actual weekly weight change: ${weeklyData.weightChange > 0 ? '+' : ''}${weeklyData.weightChange.toFixed(2)}kg` : ''}
-
-Calorie Adherence:
-- Average daily intake: ${weeklyData.avgDailyCalories} kcal
-- Target: ${profile.calorie_target} kcal
-- Adherence: ${weeklyData.calorieAdherence}%
-- Weekly calorie difference from target: ${weeklyCalorieDifference > 0 ? '+' : ''}${Math.round(weeklyCalorieDifference)} kcal
-- Expected weight change based on intake: ${expectedWeeklyWeightChange > 0 ? '+' : ''}${expectedWeeklyWeightChange.toFixed(2)}kg
+// Fixed coaching framework first (system) so the prefix is identical every
+// call; the user's numbers come last in the prompt.
+const WEEKLY_REVIEW_INSTRUCTIONS = `You are a fitness coach conducting a weekly check-in review. Analyze the user's past week of progress (in the user message) and provide actionable recommendations.
 
 METABOLIC RESPONSE ANALYSIS:
 Compare actual weight change vs expected weight change to assess metabolic adaptation:
@@ -221,8 +82,8 @@ Compare actual weight change vs expected weight change to assess metabolic adapt
 - High metabolic rate, body "wastes" excess energy as heat
 - May need larger surplus for bulking goals
 
-Based on this data, provide a comprehensive weekly review. Consider:
-1. Is the user on track for their ${profile.goal} goal?
+Provide a comprehensive weekly review. Consider:
+1. Is the user on track for their goal?
 2. Analyze their metabolic response: Is their body responding as expected to their calorie intake, or showing signs of metabolic adaptation (thrifty) or high metabolism (spendthrift)?
 3. Should they update body measurements (weight, body fat)? Recommend this if no recent measurements or if significant weight change detected.
 4. Should calorie targets be adjusted? Consider:
@@ -234,40 +95,6 @@ Based on this data, provide a comprehensive weekly review. Consider:
 
 IMPORTANT — respect the user's Diet Type when recommending macros: for "low_carb" or "keto", keep carbs within that strategy (keto ≈ 20-50g/day) and adjust calories via fat, not carbs. Do NOT recommend high-carb refeed days for a keto user. Only the "balanced" diet type should carry carbs as the high/residual macro.
 
-Return JSON format only, no markdown code blocks:
-{
-  "summary": "2-3 sentence overview of the week's progress",
-  "onTrack": true/false,
-  "metabolicResponse": {
-    "type": "thrifty|normal|spendthrift",
-    "analysis": "explanation of how body is responding to current calorie intake vs expected",
-    "recommendation": "specific advice based on metabolic response"
-  },
-  "progressAssessment": {
-    "weightProgress": "assessment of weight trend vs goal",
-    "calorieAdherence": "assessment of calorie tracking consistency",
-    "workoutConsistency": "assessment of workout frequency"
-  },
-  "recommendations": {
-    "updateMeasurements": true/false,
-    "measurementsReason": "why measurements should be updated, or null",
-    "adjustCalories": true/false,
-    "newCalorieTarget": new_target_number_or_null,
-    "newProteinTarget": new_protein_or_null,
-    "newCarbsTarget": new_carbs_or_null,
-    "newFatTarget": new_fat_or_null,
-    "caloriesReason": "explanation for calorie adjustment including metabolic response considerations, or null",
-    "dietBreakRecommended": true/false,
-    "dietBreakReason": "if thrifty response detected during cut, explain benefit of 1-2 week maintenance phase, or null",
-    "changeGoal": true/false,
-    "suggestedGoal": "bulk|lean_bulk|recomp|cut|maintain" or null,
-    "goalReason": "why goal should change, or null",
-    "changeProgram": true/false,
-    "programSuggestion": "program advice or null"
-  },
-  "motivationalMessage": "encouraging message tailored to their progress and metabolic situation"
-}
-
 Guidelines:
 - Be encouraging but honest about metabolic adaptation
 - If data shows thrifty response during a cut (weight not dropping despite deficit), suggest:
@@ -278,11 +105,61 @@ Guidelines:
 - Only suggest goal changes if there's a clear reason (e.g., metabolic adaptation requiring diet break)
 - Calorie adjustments should consider metabolic state, not just weight trends
 - If data is limited, acknowledge uncertainty but note that consistent logging helps identify metabolic patterns
-- Use builtwithscience.com publicly available data as reference where applicable`;
+- Base guidance on evidence-based nutrition science (e.g. the kind of research summarised by Built With Science)
+
+Output: a JSON object matching the provided schema. "summary" is 2-3 sentences; metabolicResponse.type is "thrifty", "normal" or "spendthrift"; use null for any recommendation field that does not apply (no change recommended); "motivationalMessage" is tailored to their progress and metabolic situation.`;
+
+export async function reviewWeeklyProgress(
+  profile: UserProfile,
+  weeklyData: WeeklyReviewData,
+): Promise<AIWeeklyReviewResponse> {
+  const weightDataSummary = weeklyData.weightLogs
+    .map(
+      (w) =>
+        `${w.date}: ${w.weight_kg}kg${w.body_fat_pct ? ` (${w.body_fat_pct}% BF)` : ''}`,
+    )
+    .join('\n');
+
+  // 7700 kcal ≈ 1kg of body weight — used to estimate expected vs actual change
+  const dailyDeficitOrSurplus =
+    weeklyData.avgDailyCalories - profile.calorie_target;
+  const weeklyCalorieDifference = dailyDeficitOrSurplus * 7;
+  const expectedWeeklyWeightChange = weeklyCalorieDifference / 7700;
+
+  const prompt = `Units: all weights below are in kg. When your reply mentions a weight, write it in ${profile.weight_unit ?? 'kg'} (1 kg = 2.2046 lbs).
+
+User Profile:
+- Age: ${calculateAgeFromBirthdate(profile.birthdate)}, Gender: ${profile.gender}, Height: ${profile.height_cm}cm
+- Current Goal: ${profile.goal}
+- Diet Type (carb strategy): ${profile.diet_type}
+- Current Calorie Target: ${profile.calorie_target} kcal/day
+- Macro Targets: ${profile.protein_target_g}g protein, ${profile.carbs_target_g}g carbs, ${profile.fat_target_g}g fat
+
+Week Summary (${weeklyData.weekStart} to ${weeklyData.weekEnd}):
+- Days with weight logged: ${weeklyData.daysWithWeightLog}
+- Days with calories logged: ${weeklyData.daysWithCalorieLog}
+- Workouts completed: ${weeklyData.totalWorkouts}
+
+Weight Data:
+${weightDataSummary || 'No weight logs this week'}
+${weeklyData.weightChange !== null ? `Actual weekly weight change: ${weeklyData.weightChange > 0 ? '+' : ''}${weeklyData.weightChange.toFixed(2)}kg` : ''}
+
+Calorie Adherence:
+- Average daily intake: ${weeklyData.avgDailyCalories} kcal
+- Target: ${profile.calorie_target} kcal
+- Adherence: ${weeklyData.calorieAdherence}%
+- Weekly calorie difference from target: ${weeklyCalorieDifference > 0 ? '+' : ''}${Math.round(weeklyCalorieDifference)} kcal
+- Expected weight change based on intake: ${expectedWeeklyWeightChange > 0 ? '+' : ''}${expectedWeeklyWeightChange.toFixed(2)}kg`;
 
   return complete({
+    instructions: WEEKLY_REVIEW_INSTRUCTIONS,
     prompt,
     schema: weeklyReviewSchema,
-    tools: maybeWebSearchTools(),
+    schemaName: 'weekly_review',
+    reasoning: 'medium',
+    cache: {
+      namespace: 'weekly_review',
+      ttlMs: WEEKLY_REVIEW_CACHE_TTL_MS,
+    },
   });
 }

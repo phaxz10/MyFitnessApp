@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../../hooks/useAppStore';
 import { useProfile } from '../../hooks/useProfile';
 import { useWeeklyReview } from '../../hooks/useWeeklyReview';
@@ -77,6 +77,10 @@ export function WeeklyReviewModal({
 
   // Track if we've already loaded data for this modal session
   const [hasLoadedData, setHasLoadedData] = useState(false);
+  // In-flight guard: a profile/online change while the review is loading
+  // re-runs the effect (hasLoadedData is still false) and used to fire a
+  // second paid review. Cleared when the modal closes.
+  const loadStartedRef = useRef(false);
 
   // Load data and get AI review when modal opens
   useEffect(() => {
@@ -127,7 +131,8 @@ export function WeeklyReviewModal({
     }
 
     // Only load data if modal is open AND we haven't already loaded data
-    if (isOpen && profile && !hasLoadedData) {
+    if (isOpen && profile && !hasLoadedData && !loadStartedRef.current) {
+      loadStartedRef.current = true;
       loadData();
     }
   }, [isOpen, profile, fetchWeeklyData, isOnline, hasLoadedData]);
@@ -135,6 +140,7 @@ export function WeeklyReviewModal({
   // Reset state when modal closes
   useEffect(() => {
     if (!isOpen) {
+      loadStartedRef.current = false;
       setHasLoadedData(false);
       setStep('loading');
       setWeeklyData(null);

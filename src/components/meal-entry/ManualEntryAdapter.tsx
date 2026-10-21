@@ -1,5 +1,4 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ChevronLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { mealTypes } from '../../constants/options';
@@ -7,6 +6,8 @@ import { useCalories } from '../../hooks/useCalories';
 import { type FoodEntryFormData, foodEntrySchema } from '../../schemas/forms';
 import type { MealType } from '../../types';
 import { Button, Input, Select, TextArea } from '../ui';
+import { BackLink } from './AIResultParts';
+import { defaultMealTypeForNow } from './aiResults';
 
 interface ManualEntryAdapterProps {
   date: string;
@@ -77,21 +78,12 @@ export function ManualEntryAdapter({
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      {onBack && (
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex items-center gap-1 text-slate-400 hover:text-white text-sm mb-2"
-        >
-          <ChevronLeft size={16} />
-          Back
-        </button>
-      )}
+      {onBack && <BackLink onClick={onBack}>Back</BackLink>}
 
-      <Select label="Meal Type" options={mealTypes} {...register('mealType')} />
+      <Select label="Meal type" options={mealTypes} {...register('mealType')} />
 
       <TextArea
-        label="Food Description"
+        label="Food description"
         {...register('foodDescription')}
         placeholder="e.g., grilled chicken breast with rice"
         rows={2}
@@ -112,6 +104,9 @@ export function ManualEntryAdapter({
           placeholder="kcal"
           error={errors.calories?.message}
         />
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
         <Input
           label="Protein (g)"
           type="number"
@@ -138,19 +133,17 @@ export function ManualEntryAdapter({
         />
       </div>
 
-      {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+      {error && <p className="text-danger text-sm text-center">{error}</p>}
 
-      <Button type="submit" disabled={isSaving || !calories} className="w-full">
+      <Button
+        type="submit"
+        tone="eat"
+        size="lg"
+        disabled={isSaving || !calories}
+        className="w-full"
+      >
         {isSaving ? 'Saving...' : 'Save Entry'}
       </Button>
     </form>
   );
-}
-
-function defaultMealTypeForNow(): MealType {
-  const hour = new Date().getHours();
-  if (hour >= 5 && hour < 10) return 'breakfast';
-  if (hour >= 11 && hour < 14) return 'lunch';
-  if (hour >= 17 && hour < 21) return 'dinner';
-  return 'snack';
 }

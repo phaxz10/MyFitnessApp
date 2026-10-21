@@ -8,7 +8,8 @@ import {
   Button,
   CalorieLogSkeleton,
   Card,
-  CardContent,
+  CardHeader,
+  CardTitle,
   Input,
   Modal,
   Select,
@@ -245,39 +246,40 @@ export function CalorieLog() {
     return <CalorieLogSkeleton />;
   }
 
-  return (
-    <div className="p-4 pb-20">
-      {/* Page Title */}
-      <h1 className="text-xl font-bold text-white mb-4">Nutrition</h1>
+  const isToday = currentDate === formatDate(new Date());
 
-      {/* Date Navigation */}
-      <div className="flex items-center justify-between mb-6">
+  return (
+    <div className="px-4 py-4 space-y-4">
+      {/* Date switcher */}
+      <div className="flex items-center justify-between">
         <button
           type="button"
           onClick={goToPreviousDay}
-          className="p-2 text-slate-400 hover:text-white"
+          className="grid place-items-center size-11 rounded-xl border border-line text-ink hover:bg-sunken"
+          aria-label="Previous day"
         >
-          <ChevronLeft size={24} />
+          <ChevronLeft size={22} />
         </button>
         <div className="text-center">
-          <h2 className="text-xl font-semibold text-white">
+          <h2 className="text-lg font-bold text-ink">
             {formatDisplayDate(currentDate)}
           </h2>
-          {currentDate === formatDate(new Date()) && (
-            <span className="text-blue-400 text-sm">Today</span>
+          {isToday && (
+            <span className="inline-block px-2 rounded-full bg-eat-soft text-eat-ink text-sm font-semibold">
+              Today
+            </span>
           )}
         </div>
         <button
           type="button"
           onClick={goToNextDay}
-          className="p-2 text-slate-400 hover:text-white"
+          className="grid place-items-center size-11 rounded-xl border border-line text-ink hover:bg-sunken"
+          aria-label="Next day"
         >
-          <ChevronRight size={24} />
+          <ChevronRight size={22} />
         </button>
       </div>
 
-      {/* Daily Summary — concentric rings for calorie + 3 macros. See
-          components/nutrition/NutritionRings.tsx for the design choice. */}
       <DailySummaryCard
         summary={summary}
         profile={profile ?? null}
@@ -287,17 +289,23 @@ export function CalorieLog() {
 
       {/* Success/Error Messages */}
       {copySuccess && (
-        <div className="bg-green-500/20 text-green-400 px-4 py-2 rounded-lg mb-4">
+        <div
+          role="status"
+          className="bg-eat-soft text-eat-ink px-4 py-3 rounded-xl text-sm font-medium"
+        >
           {copySuccess}
         </div>
       )}
       {error && (
-        <div className="bg-red-500/20 text-red-400 px-4 py-2 rounded-lg mb-4">
+        <div
+          role="alert"
+          className="bg-danger-soft text-danger px-4 py-3 rounded-xl text-sm font-medium"
+        >
           {error}
         </div>
       )}
 
-      {/* Meal Sections */}
+      {/* Meals */}
       {mealTypes.map(({ value, label }) => {
         const mealEntries = summary.meals[value];
         const mealCalories = mealEntries.reduce(
@@ -306,48 +314,55 @@ export function CalorieLog() {
         );
 
         return (
-          <Card key={value} className="mb-3">
-            <CardContent className="p-4">
-              <div className="flex justify-between items-center mb-3">
-                <h3 className="text-lg font-semibold text-white">{label}</h3>
-                <span className="text-slate-400">{mealCalories} kcal</span>
+          <Card key={value}>
+            <CardHeader className="flex items-baseline justify-between">
+              <CardTitle>{label}</CardTitle>
+              <span className="num text-ink-2">
+                <span className="text-lg font-bold text-ink">
+                  {Math.round(mealCalories)}
+                </span>{' '}
+                kcal
+              </span>
+            </CardHeader>
+
+            {mealEntries.length === 0 ? (
+              <p className="text-ink-3 text-sm px-4 py-3">
+                Nothing logged for {label.toLowerCase()} yet.
+              </p>
+            ) : (
+              <div className="divide-y divide-line">
+                {mealEntries.map((entry) => (
+                  <FoodEntryRow
+                    key={entry.id}
+                    entry={entry}
+                    onEdit={openEditModal}
+                    onDelete={handleDelete}
+                    onCopyToMeal={handleCopyEntryToMeal}
+                    isCopyMenuOpen={copyMenuEntryId === entry.id}
+                    onToggleCopyMenu={() =>
+                      setCopyMenuEntryId(
+                        copyMenuEntryId === entry.id ? null : entry.id,
+                      )
+                    }
+                    copyMenuRef={copyMenuRef}
+                    availableMealTargets={mealTypes.filter(
+                      (m) => m.value !== entry.meal_type,
+                    )}
+                  />
+                ))}
               </div>
+            )}
 
-              {mealEntries.length === 0 ? (
-                <p className="text-slate-500 text-sm py-2">No entries</p>
-              ) : (
-                <div>
-                  {mealEntries.map((entry) => (
-                    <FoodEntryRow
-                      key={entry.id}
-                      entry={entry}
-                      onEdit={openEditModal}
-                      onDelete={handleDelete}
-                      onCopyToMeal={handleCopyEntryToMeal}
-                      isCopyMenuOpen={copyMenuEntryId === entry.id}
-                      onToggleCopyMenu={() =>
-                        setCopyMenuEntryId(
-                          copyMenuEntryId === entry.id ? null : entry.id,
-                        )
-                      }
-                      copyMenuRef={copyMenuRef}
-                      availableMealTargets={mealTypes.filter(
-                        (m) => m.value !== entry.meal_type,
-                      )}
-                    />
-                  ))}
-                </div>
-              )}
-
-              <button
-                type="button"
+            <div className="p-3 border-t border-line">
+              <Button
+                variant="secondary"
+                className="w-full"
                 onClick={() => handleOpenAddModalForMeal(value)}
-                className="mt-3 w-full py-2 border border-dashed border-slate-600 rounded-lg text-slate-400 hover:text-white hover:border-slate-500 transition-colors flex items-center justify-center gap-2"
               >
-                <Plus size={16} />
-                Add {label}
-              </button>
-            </CardContent>
+                <Plus size={18} aria-hidden="true" />
+                Add {label.toLowerCase()}
+              </Button>
+            </div>
           </Card>
         );
       })}
@@ -356,19 +371,19 @@ export function CalorieLog() {
       <Modal
         isOpen={isEditModalOpen}
         onClose={handleCloseEditModal}
-        title="Edit Entry"
+        title="Edit entry"
         size="lg"
       >
         <form onSubmit={handleSubmit(onEditSubmit)} className="space-y-4">
           <Select
-            label="Meal Type"
+            label="Meal type"
             {...register('mealType')}
             options={mealTypes}
             error={errors.mealType?.message}
           />
 
           <TextArea
-            label="Food Description"
+            label="Food description"
             {...register('foodDescription')}
             placeholder="e.g., 50g cooked rice, 100g pork adobo"
             rows={3}
@@ -417,9 +432,9 @@ export function CalorieLog() {
             />
           </div>
 
-          {error && <p className="text-red-400 text-sm">{error}</p>}
+          {error && <p className="text-danger text-sm">{error}</p>}
 
-          <div className="flex gap-2 pt-4">
+          <div className="flex gap-2 pt-2">
             <Button
               type="button"
               variant="secondary"
@@ -428,7 +443,12 @@ export function CalorieLog() {
             >
               Cancel
             </Button>
-            <Button type="submit" isLoading={isLoading} className="flex-1">
+            <Button
+              type="submit"
+              tone="eat"
+              isLoading={isLoading}
+              className="flex-1"
+            >
               Update
             </Button>
           </div>

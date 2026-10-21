@@ -19,6 +19,7 @@
  */
 
 import type { WorkoutSet } from '../../types';
+import { pgDate } from '../../utils/pgValues';
 import type { DB } from '../db';
 
 // ---------------------------------------------------------------------------
@@ -136,13 +137,7 @@ function parseSessionRow(row: Record<string, unknown>): ExerciseSession {
 
   return {
     workoutLogId: row.workout_log_id as number,
-    date: dateToString(row.date),
+    date: pgDate(row.date),
     sets,
   };
-}
-
-/** PGlite may return DATE columns as Date objects — normalise to YYYY-MM-DD. */
-function dateToString(val: unknown): string {
-  if (val instanceof Date) return val.toISOString().split('T')[0];
-  return String(val ?? '');
 }

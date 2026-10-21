@@ -1,10 +1,9 @@
-// Color-dot + label + "consumed / target" rows for the four macros.
-// Pairs with NutritionRings — same MACRO_PALETTE colors, same row order.
+// Ruled horizontal bars for the macros: label, "consumed / target" in
+// condensed numerals, and a flat fill on a hairline track. Same
+// MACRO_PALETTE colours as NutritionRings.
 //
-// Used on every nutrition surface (CalorieLog daily summary, Dashboard card,
-// WeeklyReviewModal summary step). Keeping this as a single component avoids
-// the previous duplication where each surface had its own near-identical
-// MacroLegendRow / DashboardMacroLine helper.
+// Used on every nutrition surface (Dashboard, CalorieLog daily summary,
+// MealImpactPreview, WeeklyReviewModal summary step).
 import { MACRO_PALETTE } from './NutritionRings';
 
 interface Macros {
@@ -17,77 +16,99 @@ interface Macros {
 export interface MacroLegendProps {
   consumed: Macros;
   targets: Macros;
+  /** Include the calories row. Surfaces that show kcal as a big numeral turn it off. */
+  showCalories?: boolean;
 }
 
-export function MacroLegend({ consumed, targets }: MacroLegendProps) {
+export function MacroLegend({
+  consumed,
+  targets,
+  showCalories = true,
+}: MacroLegendProps) {
   return (
-    <div className="space-y-2">
-      <MacroLegendRow
+    <div className="divide-y divide-line">
+      <MacroBar
         label="Protein"
         consumed={consumed.protein}
         target={targets.protein}
-        color={MACRO_PALETTE.protein.text}
-        dot={MACRO_PALETTE.protein.hex}
+        color={MACRO_PALETTE.protein}
       />
-      <MacroLegendRow
+      <MacroBar
         label="Carbs"
         consumed={consumed.carbs}
         target={targets.carbs}
-        color={MACRO_PALETTE.carbs.text}
-        dot={MACRO_PALETTE.carbs.hex}
+        color={MACRO_PALETTE.carbs}
       />
-      <MacroLegendRow
+      <MacroBar
         label="Fat"
         consumed={consumed.fat}
         target={targets.fat}
-        color={MACRO_PALETTE.fat.text}
-        dot={MACRO_PALETTE.fat.hex}
+        color={MACRO_PALETTE.fat}
       />
-      <MacroLegendRow
-        label="Calories"
-        consumed={consumed.calories}
-        target={targets.calories}
-        color={MACRO_PALETTE.calories.text}
-        dot={MACRO_PALETTE.calories.hex}
-        suffix=""
-      />
+      {showCalories && (
+        <MacroBar
+          label="Calories"
+          consumed={consumed.calories}
+          target={targets.calories}
+          color={MACRO_PALETTE.calories}
+          unit=""
+          warnOver
+        />
+      )}
     </div>
   );
 }
 
-interface MacroLegendRowProps {
+interface MacroBarProps {
   label: string;
   consumed: number;
   target: number;
-  color: string;
-  dot: string;
-  suffix?: string;
+  color: { hex: string; text: string };
+  unit?: string;
+  warnOver?: boolean;
 }
 
-function MacroLegendRow({
+function MacroBar({
   label,
   consumed,
   target,
   color,
-  dot,
-  suffix = 'g',
-}: MacroLegendRowProps) {
+  unit = 'g',
+  warnOver = false,
+}: MacroBarProps) {
+  const pct = target > 0 ? Math.min(consumed / target, 1) * 100 : 0;
+  const over = warnOver && target > 0 && consumed > target;
+
   return (
-    <div className="flex items-center gap-2">
-      <span
-        className="w-2 h-2 rounded-full flex-shrink-0"
-        style={{ background: dot }}
-      />
-      <span className="text-[10px] uppercase tracking-widest text-slate-500 w-20 flex-shrink-0">
-        {label}
-      </span>
-      <span className={`text-xs tabular-nums font-semibold ${color}`}>
-        {Math.round(consumed)}
-      </span>
-      <span className="text-xs text-slate-600 tabular-nums">
-        / {Math.round(target)}
-        {suffix}
-      </span>
+    <div className="py-2.5 first:pt-0 last:pb-0">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className={`text-sm font-semibold ${color.text}`}>{label}</span>
+        <span className="num text-sm">
+          <span
+            className={`text-base font-bold ${over ? 'text-danger' : 'text-ink'}`}
+          >
+            {Math.round(consumed)}
+          </span>
+          <span className="text-ink-3">
+            {' '}
+            / {Math.round(target)}
+            {unit}
+          </span>
+        </span>
+      </div>
+      <div
+        role="progressbar"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={Math.round(target)}
+        aria-valuenow={Math.round(consumed)}
+        className="mt-1.5 h-1.5 rounded-full bg-sunken-strong overflow-hidden"
+      >
+        <div
+          className="h-full rounded-full"
+          style={{ width: `${pct}%`, background: color.hex }}
+        />
+      </div>
     </div>
   );
 }

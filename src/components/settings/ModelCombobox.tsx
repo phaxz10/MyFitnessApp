@@ -6,6 +6,7 @@ import {
   priceTag,
   useModelCatalog,
 } from '../../services/ai/openrouterModels';
+import { CONTROL } from '../ui/Field';
 
 // Searchable model combobox backed by OpenRouter's live public models list
 // (see src/services/ai/openrouterModels.ts). Plain controlled component —
@@ -126,9 +127,9 @@ export function ModelCombobox({
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={handleKeyDown}
-          className="w-full px-3 py-2 pr-9 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+          className={`${CONTROL} h-11 pr-10 border-line-strong disabled:opacity-50`}
         />
-        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-3 pointer-events-none">
           {isLoading ? (
             <Loader2 size={16} className="animate-spin" />
           ) : (
@@ -138,26 +139,26 @@ export function ModelCombobox({
       </div>
 
       {open && (
-        <div className="absolute z-20 mt-1 w-full max-h-80 overflow-y-auto rounded-lg border border-slate-600 bg-slate-800 shadow-lg">
+        <div className="absolute z-20 mt-1 w-full max-h-80 overflow-y-auto rounded-xl border border-line-strong bg-surface shadow-lg">
           {error ? (
             <div className="p-3 text-sm">
-              <p className="text-amber-300 flex items-center gap-2">
+              <p className="text-warn flex items-center gap-2">
                 <AlertTriangle size={14} />
                 Couldn&apos;t load the OpenRouter model list.
               </p>
-              <p className="text-slate-400 text-xs mt-1">
+              <p className="text-ink-2 text-sm mt-1">
                 You can still type a model id manually.
               </p>
               <button
                 type="button"
                 onClick={() => refetch()}
-                className="mt-2 inline-flex items-center gap-1.5 text-blue-400 text-xs hover:underline"
+                className="mt-1 inline-flex items-center gap-1.5 min-h-11 text-train-ink text-sm font-semibold hover:underline"
               >
                 <RefreshCw size={12} /> Retry
               </button>
             </div>
           ) : matches.length === 0 && !isLoading ? (
-            <p className="p-3 text-slate-400 text-sm">
+            <p className="p-3 text-ink-2 text-sm">
               No models match &ldquo;{query.trim()}&rdquo;.
             </p>
           ) : (
@@ -178,7 +179,7 @@ export function ModelCombobox({
                 ))}
               </div>
               {totalMatches > matches.length && (
-                <p className="px-3 py-2 text-xs text-slate-500 border-t border-slate-700">
+                <p className="px-3 py-2 text-sm text-ink-3 border-t border-line">
                   {totalMatches - matches.length} more — refine your search to
                   see them
                 </p>
@@ -190,7 +191,7 @@ export function ModelCombobox({
                     e.preventDefault();
                     select(query.trim());
                   }}
-                  className="w-full px-3 py-2 text-left text-sm text-blue-400 hover:bg-slate-700 border-t border-slate-700"
+                  className="w-full min-h-11 px-3 py-2 text-left text-sm font-semibold text-train-ink hover:bg-sunken border-t border-line"
                 >
                   Use &ldquo;{query.trim()}&rdquo; anyway
                 </button>
@@ -218,25 +219,25 @@ function ModelOption({
       role="option"
       aria-selected={active}
       onMouseDown={onMouseDown}
-      className={`w-full px-3 py-2 text-left ${active ? 'bg-blue-500/20' : 'hover:bg-slate-700'}`}
+      className={`w-full min-h-11 px-3 py-2 text-left ${active ? 'bg-train-soft' : 'hover:bg-sunken'}`}
     >
       <span className="flex items-center justify-between gap-3">
-        <span className="text-sm text-white truncate">{entry.name}</span>
+        <span className="text-sm text-ink truncate">{entry.name}</span>
         <span className="flex items-center gap-1.5 shrink-0">
           {entry.free && (
-            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-green-500/20 text-green-300">
+            <span className="text-xs font-semibold px-1.5 py-0.5 rounded-lg bg-eat-soft text-eat-ink">
               free
             </span>
           )}
           {entry.vision && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300">
+            <span className="text-xs px-1.5 py-0.5 rounded-lg bg-sunken text-ink">
               vision
             </span>
           )}
-          <span className="text-xs text-slate-400">{priceTag(entry)}</span>
+          <span className="text-sm text-ink-2">{priceTag(entry)}</span>
         </span>
       </span>
-      <span className="block text-xs text-slate-500 truncate">{entry.id}</span>
+      <span className="block text-sm text-ink-3 truncate">{entry.id}</span>
     </button>
   );
 }

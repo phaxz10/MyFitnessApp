@@ -1,4 +1,5 @@
 import { forwardRef, type TextareaHTMLAttributes } from 'react';
+import { CONTROL, controlBorder, Field, fieldId } from './Field';
 
 interface TextAreaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string;
@@ -11,31 +12,23 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(
     { label, error, helperText, className = '', id, ...props },
     ref,
   ) {
-    const textareaId = id || label?.toLowerCase().replace(/\s+/g, '-');
+    const textareaId = fieldId(id, label);
 
     return (
-      <div className="w-full">
-        {label && (
-          <label
-            htmlFor={textareaId}
-            className="block text-xs font-medium text-slate-300 mb-1"
-          >
-            {label}
-          </label>
-        )}
+      <Field
+        id={textareaId}
+        label={label}
+        error={error}
+        helperText={helperText}
+      >
         <textarea
           ref={ref}
           id={textareaId}
-          className={`w-full px-2.5 py-1.5 text-sm bg-slate-800 border rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none ${
-            error ? 'border-red-500' : 'border-slate-600'
-          } ${className}`}
+          aria-invalid={error ? true : undefined}
+          className={`${CONTROL} py-2.5 resize-none ${controlBorder(error)} ${className}`}
           {...props}
         />
-        {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
-        {helperText && !error && (
-          <p className="mt-1 text-xs text-slate-500">{helperText}</p>
-        )}
-      </div>
+      </Field>
     );
   },
 );

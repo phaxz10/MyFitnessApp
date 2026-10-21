@@ -587,7 +587,7 @@ export interface PersonalRecord {
 }
 
 export interface ExercisePR {
-  maxWeight: { value: number; reps: number; date: string } | null;
+  maxWeight: { value: number; reps: number | null; date: string } | null;
   maxReps: { value: number; weight: number; date: string } | null;
   maxVolume: { value: number; date: string } | null;
   max1RM: { value: number; date: string } | null;

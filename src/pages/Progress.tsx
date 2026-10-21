@@ -1,4 +1,3 @@
-import { ArrowLeft } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -6,10 +5,16 @@ import {
   ExercisesTab,
   OverviewTab,
 } from '../components/progress';
-import { Button, type TimeRange, TimeRangeSelector } from '../components/ui';
+import { SubpageHeader } from '../components/training/SubpageHeader';
+import { type TimeRange, TimeRangeSelector } from '../components/ui';
 import { useAllExercisesProgress } from '../hooks/useStrengthProgress';
 
 type Tab = 'overview' | 'exercises';
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'exercises', label: 'Exercises' },
+];
 
 export function Progress() {
   const navigate = useNavigate();
@@ -21,7 +26,7 @@ export function Progress() {
   );
   const [selectedExerciseName, setSelectedExerciseName] = useState<string>('');
 
-  // Use TanStack Query for exercises data (this keeps it cached across tab switches)
+  // TanStack Query keeps this cached across tab switches
   const { data: exercises = [] } = useAllExercisesProgress(timeRange);
 
   const handleSelectExercise = useCallback(
@@ -38,10 +43,9 @@ export function Progress() {
     setSelectedExerciseName('');
   };
 
-  // If an exercise is selected, show the detail view
   if (selectedExerciseId) {
     return (
-      <div className="p-4 pb-20">
+      <div className="px-4 py-4">
         <ExerciseProgressDetail
           exerciseId={selectedExerciseId}
           exerciseName={selectedExerciseName}
@@ -53,61 +57,42 @@ export function Progress() {
   }
 
   return (
-    <div className="p-4 pb-20">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <Button
-          variant="secondary"
-          onClick={() => navigate('/workout')}
-          className="p-2"
-        >
-          <ArrowLeft size={20} />
-        </Button>
-        <h1 className="text-xl font-bold text-white">Strength Progress</h1>
-      </div>
-
-      {/* Time Range Selector */}
-      <TimeRangeSelector
-        value={timeRange}
-        onChange={setTimeRange}
-        className="mb-4"
+    <div>
+      <SubpageHeader
+        title="Strength progress"
+        onBack={() => navigate('/workout')}
       />
+      <div className="space-y-4 px-4 py-4">
+        <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
 
-      {/* Tab Selector */}
-      <div className="flex gap-1 mb-6 bg-slate-800 p-1 rounded-lg">
-        <button
-          type="button"
-          onClick={() => setActiveTab('overview')}
-          className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${
-            activeTab === 'overview'
-              ? 'bg-slate-700 text-white'
-              : 'text-slate-400 hover:text-white'
-          }`}
-        >
-          Overview
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('exercises')}
-          className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${
-            activeTab === 'exercises'
-              ? 'bg-slate-700 text-white'
-              : 'text-slate-400 hover:text-white'
-          }`}
-        >
-          Exercises
-        </button>
+        <div className="flex border-b border-line" role="tablist">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`h-11 flex-1 border-b-2 text-sm font-semibold transition-colors ${
+                activeTab === tab.id
+                  ? 'border-train text-train-ink'
+                  : 'border-transparent text-ink-2 hover:text-ink'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === 'overview' ? (
+          <OverviewTab timeRange={timeRange} />
+        ) : (
+          <ExercisesTab
+            timeRange={timeRange}
+            onSelectExercise={handleSelectExercise}
+          />
+        )}
       </div>
-
-      {/* Tab Content */}
-      {activeTab === 'overview' ? (
-        <OverviewTab timeRange={timeRange} />
-      ) : (
-        <ExercisesTab
-          timeRange={timeRange}
-          onSelectExercise={handleSelectExercise}
-        />
-      )}
     </div>
   );
 }

@@ -1,30 +1,17 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import {
-  AlertTriangle,
-  Check,
-  ChevronRight,
-  Edit,
-  ListPlus,
-  Loader2,
-  Plus,
-  RefreshCw,
-  Search,
-  Sparkles,
-  Trash2,
-  Video,
-  X,
-} from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useSearchParams } from 'react-router-dom';
-import {
-  Button,
-  Card,
-  CardContent,
-  Input,
-  Modal,
-  TextArea,
-} from '../components/ui';
+import { BatchAddModal } from '../components/exercise-library/BatchAddModal';
+import type {
+  BatchExercise,
+  RegenerateProgress,
+} from '../components/exercise-library/constants';
+import { DeleteExerciseModal } from '../components/exercise-library/DeleteExerciseModal';
+import { ExerciseDetailsModal } from '../components/exercise-library/ExerciseDetailsModal';
+import { ExerciseFormModal } from '../components/exercise-library/ExerciseFormModal';
+import { ExerciseList } from '../components/exercise-library/ExerciseList';
+import { RegenerateModal } from '../components/exercise-library/RegenerateModal';
 import { useExercises } from '../hooks/useExercises';
 import { type ExerciseFormData, exerciseFormSchema } from '../schemas/forms';
 import { useAICapability } from '../services/ai/useAICapability';
@@ -33,51 +20,8 @@ import {
   generateExerciseDetails,
   generateExerciseDetailsBatch,
 } from '../services/coaching/exerciseLibraryCoach';
-import type { AIExerciseResponse, Exercise, ExerciseType } from '../types';
+import type { AIExerciseResponse, Exercise } from '../types';
 
-const MUSCLE_GROUPS = [
-  'All',
-  'Chest',
-  'Back',
-  'Shoulders',
-  'Biceps',
-  'Triceps',
-  'Legs',
-  'Core',
-  'Glutes',
-  'Full Body',
-];
-const EXERCISE_TYPES: {
-  value: ExerciseType;
-  label: string;
-  description: string;
-}[] = [
-  {
-    value: 'reps_weight',
-    label: 'Reps & Weight',
-    description: 'e.g., Bench Press, Squat',
-  },
-  {
-    value: 'reps_only',
-    label: 'Reps Only',
-    description: 'e.g., Pull-ups, Push-ups',
-  },
-  {
-    value: 'duration',
-    label: 'Duration',
-    description: 'e.g., Plank, Dead Hang',
-  },
-  {
-    value: 'duration_weight',
-    label: 'Duration & Weight',
-    description: 'e.g., Weighted Plank',
-  },
-];
-// Generate YouTube search URL for exercise demo
-function getYouTubeSearchUrl(exerciseName: string): string {
-  const query = encodeURIComponent(`${exerciseName} exercise form tutorial`);
-  return `https://www.youtube.com/results?search_query=${query}`;
-}
 export function ExerciseLibrary() {
   const [searchParams, setSearchParams] = useSearchParams();
   const aiCapability = useAICapability();
@@ -103,27 +47,14 @@ export function ExerciseLibrary() {
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
   // Batch add state
   const [batchInput, setBatchInput] = useState('');
-  const [batchExercises, setBatchExercises] = useState<
-    {
-      name: string;
-      status: 'pending' | 'generating' | 'ready' | 'error';
-      details?: AIExerciseResponse;
-      duplicates?: Exercise[];
-      includeForGeneration: boolean;
-    }[]
-  >([]);
+  const [batchExercises, setBatchExercises] = useState<BatchExercise[]>([]);
   const [isBatchGenerating, setIsBatchGenerating] = useState(false);
 
   // Regenerate all exercises state
   const [showRegenerateModal, setShowRegenerateModal] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
-  const [regenerateProgress, setRegenerateProgress] = useState<{
-    current: number;
-    total: number;
-    currentExercise: string;
-    errors: string[];
-    completed: string[];
-  } | null>(null);
+  const [regenerateProgress, setRegenerateProgress] =
+    useState<RegenerateProgress | null>(null);
   const {
     register,
     handleSubmit,
@@ -147,7 +78,7 @@ export function ExerciseLibrary() {
   // Regenerate all exercises - updates descriptions using current AI prompts
   const handleRegenerateAllExercises = useCallback(async () => {
     if (!aiAvailable) {
-      alert('Please set up your OpenAI API key in Settings');
+      alert('Please set up your OpenRouter API key in Settings');
       return;
     }
 
@@ -315,7 +246,7 @@ export function ExerciseLibrary() {
       return;
     }
     if (!aiAvailable) {
-      alert('Please set up your OpenAI API key in Settings');
+      alert('Please set up your OpenRouter API key in Settings');
       return;
     }
     // Single-generate duplicate check
@@ -438,7 +369,7 @@ export function ExerciseLibrary() {
   };
   const handleGenerateBatchDetails = async () => {
     if (!aiAvailable) {
-      alert('Please set up your OpenAI API key in Settings');
+      alert('Please set up your OpenRouter API key in Settings');
       return;
     }
     const pendingExercises = batchExercises.filter(
@@ -556,670 +487,92 @@ export function ExerciseLibrary() {
     },
     {} as Record<string, Exercise[]>,
   );
+  const closeFormModal = () => {
+    setShowAddModal(false);
+    resetForm();
+  };
+  const closeRegenerateModal = () => {
+    if (!isRegenerating) {
+      setShowRegenerateModal(false);
+      setRegenerateProgress(null);
+      setSearchParams({});
+    }
+  };
+
   return (
-    <div className="p-4 pb-24">
-      {/* Header */}
-      <div className="mb-4">
-        <h1 className="text-xl font-bold text-white">Exercise Library</h1>
-        <p className="text-slate-400 text-sm">
-          Manage your exercise collection
-        </p>
-      </div>
-      {/* Search */}
-      <div className="relative mb-4">
-        <Search
-          size={18}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-        />
-        <Input
-          placeholder="Search exercises..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10"
-        />
-      </div>
-      {/* Muscle Group Filter */}
-      <div className="flex gap-2 overflow-x-auto pb-2 mb-4 scrollbar-hide">
-        {MUSCLE_GROUPS.map((muscle) => (
-          <button
-            type="button"
-            key={muscle}
-            onClick={() => setSelectedMuscle(muscle)}
-            className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors ${
-              selectedMuscle === muscle
-                ? 'bg-blue-600 text-white'
-                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-            }`}
-          >
-            {muscle}
-          </button>
-        ))}
-      </div>
-      {/* Action Buttons */}
-      <div className="flex gap-2 mb-4">
-        <Button className="flex-1" onClick={() => handleOpenAddModal()}>
-          <Plus size={18} className="mr-2" />
-          Add Exercise
-        </Button>
-        <Button variant="secondary" onClick={() => setShowBatchModal(true)}>
-          <ListPlus size={18} className="mr-2" />
-          Batch Add
-        </Button>
-      </div>
-      {/* Exercise List */}
-      {filteredExercises.length === 0 ? (
-        <Card>
-          <CardContent className="p-6 text-center">
-            <p className="text-slate-400 mb-4">
-              {searchQuery || selectedMuscle !== 'All'
-                ? 'No exercises found matching your search'
-                : 'No exercises in your library yet'}
-            </p>
-            {!searchQuery && selectedMuscle === 'All' && (
-              <Button onClick={() => handleOpenAddModal()}>
-                Add Your First Exercise
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-      ) : selectedMuscle === 'All' && !searchQuery ? (
-        // Grouped view
-        <div className="space-y-4">
-          {Object.entries(groupedExercises).map(([group, exs]) => (
-            <div key={group}>
-              <h3 className="text-sm font-semibold text-slate-400 mb-2">
-                {group}
-              </h3>
-              <div className="space-y-2">
-                {exs.map((exercise) => (
-                  <Card
-                    key={exercise.id}
-                    className="cursor-pointer hover:border-slate-600 transition-colors"
-                    onClick={() => setShowDetailsModal(exercise)}
-                  >
-                    <CardContent className="p-3 flex items-center justify-between">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white font-medium">
-                          {exercise.name}
-                        </p>
-                        <p className="text-slate-400 text-sm truncate">
-                          {exercise.equipment || 'No equipment'}
-                        </p>
-                      </div>
-                      <ChevronRight size={18} className="text-slate-500" />
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        // Flat list view
-        <div className="space-y-2">
-          {filteredExercises.map((exercise) => (
-            <Card
-              key={exercise.id}
-              className="cursor-pointer hover:border-slate-600 transition-colors"
-              onClick={() => setShowDetailsModal(exercise)}
-            >
-              <CardContent className="p-3 flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <p className="text-white font-medium">{exercise.name}</p>
-                  <p className="text-slate-400 text-sm">
-                    {exercise.muscle_groups || 'No muscle groups'} •{' '}
-                    {exercise.equipment || 'No equipment'}
-                  </p>
-                </div>
-                <ChevronRight size={18} className="text-slate-500" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-      {/* Add/Edit Exercise Modal */}
-      <Modal
+    <div className="px-4 py-4 space-y-4">
+      <ExerciseList
+        filteredExercises={filteredExercises}
+        groupedExercises={groupedExercises}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        selectedMuscle={selectedMuscle}
+        onMuscleChange={setSelectedMuscle}
+        onAdd={() => handleOpenAddModal()}
+        onBatchAdd={() => setShowBatchModal(true)}
+        onSelect={setShowDetailsModal}
+      />
+      <ExerciseFormModal
         isOpen={showAddModal}
-        onClose={() => {
-          setShowAddModal(false);
-          resetForm();
-        }}
-        title={editingExercise ? 'Edit Exercise' : 'Add Exercise'}
-      >
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div>
-            <label htmlFor="name" className="block text-slate-400 text-sm mb-1">
-              Exercise Name *
-            </label>
-            <div className="flex gap-2">
-              <Input
-                id="name"
-                {...register('name')}
-                placeholder="e.g., Bench Press"
-                className="flex-1"
-                error={errors.name?.message}
-              />
-              {aiAvailable && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={handleGenerateDetails}
-                  disabled={isGenerating || !formName.trim()}
-                  title="Generate details with AI"
-                >
-                  <Sparkles
-                    size={18}
-                    className={isGenerating ? 'animate-spin' : ''}
-                  />
-                </Button>
-              )}
-            </div>
-          </div>
-          <div>
-            <label
-              htmlFor="description"
-              className="block text-slate-400 text-sm mb-1"
-            >
-              Description
-            </label>
-            <TextArea
-              id="description"
-              {...register('description')}
-              placeholder="How to perform the exercise..."
-              rows={3}
-            />
-          </div>
-          <div>
-            <label
-              htmlFor="muscleGroups"
-              className="block text-slate-400 text-sm mb-1"
-            >
-              Muscle Groups
-            </label>
-            <Input
-              id="muscleGroups"
-              {...register('muscleGroups')}
-              placeholder="e.g., Chest, Shoulders, Triceps"
-            />
-          </div>
-          <div>
-            <label
-              htmlFor="equipment"
-              className="block text-slate-400 text-sm mb-1"
-            >
-              Equipment
-            </label>
-            <Input
-              id="equipment"
-              {...register('equipment')}
-              placeholder="e.g., Barbell, Bench"
-            />
-          </div>
-          <div>
-            <p className="text-slate-400 text-sm mb-2">Exercise Type</p>
-            <div className="grid grid-cols-2 gap-2">
-              {EXERCISE_TYPES.map((type) => (
-                <button
-                  key={type.value}
-                  type="button"
-                  onClick={() => setValue('exerciseType', type.value)}
-                  className={`p-3 rounded-lg border text-left transition-colors ${
-                    formExerciseType === type.value
-                      ? 'border-blue-500 bg-blue-500/10'
-                      : 'border-slate-600 hover:border-slate-500'
-                  }`}
-                >
-                  <p className="text-white text-sm font-medium">{type.label}</p>
-                  <p className="text-slate-400 text-xs">{type.description}</p>
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="flex gap-3 pt-2">
-            <Button
-              type="button"
-              variant="secondary"
-              className="flex-1"
-              onClick={() => {
-                setShowAddModal(false);
-                resetForm();
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              className="flex-1"
-              disabled={loading || !formName.trim()}
-            >
-              {editingExercise ? 'Save Changes' : 'Add Exercise'}
-            </Button>
-          </div>
-        </form>
-      </Modal>
-      {/* Exercise Details Modal */}
-      <Modal
-        isOpen={!!showDetailsModal}
+        isEditing={!!editingExercise}
+        onClose={closeFormModal}
+        onSubmit={handleSubmit(onSubmit)}
+        register={register}
+        setValue={setValue}
+        errors={errors}
+        formName={formName}
+        formExerciseType={formExerciseType}
+        aiAvailable={aiAvailable}
+        isGenerating={isGenerating}
+        onGenerateDetails={handleGenerateDetails}
+        loading={loading}
+      />
+      <ExerciseDetailsModal
+        exercise={showDetailsModal}
         onClose={() => setShowDetailsModal(null)}
-        title={showDetailsModal?.name || ''}
-      >
-        {showDetailsModal && (
-          <div className="space-y-4">
-            <div>
-              <p className="text-slate-400 text-sm">Exercise Type</p>
-              <p className="text-white">
-                {EXERCISE_TYPES.find(
-                  (t) =>
-                    t.value ===
-                    (showDetailsModal.exercise_type || 'reps_weight'),
-                )?.label || 'Reps & Weight'}
-              </p>
-            </div>
-            {showDetailsModal.muscle_groups && (
-              <div>
-                <p className="text-slate-400 text-sm">Muscle Groups</p>
-                <p className="text-white">{showDetailsModal.muscle_groups}</p>
-              </div>
-            )}
-            {showDetailsModal.equipment && (
-              <div>
-                <p className="text-slate-400 text-sm">Equipment</p>
-                <p className="text-white">{showDetailsModal.equipment}</p>
-              </div>
-            )}
-            {showDetailsModal.description && (
-              <div>
-                <p className="text-slate-400 text-sm">Instructions</p>
-                <p className="text-white whitespace-pre-wrap">
-                  {showDetailsModal.description}
-                </p>
-              </div>
-            )}
-            {/* Video Demo Link */}
-            <a
-              href={getYouTubeSearchUrl(showDetailsModal.name)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 text-red-400 hover:text-red-300 transition-colors"
-            >
-              <Video size={18} />
-              <span>Watch Demo on YouTube</span>
-            </a>
-            {showDetailsModal.is_ai_generated && (
-              <div className="flex items-center gap-2 text-slate-400 text-sm">
-                <Sparkles size={14} />
-                <span>AI Generated</span>
-              </div>
-            )}
-            <div className="flex gap-3 pt-2">
-              <Button
-                variant="secondary"
-                className="flex-1"
-                onClick={() => {
-                  handleOpenAddModal(showDetailsModal);
-                  setShowDetailsModal(null);
-                }}
-              >
-                <Edit size={18} className="mr-2" />
-                Edit
-              </Button>
-              <Button
-                className="flex-1 bg-red-600 hover:bg-red-700"
-                onClick={() => setShowDeleteModal(showDetailsModal)}
-              >
-                <Trash2 size={18} className="mr-2" />
-                Delete
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
-      {/* Delete Confirmation Modal */}
-      <Modal
-        isOpen={!!showDeleteModal}
+        onEdit={(exercise) => {
+          handleOpenAddModal(exercise);
+          setShowDetailsModal(null);
+        }}
+        onDelete={setShowDeleteModal}
+      />
+      <DeleteExerciseModal
+        exercise={showDeleteModal}
         onClose={() => setShowDeleteModal(null)}
-        title="Delete Exercise"
-      >
-        <p className="text-slate-300 mb-6">
-          Are you sure you want to delete "{showDeleteModal?.name}"? This may
-          affect programs that use this exercise.
-        </p>
-        <div className="flex gap-3">
-          <Button
-            variant="secondary"
-            className="flex-1"
-            onClick={() => setShowDeleteModal(null)}
-          >
-            Cancel
-          </Button>
-          <Button
-            className="flex-1 bg-red-600 hover:bg-red-700"
-            onClick={handleDeleteExercise}
-          >
-            Delete
-          </Button>
-        </div>
-      </Modal>
-      {/* Batch Add Modal */}
-      <Modal
+        onConfirm={handleDeleteExercise}
+      />
+      <BatchAddModal
         isOpen={showBatchModal}
         onClose={handleCloseBatchModal}
-        title="Batch Add Exercises"
-      >
-        <div className="space-y-4">
-          {batchExercises.length === 0 ? (
-            <>
-              <p className="text-slate-400 text-sm">
-                Enter exercise names (one per line). AI will generate details
-                for each exercise.
-              </p>
-              <TextArea
-                value={batchInput}
-                onChange={(e) => setBatchInput(e.target.value)}
-                placeholder={`Bench Press\nSquat\nDeadlift\nOverhead Press\nBarbell Row`}
-                rows={8}
-              />
-              <div className="flex gap-3">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="flex-1"
-                  onClick={handleCloseBatchModal}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  className="flex-1"
-                  onClick={handleParseBatchInput}
-                  disabled={!batchInput.trim()}
-                >
-                  Continue
-                </Button>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="text-slate-400 text-sm">
-                {batchExercises.filter((ex) => ex.status === 'ready').length} of{' '}
-                {batchExercises.length} exercises ready
-              </p>
-              <div className="max-h-64 overflow-y-auto space-y-2">
-                {batchExercises.map((exercise, index) => (
-                  <div
-                    // biome-ignore lint/suspicious/noArrayIndexKey: AI batch preview items have no stable id and do not reorder
-                    key={`${exercise.name}-${index}`}
-                    className="flex items-start gap-2 bg-slate-800 rounded-lg p-2"
-                  >
-                    <div className="pt-1">
-                      <input
-                        type="checkbox"
-                        checked={exercise.includeForGeneration}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
-                          setBatchExercises((prev) =>
-                            prev.map((ex, i) =>
-                              i === index
-                                ? { ...ex, includeForGeneration: checked }
-                                : ex,
-                            ),
-                          );
-                        }}
-                      />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm truncate">
-                        {exercise.details?.name || exercise.name}
-                      </p>
-                      {exercise.details && (
-                        <p className="text-slate-400 text-xs truncate">
-                          {exercise.details.muscle_groups.join(', ')}
-                        </p>
-                      )}
-                      {exercise.duplicates &&
-                        exercise.duplicates.length > 0 && (
-                          <div className="mt-1 text-amber-400 text-xs">
-                            <p className="font-medium">Possible duplicates:</p>
-                            <ul className="list-disc list-inside space-y-0.5">
-                              {exercise.duplicates.map((dup) => {
-                                const parts: string[] = [];
-                                if (dup.muscle_groups)
-                                  parts.push(dup.muscle_groups);
-                                if (dup.equipment) parts.push(dup.equipment);
-                                const meta =
-                                  parts.length > 0
-                                    ? ` (${parts.join(', ')})`
-                                    : '';
-                                return (
-                                  <li key={dup.id} className="truncate">
-                                    {dup.name}
-                                    {meta}
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          </div>
-                        )}
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      {exercise.status === 'pending' && (
-                        <span className="text-slate-400 text-xs">Pending</span>
-                      )}
-                      {exercise.status === 'generating' && (
-                        <Loader2
-                          size={16}
-                          className="text-blue-400 animate-spin"
-                        />
-                      )}
-                      {exercise.status === 'ready' && (
-                        <Check size={16} className="text-green-400" />
-                      )}
-                      {exercise.status === 'error' && (
-                        <span className="text-red-400 text-xs">Error</span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveBatchExercise(index)}
-                        className="text-slate-500 hover:text-red-400 transition-colors"
-                      >
-                        <X size={16} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="flex gap-3">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="flex-1"
-                  onClick={() => setBatchExercises([])}
-                >
-                  Back
-                </Button>
-                {batchExercises.some((ex) => ex.status === 'pending') && (
-                  <Button
-                    type="button"
-                    className="flex-1"
-                    onClick={handleGenerateBatchDetails}
-                    disabled={isBatchGenerating || !aiAvailable}
-                  >
-                    {isBatchGenerating ? (
-                      <>
-                        <Loader2 size={18} className="mr-2 animate-spin" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles size={18} className="mr-2" />
-                        Generate Details
-                      </>
-                    )}
-                  </Button>
-                )}
-                {batchExercises.some((ex) => ex.status === 'ready') && (
-                  <Button
-                    type="button"
-                    className="flex-1"
-                    onClick={handleSaveBatchExercises}
-                    disabled={loading}
-                  >
-                    Save{' '}
-                    {
-                      batchExercises.filter((ex) => ex.status === 'ready')
-                        .length
-                    }{' '}
-                    Exercises
-                  </Button>
-                )}
-              </div>
-              {!aiAvailable && (
-                <p className="text-amber-400 text-sm text-center">
-                  Set up your OpenAI API key in Settings to use AI generation
-                </p>
-              )}
-            </>
-          )}
-        </div>
-      </Modal>
-
-      {/* Regenerate All Exercises Modal */}
-      <Modal
+        batchInput={batchInput}
+        onBatchInputChange={setBatchInput}
+        batchExercises={batchExercises}
+        setBatchExercises={setBatchExercises}
+        isBatchGenerating={isBatchGenerating}
+        aiAvailable={aiAvailable}
+        loading={loading}
+        onParse={handleParseBatchInput}
+        onRemove={handleRemoveBatchExercise}
+        onGenerate={handleGenerateBatchDetails}
+        onSave={handleSaveBatchExercises}
+      />
+      <RegenerateModal
         isOpen={showRegenerateModal}
-        onClose={() => {
-          if (!isRegenerating) {
-            setShowRegenerateModal(false);
-            setRegenerateProgress(null);
-            setSearchParams({});
-          }
+        onClose={closeRegenerateModal}
+        onCancel={() => {
+          setShowRegenerateModal(false);
+          setSearchParams({});
         }}
-        title="Regenerate All Exercise Details"
-      >
-        <div className="space-y-4">
-          {!isRegenerating && !regenerateProgress?.current ? (
-            <>
-              <div className="flex items-start gap-3 p-3 bg-amber-900/30 border border-amber-700 rounded-lg">
-                <AlertTriangle
-                  size={20}
-                  className="text-amber-400 flex-shrink-0 mt-0.5"
-                />
-                <div>
-                  <p className="text-amber-300 font-medium">Warning</p>
-                  <p className="text-amber-400/80 text-sm">
-                    This will regenerate AI details for all {exercises.length}{' '}
-                    exercises in your library. Existing descriptions will be
-                    overwritten with fresh AI-generated content.
-                  </p>
-                </div>
-              </div>
-              <p className="text-slate-400 text-sm">
-                This is useful when you've updated the AI prompts and want all
-                exercises to benefit from the improvements.
-              </p>
-              <div className="flex gap-3">
-                <Button
-                  variant="secondary"
-                  className="flex-1"
-                  onClick={() => {
-                    setShowRegenerateModal(false);
-                    setSearchParams({});
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  className="flex-1"
-                  onClick={handleRegenerateAllExercises}
-                  disabled={!aiAvailable}
-                >
-                  <RefreshCw size={18} className="mr-2" />
-                  Regenerate All
-                </Button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">Progress</span>
-                  <span className="text-white">
-                    {regenerateProgress?.current || 0} /{' '}
-                    {regenerateProgress?.total || exercises.length}
-                  </span>
-                </div>
-                <div className="w-full bg-slate-700 rounded-full h-2">
-                  <div
-                    className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                    style={{
-                      width: `${((regenerateProgress?.current || 0) / (regenerateProgress?.total || 1)) * 100}%`,
-                    }}
-                  />
-                </div>
-                {regenerateProgress?.currentExercise && (
-                  <p className="text-slate-400 text-sm truncate">
-                    {isRegenerating ? (
-                      <span className="flex items-center gap-2">
-                        <Loader2 size={14} className="animate-spin" />
-                        {regenerateProgress.currentExercise}
-                      </span>
-                    ) : (
-                      regenerateProgress.currentExercise
-                    )}
-                  </p>
-                )}
-              </div>
-
-              {regenerateProgress &&
-                regenerateProgress.completed.length > 0 && (
-                  <div className="max-h-32 overflow-y-auto">
-                    <p className="text-green-400 text-sm font-medium mb-1">
-                      Completed ({regenerateProgress.completed.length})
-                    </p>
-                    <div className="text-slate-400 text-xs space-y-0.5">
-                      {regenerateProgress.completed.slice(-5).map((name) => (
-                        <div key={name} className="flex items-center gap-1">
-                          <Check size={12} className="text-green-400" />
-                          {name}
-                        </div>
-                      ))}
-                      {regenerateProgress.completed.length > 5 && (
-                        <div className="text-slate-500">
-                          ...and {regenerateProgress.completed.length - 5} more
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-              {regenerateProgress && regenerateProgress.errors.length > 0 && (
-                <div className="max-h-32 overflow-y-auto">
-                  <p className="text-red-400 text-sm font-medium mb-1">
-                    Errors ({regenerateProgress.errors.length})
-                  </p>
-                  <div className="text-red-400/80 text-xs space-y-0.5">
-                    {regenerateProgress.errors.map((error) => (
-                      <div key={error}>{error}</div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {!isRegenerating &&
-                regenerateProgress?.current === regenerateProgress?.total && (
-                  <Button
-                    className="w-full"
-                    onClick={() => {
-                      setShowRegenerateModal(false);
-                      setRegenerateProgress(null);
-                    }}
-                  >
-                    Done
-                  </Button>
-                )}
-            </>
-          )}
-        </div>
-      </Modal>
+        onDone={() => {
+          setShowRegenerateModal(false);
+          setRegenerateProgress(null);
+        }}
+        onRegenerate={handleRegenerateAllExercises}
+        isRegenerating={isRegenerating}
+        progress={regenerateProgress}
+        exerciseCount={exercises.length}
+        aiAvailable={aiAvailable}
+      />
     </div>
   );
 }

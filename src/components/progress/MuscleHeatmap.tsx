@@ -1,6 +1,7 @@
 import { MUSCLE_GROUPS } from '@/constants/musclegroups';
 import type { MuscleGroupBreakdown } from '../../hooks/useStrengthProgress';
-import { Card, CardContent } from '../ui';
+import { Card, CardContent, CardHeader, CardTitle } from '../ui';
+import { StatRow } from './StatRow';
 
 interface MuscleHeatmapProps {
   breakdown: MuscleGroupBreakdown[];
@@ -26,31 +27,41 @@ const RECOMMENDED_SETS: Record<string, { min: number; max: number }> = {
   Forearms: { min: 4, max: 10 },
 };
 
-// Get color based on percentage of recommended sets
-function getHeatColor(sets: number, muscleGroup: string): string {
+// Train-soft to train intensity steps, by share of the target midpoint.
+// `cell` fills a grid cell; `swatch` is the legend chip (the untrained chip
+// gets an outline so it reads against the surface).
+const HEAT_STEPS = [
+  {
+    cell: 'bg-sunken text-ink-3',
+    swatch: 'bg-sunken border border-line-strong',
+    label: 'Not trained',
+  },
+  {
+    cell: 'bg-train-soft text-train-ink',
+    swatch: 'bg-train-soft',
+    label: 'Under half of target',
+  },
+  {
+    cell: 'bg-train/40 text-ink',
+    swatch: 'bg-train/40',
+    label: 'Up to target',
+  },
+  {
+    cell: 'bg-train text-on-accent',
+    swatch: 'bg-train',
+    label: 'At or over target',
+  },
+];
+
+function getHeatStep(sets: number, muscleGroup: string) {
   const recommended = RECOMMENDED_SETS[muscleGroup] || { min: 8, max: 16 };
   const midpoint = (recommended.min + recommended.max) / 2;
 
-  if (sets === 0) {
-    return 'bg-slate-800 text-slate-500';
-  }
-
+  if (sets === 0) return HEAT_STEPS[0];
   const ratio = sets / midpoint;
-
-  if (ratio < 0.25) {
-    return 'bg-red-900/50 text-red-300 border-red-700/50';
-  }
-  if (ratio < 0.5) {
-    return 'bg-orange-900/50 text-orange-300 border-orange-700/50';
-  }
-  if (ratio < 0.75) {
-    return 'bg-yellow-900/50 text-yellow-300 border-yellow-700/50';
-  }
-  if (ratio <= 1.25) {
-    return 'bg-green-900/50 text-green-300 border-green-700/50';
-  }
-  // Over recommended max
-  return 'bg-blue-900/50 text-blue-300 border-blue-700/50';
+  if (ratio < 0.5) return HEAT_STEPS[1];
+  if (ratio <= 1) return HEAT_STEPS[2];
+  return HEAT_STEPS[3];
 }
 
 // Get status label
@@ -115,115 +126,92 @@ export function MuscleHeatmap({
     return b.setsCompleted - a.setsCompleted;
   });
 
+  const trainedCount = displayData.filter((d) => d.setsCompleted > 0).length;
+  const minimumCount = displayData.filter((d) => {
+    const rec = RECOMMENDED_SETS[d.muscleGroup];
+    return rec && d.setsCompleted >= rec.min;
+  }).length;
+
   return (
     <Card>
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-white">
-            Weekly Muscle Coverage
-          </h3>
-          <span className="text-sm text-slate-400">
-            {formatDateRange(weekStart, weekEnd)}
-          </span>
-        </div>
+      <CardHeader className="flex items-center justify-between gap-3">
+        <CardTitle>Weekly muscle coverage</CardTitle>
+        <span className="num text-sm text-ink-3">
+          {formatDateRange(weekStart, weekEnd)}
+        </span>
+      </CardHeader>
 
-        {/* Summary */}
-        <div className="flex items-center gap-4 mb-4 p-3 bg-slate-800/50 rounded-lg">
-          <div className="text-center">
-            <p className="text-2xl font-bold text-white">{totalSets}</p>
-            <p className="text-xs text-slate-400">Total Sets</p>
-          </div>
-          <div className="h-8 w-px bg-slate-700" />
-          <div className="text-center">
-            <p className="text-2xl font-bold text-white">
-              {displayData.filter((d) => d.setsCompleted > 0).length}
-            </p>
-            <p className="text-xs text-slate-400">Muscles Trained</p>
-          </div>
-          <div className="h-8 w-px bg-slate-700" />
-          <div className="text-center">
-            <p className="text-2xl font-bold text-white">
-              {
-                displayData.filter((d) => {
-                  const rec = RECOMMENDED_SETS[d.muscleGroup];
-                  return rec && d.setsCompleted >= rec.min;
-                }).length
-              }
-            </p>
-            <p className="text-xs text-slate-400">Hit Minimum</p>
-          </div>
-        </div>
+      <StatRow
+        className="border-b border-line"
+        stats={[
+          { label: 'Total sets', value: totalSets },
+          { label: 'Muscles trained', value: trainedCount },
+          { label: 'Hit minimum', value: minimumCount },
+        ]}
+      />
 
-        {/* Muscle Grid */}
-        <div className="grid grid-cols-2 gap-2">
-          {displayData.map((item) => {
-            const recommended = RECOMMENDED_SETS[item.muscleGroup] || {
-              min: 8,
-              max: 16,
-            };
-            const colorClass = getHeatColor(
-              item.setsCompleted,
-              item.muscleGroup,
-            );
-            const status = getStatusLabel(item.setsCompleted, item.muscleGroup);
+      {/* One heat grid inside the module: hairline-separated cells, no tiles */}
+      <div className="grid grid-cols-2 gap-px border-b border-line bg-line">
+        {displayData.map((item, index) => {
+          const recommended = RECOMMENDED_SETS[item.muscleGroup] || {
+            min: 8,
+            max: 16,
+          };
+          const step = getHeatStep(item.setsCompleted, item.muscleGroup);
+          const status = getStatusLabel(item.setsCompleted, item.muscleGroup);
 
-            return (
-              <div
-                key={item.muscleGroup}
-                className={`p-3 rounded-lg border ${colorClass} transition-colors`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-medium text-sm">
-                    {item.muscleGroup}
-                  </span>
-                  <span className="text-lg font-bold">
-                    {item.setsCompleted}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-xs opacity-80">
-                  <span>{status}</span>
-                  <span>
-                    Target: {recommended.min}-{recommended.max}
-                  </span>
-                </div>
-                {/* Progress bar */}
-                <div className="mt-2 h-1.5 bg-black/20 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-current rounded-full transition-all duration-300"
-                    style={{
-                      width: `${Math.min(100, (item.setsCompleted / recommended.max) * 100)}%`,
-                    }}
-                  />
-                </div>
+          return (
+            <div
+              key={item.muscleGroup}
+              className={`px-4 py-3 ${step.cell} ${
+                // An odd last cell spans the row so no empty gap shows.
+                displayData.length % 2 === 1 && index === displayData.length - 1
+                  ? 'col-span-2'
+                  : ''
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold">
+                  {item.muscleGroup}
+                </span>
+                <span className="num text-xl font-bold">
+                  {item.setsCompleted}
+                </span>
               </div>
-            );
-          })}
-        </div>
+              <div className="flex items-center justify-between text-xs opacity-90">
+                <span>{status}</span>
+                <span className="num">
+                  {recommended.min}-{recommended.max}
+                </span>
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-current/20">
+                <div
+                  className="h-full rounded-full bg-current transition-all duration-300"
+                  style={{
+                    width: `${Math.min(100, (item.setsCompleted / recommended.max) * 100)}%`,
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
-        {/* Legend */}
-        <div className="mt-4 pt-4 border-t border-slate-700">
-          <p className="text-xs text-slate-500 mb-2">Volume Status</p>
-          <div className="flex flex-wrap gap-2 text-xs">
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded bg-red-900/50 border border-red-700/50" />
-              <span className="text-slate-400">Very Low</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded bg-orange-900/50 border border-orange-700/50" />
-              <span className="text-slate-400">Low</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded bg-yellow-900/50 border border-yellow-700/50" />
-              <span className="text-slate-400">Moderate</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded bg-green-900/50 border border-green-700/50" />
-              <span className="text-slate-400">Optimal</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded bg-blue-900/50 border border-blue-700/50" />
-              <span className="text-slate-400">High</span>
-            </div>
+      <CardContent>
+        <div>
+          <p className="mb-2 text-sm font-semibold text-ink-2">
+            Sets vs weekly target
+          </p>
+          <div className="flex flex-wrap gap-x-3 gap-y-1.5 text-xs">
+            {HEAT_STEPS.map((step) => (
+              <div key={step.label} className="flex items-center gap-1.5">
+                <span
+                  className={`size-3 rounded-sm ${step.swatch}`}
+                  aria-hidden="true"
+                />
+                <span className="text-ink-2">{step.label}</span>
+              </div>
+            ))}
           </div>
         </div>
       </CardContent>

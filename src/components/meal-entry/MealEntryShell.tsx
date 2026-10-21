@@ -1,4 +1,10 @@
-import { Camera, ChevronRight, FileText, PenLine } from 'lucide-react';
+import {
+  Camera,
+  ChevronRight,
+  type LucideIcon,
+  PenLine,
+  Sparkles,
+} from 'lucide-react';
 import { useMemo } from 'react';
 import { useAppStore } from '../../hooks/useAppStore';
 import { useAICapability } from '../../services/ai/useAICapability';
@@ -93,13 +99,13 @@ function titleFor(adapter: 'picker' | AdapterId, date: string): string {
   const dateStr = formatDisplayDate(date);
   switch (adapter) {
     case 'manual':
-      return `Manual Entry — ${dateStr}`;
+      return `Manual entry - ${dateStr}`;
     case 'ai_text':
-      return `Log Food — ${dateStr}`;
+      return `Log food - ${dateStr}`;
     case 'ai_image':
-      return `Scan Meal — ${dateStr}`;
+      return `Scan meal - ${dateStr}`;
     default:
-      return `Log Food — ${dateStr}`;
+      return `Log food - ${dateStr}`;
   }
 }
 
@@ -111,64 +117,63 @@ interface PickerViewProps {
 function PickerView({ aiAvailable, onPick }: PickerViewProps) {
   return (
     <div className="space-y-3">
-      <p className="text-slate-400 text-sm text-center mb-4">
-        How would you like to log your meal?
-      </p>
+      <p className="text-ink-2 text-sm">How would you like to log your meal?</p>
 
       {aiAvailable && (
         <>
-          <button
-            type="button"
+          <PickerRow
+            icon={Sparkles}
+            tile="bg-sunken text-ink"
+            title="Log by text"
+            hint="Describe your meal for AI analysis"
             onClick={() => onPick('ai_text')}
-            className="w-full flex items-center gap-4 p-4 bg-slate-700/50 hover:bg-slate-700 rounded-lg transition-colors"
-          >
-            <div className="w-12 h-12 bg-blue-600/20 rounded-lg flex items-center justify-center flex-shrink-0">
-              <FileText size={24} className="text-blue-400" />
-            </div>
-            <div className="text-left flex-1">
-              <p className="text-white font-medium">Log by Text</p>
-              <p className="text-slate-400 text-sm">
-                Describe your meal for AI analysis
-              </p>
-            </div>
-            <ChevronRight size={20} className="text-slate-500" />
-          </button>
-
-          <button
-            type="button"
+          />
+          <PickerRow
+            icon={Camera}
+            tile="bg-sunken text-ink"
+            title="Scan meal"
+            hint="Take a photo for AI analysis"
             onClick={() => onPick('ai_image')}
-            className="w-full flex items-center gap-4 p-4 bg-slate-700/50 hover:bg-slate-700 rounded-lg transition-colors"
-          >
-            <div className="w-12 h-12 bg-purple-600/20 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Camera size={24} className="text-purple-400" />
-            </div>
-            <div className="text-left flex-1">
-              <p className="text-white font-medium">Scan Meal</p>
-              <p className="text-slate-400 text-sm">
-                Take a photo for AI analysis
-              </p>
-            </div>
-            <ChevronRight size={20} className="text-slate-500" />
-          </button>
+          />
         </>
       )}
 
-      <button
-        type="button"
+      <PickerRow
+        icon={PenLine}
+        tile="bg-eat-soft text-eat-ink"
+        title="Manual entry"
+        hint="Enter macros directly (works offline)"
         onClick={() => onPick('manual')}
-        className="w-full flex items-center gap-4 p-4 bg-slate-700/50 hover:bg-slate-700 rounded-lg transition-colors"
-      >
-        <div className="w-12 h-12 bg-green-600/20 rounded-lg flex items-center justify-center flex-shrink-0">
-          <PenLine size={24} className="text-green-400" />
-        </div>
-        <div className="text-left flex-1">
-          <p className="text-white font-medium">Manual Entry</p>
-          <p className="text-slate-400 text-sm">
-            Enter macros directly (works offline)
-          </p>
-        </div>
-        <ChevronRight size={20} className="text-slate-500" />
-      </button>
+      />
     </div>
+  );
+}
+
+interface PickerRowProps {
+  icon: LucideIcon;
+  tile: string;
+  title: string;
+  hint: string;
+  onClick: () => void;
+}
+
+function PickerRow({ icon: Icon, tile, title, hint, onClick }: PickerRowProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full flex items-center gap-4 p-3 rounded-xl border border-line hover:border-line-strong hover:bg-sunken transition-colors"
+    >
+      <span
+        className={`grid place-items-center size-12 rounded-lg shrink-0 ${tile}`}
+      >
+        <Icon size={24} aria-hidden="true" />
+      </span>
+      <span className="text-left flex-1">
+        <span className="block text-ink font-semibold">{title}</span>
+        <span className="block text-ink-2 text-sm">{hint}</span>
+      </span>
+      <ChevronRight size={20} className="text-ink-3" aria-hidden="true" />
+    </button>
   );
 }

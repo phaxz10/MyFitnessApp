@@ -113,13 +113,13 @@ export function WeightLogModal() {
       onClose={handleClose}
       title={
         isEditing
-          ? `Update Weight - ${formatDisplayDate(weightLogModal.date)}`
-          : `Log Weight - ${formatDisplayDate(weightLogModal.date)}`
+          ? `Update weight - ${formatDisplayDate(weightLogModal.date)}`
+          : `Log weight - ${formatDisplayDate(weightLogModal.date)}`
       }
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         {isEditing && (
-          <p className="text-slate-400 text-sm bg-slate-700/50 p-2 rounded">
+          <p className="text-sm bg-body-soft text-body-ink p-3 rounded-lg">
             You already logged weight for this day. This will update your
             existing entry.
           </p>
@@ -134,9 +134,9 @@ export function WeightLogModal() {
           error={errors.weight?.message}
         />
 
-        <div className="border-t border-slate-700 pt-4">
-          <p className="text-slate-400 text-sm mb-3">
-            Body Measurements (optional)
+        <div className="border-t border-line pt-4">
+          <p className="text-sm font-semibold text-ink-2 mb-3">
+            Body measurements (optional)
           </p>
           <div className="grid grid-cols-3 gap-3">
             <Input
@@ -161,12 +161,12 @@ export function WeightLogModal() {
               placeholder="cm"
             />
           </div>
-          <p className="text-slate-500 text-xs mt-2">
+          <p className="text-ink-3 text-sm mt-2">
             Body fat % will be calculated if waist and neck are provided.
           </p>
         </div>
 
-        {error && <p className="text-red-400 text-sm">{error}</p>}
+        {error && <p className="text-danger text-sm">{error}</p>}
 
         <div className="flex gap-2 pt-4">
           <Button
@@ -177,7 +177,12 @@ export function WeightLogModal() {
           >
             Cancel
           </Button>
-          <Button type="submit" isLoading={isLoading} className="flex-1">
+          <Button
+            type="submit"
+            tone="body"
+            isLoading={isLoading}
+            className="flex-1"
+          >
             Save
           </Button>
         </div>

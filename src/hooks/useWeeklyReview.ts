@@ -11,6 +11,7 @@ import type {
   WorkoutLog,
 } from '../types';
 import { formatDate, getWeekRange } from '../utils/date';
+import { pgDate } from '../utils/pgValues';
 
 // Minimum requirements for a meaningful weekly review
 const MIN_LOGGED_DAYS = 5; // At least 5 days with any logged data for assessment
@@ -97,13 +98,9 @@ export function useWeeklyReview() {
         const workoutLogs = workoutResult.rows as WorkoutLog[];
 
         // Calculate unique days with data
-        const weightDates = new Set(weightLogs.map((w) => formatDate(w.date)));
-        const calorieDates = new Set(
-          calorieEntries.map((c) => formatDate(c.date)),
-        );
-        const workoutDates = new Set(
-          workoutLogs.map((w) => formatDate(w.date)),
-        );
+        const weightDates = new Set(weightLogs.map((w) => pgDate(w.date)));
+        const calorieDates = new Set(calorieEntries.map((c) => pgDate(c.date)));
+        const workoutDates = new Set(workoutLogs.map((w) => pgDate(w.date)));
 
         // Calculate total unique days with any logged data
         const allDates = new Set([
@@ -120,7 +117,7 @@ export function useWeeklyReview() {
         // Calculate calorie stats
         const dailyCalories: Record<string, number> = {};
         calorieEntries.forEach((entry) => {
-          const dateKey = formatDate(entry.date);
+          const dateKey = pgDate(entry.date);
           dailyCalories[dateKey] =
             (dailyCalories[dateKey] || 0) + entry.calories;
         });

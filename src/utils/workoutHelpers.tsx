@@ -12,9 +12,9 @@ import type { ExerciseType, ProgressionDirection } from '../types';
  */
 export const getExerciseTypeIcon = (type: ExerciseType) => {
   if (type === 'duration' || type === 'duration_weight') {
-    return <Clock size={14} className="text-slate-400" />;
+    return <Clock size={14} className="text-ink-2" />;
   }
-  return <Dumbbell size={14} className="text-slate-400" />;
+  return <Dumbbell size={14} className="text-ink-2" />;
 };
 
 /**
@@ -26,7 +26,7 @@ export const getProgressionArrow = (
 ) => {
   if (!direction || direction === 'maintain') return null;
   if (direction === 'increase') {
-    return <ChevronUp size={14} className="text-green-400" />;
+    return <ChevronUp size={14} className="text-eat-ink" />;
   }
-  return <ChevronDown size={14} className="text-red-400" />;
+  return <ChevronDown size={14} className="text-danger" />;
 };

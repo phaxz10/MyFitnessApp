@@ -12,6 +12,7 @@ import type {
   VolumeChartData,
 } from '../types';
 import { formatDate, getLocalDateString } from '../utils/date';
+import { pgDate } from '../utils/pgValues';
 
 // Type for TimeRange
 export type TimeRange = '7d' | '30d' | '90d' | 'all';
@@ -89,7 +90,9 @@ function getDateRange(range: TimeRange): {
 }
 
 // Get PRs for a specific exercise
-async function fetchExercisePRs(exerciseId: number): Promise<ExercisePR> {
+export async function fetchExercisePRs(
+  exerciseId: number,
+): Promise<ExercisePR> {
   try {
     const db = await getDB();
 
@@ -143,8 +146,8 @@ async function fetchExercisePRs(exerciseId: number): Promise<ExercisePR> {
         maxWeightResult.rows.length > 0
           ? {
               value: (maxWeightResult.rows[0] as { value: number }).value,
-              reps: (maxWeightResult.rows[0] as { reps: number }).reps,
-              date: (maxWeightResult.rows[0] as { date: string }).date,
+              reps: (maxWeightResult.rows[0] as { reps: number | null }).reps,
+              date: pgDate((maxWeightResult.rows[0] as { date: unknown }).date),
             }
           : null,
       maxReps:
@@ -152,7 +155,7 @@ async function fetchExercisePRs(exerciseId: number): Promise<ExercisePR> {
           ? {
               value: (maxRepsResult.rows[0] as { value: number }).value,
               weight: (maxRepsResult.rows[0] as { weight: number }).weight,
-              date: (maxRepsResult.rows[0] as { date: string }).date,
+              date: pgDate((maxRepsResult.rows[0] as { date: unknown }).date),
             }
           : null,
       maxVolume:
@@ -161,7 +164,7 @@ async function fetchExercisePRs(exerciseId: number): Promise<ExercisePR> {
               value: Math.round(
                 (maxVolumeResult.rows[0] as { value: number }).value,
               ),
-              date: (maxVolumeResult.rows[0] as { date: string }).date,
+              date: pgDate((maxVolumeResult.rows[0] as { date: unknown }).date),
             }
           : null,
       max1RM:
@@ -170,7 +173,7 @@ async function fetchExercisePRs(exerciseId: number): Promise<ExercisePR> {
               value: Math.round(
                 (max1RMResult.rows[0] as { value: number }).value,
               ),
-              date: (max1RMResult.rows[0] as { date: string }).date,
+              date: pgDate((max1RMResult.rows[0] as { date: unknown }).date),
             }
           : null,
     };
@@ -472,7 +475,7 @@ async function fetchVolumeChartData(
   return (
     result.rows as { date: string; volume: number; workouts: number }[]
   ).map((row) => ({
-    date: row.date,
+    date: pgDate(row.date),
     volume: Math.round(Number(row.volume) || 0),
     workouts: Number(row.workouts) || 0,
   }));
@@ -565,7 +568,7 @@ async function fetchAllExercisesProgress(
         muscleGroups: ex.muscle_groups,
         exerciseType: ex.exercise_type,
         trend,
-        lastPerformed: ex.last_performed,
+        lastPerformed: ex.last_performed ? pgDate(ex.last_performed) : null,
         estimated1RM,
         totalSessions: Number(ex.total_sessions),
         prs,
@@ -683,7 +686,7 @@ async function fetchWeeklyMuscleStats(): Promise<WeeklyMuscleStats> {
 }
 
 // Fetch exercise session data for a specific exercise
-async function fetchExerciseSessionData(
+export async function fetchExerciseSessionData(
   exerciseId: number,
   range: TimeRange,
 ): Promise<ExerciseSessionData[]> {
@@ -725,9 +728,11 @@ async function fetchExerciseSessionData(
     const volume = weight * reps;
     const est1RM = calculateEstimated1RM(weight, reps);
 
-    if (!sessionMap.has(row.date)) {
-      sessionMap.set(row.date, {
-        date: row.date,
+    const date = pgDate(row.date);
+
+    if (!sessionMap.has(date)) {
+      sessionMap.set(date, {
+        date,
         estimated1RM: est1RM,
         bestWeight: weight,
         bestReps: reps,
@@ -736,7 +741,7 @@ async function fetchExerciseSessionData(
         sets: [{ weight: row.weight_kg, reps: row.reps, volume }],
       });
     } else {
-      const session = sessionMap.get(row.date)!;
+      const session = sessionMap.get(date)!;
       session.totalVolume += volume;
       session.totalSets += 1;
       session.sets.push({

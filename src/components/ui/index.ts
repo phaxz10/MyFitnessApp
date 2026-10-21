@@ -2,9 +2,23 @@ export { BottomNav } from './BottomNav';
 export { Button } from './Button';
 export { CameraCapture } from './CameraCapture';
 export { Card, CardContent, CardHeader, CardTitle } from './Card';
+export { ConfirmModal } from './ConfirmModal';
+export {
+  DISCIPLINE_FILL,
+  DISCIPLINE_SOFT,
+  DISCIPLINE_TEXT,
+  type Discipline,
+  disciplineForPath,
+} from './discipline';
 export { Header } from './Header';
 export { Input } from './Input';
 export { Modal } from './Modal';
+export {
+  ExerciseMark,
+  type MovementPattern,
+  MovementPictogram,
+  movementPatternFor,
+} from './MovementPictogram';
 export { Select } from './Select';
 export {
   CalorieLogSkeleton,

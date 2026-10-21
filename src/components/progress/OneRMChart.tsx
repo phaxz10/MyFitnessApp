@@ -1,4 +1,5 @@
 import {
+  CartesianGrid,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -8,7 +9,13 @@ import {
 } from 'recharts';
 import type { ExerciseSessionData } from '../../types';
 import { formatShortDate } from '../../utils/date';
-import { Card, CardContent } from '../ui';
+import { Card, CardContent, CardHeader, CardTitle } from '../ui';
+import {
+  AXIS_TICK,
+  TOOLTIP_CONTENT_STYLE,
+  TOOLTIP_LABEL_STYLE,
+} from './chartTheme';
+import { oneRMEmptyMessage } from './format';
 
 interface OneRMChartProps {
   data: ExerciseSessionData[];
@@ -35,37 +42,36 @@ export function OneRMChart({
 
   return (
     <Card>
-      <CardContent className="p-4">
-        <h3 className="text-lg font-semibold text-white mb-1">{title}</h3>
-        {exerciseName && (
-          <p className="text-slate-400 text-sm mb-4">{exerciseName}</p>
-        )}
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        {exerciseName && <p className="text-sm text-ink-2">{exerciseName}</p>}
+      </CardHeader>
+      <CardContent>
         {chartData.length > 1 ? (
           <div style={{ height }}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>
+                <CartesianGrid
+                  stroke="var(--line)"
+                  strokeDasharray="0"
+                  vertical={false}
+                />
                 <XAxis
                   dataKey="date"
-                  stroke="#64748b"
-                  fontSize={12}
+                  tick={AXIS_TICK}
                   tickLine={false}
                   axisLine={false}
                 />
                 <YAxis
-                  stroke="#64748b"
-                  fontSize={12}
+                  tick={AXIS_TICK}
                   tickLine={false}
                   axisLine={false}
-                  domain={['dataMin - 10', 'dataMax + 10']}
+                  domain={[0, 'auto']}
                   tickFormatter={(value: number) => `${value}`}
                 />
                 <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#1e293b',
-                    border: '1px solid #334155',
-                    borderRadius: '8px',
-                  }}
-                  labelStyle={{ color: '#94a3b8' }}
+                  contentStyle={TOOLTIP_CONTENT_STYLE}
+                  labelStyle={TOOLTIP_LABEL_STYLE}
                   formatter={(value, name) => {
                     if (value === undefined) return ['--', String(name ?? '')];
                     if (name === 'oneRM') return [`${value} lbs`, 'Est. 1RM'];
@@ -75,22 +81,20 @@ export function OneRMChart({
                 <Line
                   type="monotone"
                   dataKey="oneRM"
-                  stroke="#3b82f6"
-                  strokeWidth={2}
-                  dot={{ fill: '#3b82f6', strokeWidth: 0, r: 4 }}
-                  activeDot={{ r: 6, fill: '#60a5fa' }}
+                  stroke="var(--train)"
+                  strokeWidth={2.5}
+                  dot={{ fill: 'var(--train)', strokeWidth: 0, r: 4 }}
+                  activeDot={{ r: 6, fill: 'var(--train)' }}
                 />
               </LineChart>
             </ResponsiveContainer>
           </div>
         ) : (
           <div
-            className="flex items-center justify-center text-slate-500"
+            className="flex items-center justify-center text-center text-ink-3"
             style={{ height }}
           >
-            {chartData.length === 1
-              ? 'Need more sessions to show trend'
-              : 'No data available'}
+            {oneRMEmptyMessage(data.length, chartData.length)}
           </div>
         )}
       </CardContent>

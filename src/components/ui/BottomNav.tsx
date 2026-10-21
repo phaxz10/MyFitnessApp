@@ -6,43 +6,56 @@ import {
   Utensils,
 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
+import { DISCIPLINE_TEXT, type Discipline } from './discipline';
 
-const navItems = [
-  { to: '/', icon: Home, label: 'Home' },
-  { to: '/calories', icon: Utensils, label: 'Nutrition' },
-  { to: '/workout', icon: Dumbbell, label: 'Training' },
-  { to: '/exercises', icon: Library, label: 'Exercises' },
-  { to: '/weight', icon: PersonStanding, label: 'Body' },
+const navItems: {
+  to: string;
+  icon: typeof Home;
+  label: string;
+  discipline: Discipline;
+}[] = [
+  { to: '/', icon: Home, label: 'Today', discipline: 'neutral' },
+  { to: '/workout', icon: Dumbbell, label: 'Train', discipline: 'train' },
+  { to: '/calories', icon: Utensils, label: 'Eat', discipline: 'eat' },
+  { to: '/weight', icon: PersonStanding, label: 'Body', discipline: 'body' },
+  { to: '/exercises', icon: Library, label: 'Exercises', discipline: 'train' },
 ];
+
+const ACTIVE_BAR: Record<Discipline, string> = {
+  neutral: 'bg-ink',
+  train: 'bg-train',
+  eat: 'bg-eat',
+  body: 'bg-body',
+};
 
 export function BottomNav() {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-sm border-t border-slate-700/50 px-1 pb-safe">
-      <div className="flex justify-around items-center h-14 max-w-lg mx-auto">
-        {navItems.map(({ to, icon: Icon, label }) => (
+    <nav
+      aria-label="Main"
+      className="fixed bottom-0 inset-x-0 z-40 bg-surface border-t border-line pb-[env(safe-area-inset-bottom)]"
+    >
+      <div className="grid grid-cols-5 max-w-lg mx-auto">
+        {navItems.map(({ to, icon: Icon, label, discipline }) => (
           <NavLink
             key={to}
             to={to}
+            end={to === '/'}
             className={({ isActive }) =>
-              `flex flex-col items-center justify-center min-w-[3.5rem] py-1.5 rounded-xl transition-all duration-200 ${
+              `relative flex flex-col items-center justify-center gap-0.5 h-16 text-xs font-semibold transition-colors ${
                 isActive
-                  ? 'text-blue-400 bg-blue-500/10'
-                  : 'text-slate-500 hover:text-slate-300 active:scale-95'
+                  ? DISCIPLINE_TEXT[discipline]
+                  : 'text-ink-3 hover:text-ink'
               }`
             }
           >
             {({ isActive }) => (
               <>
-                <div
-                  className={`p-0.5 rounded-lg transition-colors ${isActive ? 'bg-blue-500/20' : ''}`}
-                >
-                  <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
-                </div>
                 <span
-                  className={`text-[9px] mt-0.5 font-medium ${isActive ? 'text-blue-400' : ''}`}
-                >
-                  {label}
-                </span>
+                  aria-hidden="true"
+                  className={`absolute top-0 inset-x-4 h-[3px] rounded-b ${isActive ? ACTIVE_BAR[discipline] : 'bg-transparent'}`}
+                />
+                <Icon size={22} strokeWidth={isActive ? 2.5 : 2} />
+                {label}
               </>
             )}
           </NavLink>

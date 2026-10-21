@@ -1,5 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { formatElapsed } from '../../components/training/format';
+import { parseLocalTimestamp } from '../../utils/date';
 import { inRange, recent } from './workoutHistory';
 
 // ---------------------------------------------------------------------------
@@ -197,6 +199,20 @@ describe('workoutHistory.recent', () => {
     // Should be the 2 most recent
     expect(logs[0].id).toBe(3);
     expect(logs[1].id).toBe(2);
+  });
+
+  // Regression: PGlite returns TIMESTAMP columns as Date objects. String(Date)
+  // ("Tue May 20 2025 09:00:00 GMT…") is unparseable by parseLocalTimestamp,
+  // so the Training tab rendered "NaNh NaNm" for every finished workout.
+  it('returns timestamps that parseLocalTimestamp can round-trip', async () => {
+    const logs = await recent(db, 10);
+    const log = logs.find((l) => l.id === 1)!;
+
+    const start = parseLocalTimestamp(log.started_at);
+    const end = parseLocalTimestamp(log.ended_at!);
+    expect(start.getTime()).toBe(new Date(2025, 4, 20, 9, 0, 0).getTime());
+    expect(end.getTime()).toBe(new Date(2025, 4, 20, 10, 0, 0).getTime());
+    expect(formatElapsed(log.started_at, log.ended_at)).toBe('1h 0m');
   });
 });
 

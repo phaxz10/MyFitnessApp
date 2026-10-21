@@ -9,7 +9,7 @@ interface SkeletonProps {
 export function Skeleton({ className = '', style }: SkeletonProps) {
   return (
     <div
-      className={`animate-pulse bg-slate-700 rounded ${className}`}
+      className={`animate-pulse bg-sunken-strong rounded ${className}`}
       style={style}
     />
   );
@@ -34,7 +34,7 @@ interface SkeletonCardProps {
 export function SkeletonCard({ children, className = '' }: SkeletonCardProps) {
   return (
     <div
-      className={`bg-slate-800 border border-slate-700 rounded-lg p-4 ${className}`}
+      className={`bg-surface border border-line rounded-xl p-4 ${className}`}
     >
       {children || (
         <div className="space-y-3">
@@ -50,9 +50,7 @@ export function SkeletonCard({ children, className = '' }: SkeletonCardProps) {
 // List item skeleton
 export function SkeletonListItem({ className = '' }: SkeletonProps) {
   return (
-    <div
-      className={`flex items-center gap-3 p-3 bg-slate-700/50 rounded-lg ${className}`}
-    >
+    <div className={`flex items-center gap-3 py-2 ${className}`}>
       <SkeletonCircle className="w-10 h-10 flex-shrink-0" />
       <div className="flex-1 space-y-2">
         <Skeleton className="h-4 w-2/3" />
@@ -82,7 +80,7 @@ export function SkeletonChart({ className = '' }: SkeletonProps) {
         {bars.map((id, idx) => (
           <Skeleton
             key={`bar-${id}`}
-            className="flex-1 rounded-t"
+            className="flex-1 rounded-t-lg"
             style={{ height: `${heights[idx]}%` }}
           />
         ))}
@@ -98,7 +96,7 @@ export function SkeletonChart({ className = '' }: SkeletonProps) {
 
 // Button skeleton
 export function SkeletonButton({ className = '' }: SkeletonProps) {
-  return <Skeleton className={`h-10 rounded-lg ${className}`} />;
+  return <Skeleton className={`h-11 rounded-xl ${className}`} />;
 }
 
 // ============================================
@@ -108,9 +106,9 @@ export function SkeletonButton({ className = '' }: SkeletonProps) {
 // Dashboard page skeleton
 export function DashboardSkeleton() {
   return (
-    <div className="p-4 pb-20 space-y-4">
+    <div className="px-4 py-4 space-y-4">
       {/* Header */}
-      <div className="flex justify-between items-center mb-2">
+      <div className="flex justify-between items-center">
         <div className="space-y-1">
           <Skeleton className="h-4 w-24" />
           <Skeleton className="h-7 w-32" />
@@ -166,11 +164,11 @@ export function DashboardSkeleton() {
 // Workout page skeleton
 export function WorkoutSkeleton() {
   return (
-    <div className="p-4 pb-20 space-y-4">
+    <div className="px-4 py-4 space-y-4">
       {/* Header */}
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center">
         <Skeleton className="h-8 w-24" />
-        <Skeleton className="h-10 w-32 rounded-lg" />
+        <Skeleton className="h-11 w-32 rounded-xl" />
       </div>
 
       {/* Today's Workout Card */}
@@ -218,9 +216,9 @@ export function WorkoutSkeleton() {
 // Calorie Log page skeleton
 export function CalorieLogSkeleton() {
   return (
-    <div className="p-4 pb-20 space-y-4">
+    <div className="px-4 py-4 space-y-4">
       {/* Header with date */}
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center">
         <Skeleton className="h-8 w-32" />
         <div className="flex items-center gap-2">
           <SkeletonCircle className="w-8 h-8" />
@@ -254,7 +252,7 @@ export function CalorieLogSkeleton() {
               <Skeleton className="h-4 w-16" />
             </div>
             <div className="space-y-2">
-              <Skeleton className="h-12 w-full rounded-lg" />
+              <Skeleton className="h-12 w-full rounded-xl" />
             </div>
           </div>
         </SkeletonCard>
@@ -266,11 +264,11 @@ export function CalorieLogSkeleton() {
 // Weight Tracker page skeleton
 export function WeightTrackerSkeleton() {
   return (
-    <div className="p-4 pb-20 space-y-4">
+    <div className="px-4 py-4 space-y-4">
       {/* Header */}
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center">
         <Skeleton className="h-8 w-32" />
-        <Skeleton className="h-10 w-28 rounded-lg" />
+        <Skeleton className="h-11 w-28 rounded-xl" />
       </div>
 
       {/* Current Stats */}
@@ -309,15 +307,15 @@ export function WeightTrackerSkeleton() {
 // Progress page skeleton
 export function ProgressSkeleton() {
   return (
-    <div className="p-4 pb-20 space-y-4">
+    <div className="px-4 py-4 space-y-4">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3">
         <SkeletonCircle className="w-10 h-10" />
         <Skeleton className="h-7 w-40" />
       </div>
 
       {/* Time range tabs */}
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-2">
         <Skeleton className="h-8 w-12 rounded-full" />
         <Skeleton className="h-8 w-12 rounded-full" />
         <Skeleton className="h-8 w-12 rounded-full" />
@@ -325,7 +323,7 @@ export function ProgressSkeleton() {
       </div>
 
       {/* Tab navigation */}
-      <div className="flex gap-4 border-b border-slate-700 mb-4">
+      <div className="flex gap-4 border-b border-line">
         <Skeleton className="h-10 w-24" />
         <Skeleton className="h-10 w-24" />
       </div>
@@ -360,15 +358,15 @@ export function ProgressSkeleton() {
 // Exercise Library page skeleton
 export function ExerciseLibrarySkeleton() {
   return (
-    <div className="p-4 pb-20 space-y-4">
+    <div className="px-4 py-4 space-y-4">
       {/* Header */}
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center">
         <Skeleton className="h-8 w-36" />
-        <Skeleton className="h-10 w-10 rounded-lg" />
+        <Skeleton className="size-11 rounded-xl" />
       </div>
 
       {/* Search */}
-      <Skeleton className="h-10 w-full rounded-lg" />
+      <Skeleton className="h-11 w-full rounded-xl" />
 
       {/* Filter chips */}
       <div className="flex gap-2 overflow-x-auto pb-2">

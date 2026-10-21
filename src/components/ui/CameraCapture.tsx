@@ -126,7 +126,7 @@ export function CameraCapture({ onCapture, overlay }: CameraCaptureProps) {
   }, [startCamera, stopCamera]);
 
   return (
-    <div className="rounded-lg overflow-hidden">
+    <div className="rounded-xl overflow-hidden">
       <canvas ref={canvasRef} className="hidden" />
       <input
         ref={fileInputRef}
@@ -145,20 +145,18 @@ export function CameraCapture({ onCapture, overlay }: CameraCaptureProps) {
           className={`w-full h-full object-cover ${cameraActive ? '' : 'invisible'}`}
         />
         {!cameraActive && cameraPermission === 'pending' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 text-center p-4">
-            <Loader2 size={32} className="text-blue-400 animate-spin mb-3" />
-            <p className="text-slate-300 text-sm">
-              Waiting for camera permission…
-            </p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-canvas text-center p-4">
+            <Loader2 size={32} className="text-train-ink animate-spin mb-3" />
+            <p className="text-ink-2 text-sm">Waiting for camera permission…</p>
           </div>
         )}
         {!cameraActive && cameraPermission === 'denied' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 text-center p-4">
-            <Camera size={32} className="text-slate-500 mb-3" />
-            <p className="text-slate-300 text-sm font-medium mb-1">
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-canvas text-center p-4">
+            <Camera size={32} className="text-ink-3 mb-3" />
+            <p className="text-ink-2 text-sm font-medium mb-1">
               Camera unavailable
             </p>
-            <p className="text-slate-400 text-xs">
+            <p className="text-ink-2 text-sm">
               Permission denied or device has no camera. Upload a photo below.
             </p>
           </div>
@@ -171,10 +169,11 @@ export function CameraCapture({ onCapture, overlay }: CameraCaptureProps) {
       {cameraActive && (
         <Button
           onClick={captureFrame}
+          size="lg"
           className="w-full mt-2"
           aria-label="Capture photo"
         >
-          <Camera size={16} className="mr-2" />
+          <Camera size={20} aria-hidden="true" />
           Capture
         </Button>
       )}
@@ -184,7 +183,7 @@ export function CameraCapture({ onCapture, overlay }: CameraCaptureProps) {
         onClick={() => fileInputRef.current?.click()}
         className="w-full mt-2"
       >
-        <ImageIcon size={16} className="mr-2" />
+        <ImageIcon size={18} aria-hidden="true" />
         {cameraActive ? 'Upload from gallery instead' : 'Upload from gallery'}
       </Button>
 
@@ -194,7 +193,7 @@ export function CameraCapture({ onCapture, overlay }: CameraCaptureProps) {
           onClick={startCamera}
           className="w-full mt-2"
         >
-          <Camera size={16} className="mr-2" />
+          <Camera size={18} aria-hidden="true" />
           Retry camera
         </Button>
       )}

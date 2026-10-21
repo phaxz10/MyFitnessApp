@@ -1,7 +1,7 @@
 /**
  * Shared TrendIndicator component
  * Displays trend direction with icon and optional value
- * Used by: MetricCard, ExercisesTab, WeightTracker
+ * Used by: StatRow, ExercisesTab, WeightSummary
  */
 
 import { Minus, TrendingDown, TrendingUp } from 'lucide-react';
@@ -75,11 +75,11 @@ export function getProgressTrendLabel(
 export function getTrendColorClass(direction: TrendDirection): string {
   switch (direction) {
     case 'up':
-      return 'text-green-400';
+      return 'text-eat-ink';
     case 'down':
-      return 'text-red-400';
+      return 'text-danger';
     default:
-      return 'text-slate-400';
+      return 'text-ink-3';
   }
 }
 
@@ -111,10 +111,10 @@ export function TrendIndicator({
     <div className="flex items-center gap-1">
       {icon}
       {label && (
-        <span className={`text-sm ${colorClass}`}>
+        <span className={`num text-sm font-semibold ${colorClass}`}>
           {label}
           {secondaryLabel && (
-            <span className="text-slate-500 ml-1">{secondaryLabel}</span>
+            <span className="text-ink-3 ml-1">{secondaryLabel}</span>
           )}
         </span>
       )}

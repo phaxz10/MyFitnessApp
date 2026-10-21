@@ -1,85 +1,206 @@
 @import "tailwindcss";
 
-/* Custom dark theme variables */
+/*
+ * Design tokens. Munich '72 direction: three disciplines (train / eat / body)
+ * each own a flat colour; neutrals are cool and quiet; no black, no glass.
+ * Light by default (daylight home gym), dark for night sessions.
+ * Components use the semantic utilities below (bg-surface, text-ink-2,
+ * bg-train, ...) and never raw palette classes.
+ */
+
+@font-face {
+  font-family: "Archivo";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  src: url("./assets/fonts/archivo-latin-wdth-normal.woff2") format("woff2-variations");
+}
+
 :root {
-  --color-bg-primary: #0f172a;
-  --color-bg-secondary: #1e293b;
-  --color-bg-tertiary: #334155;
-  --color-text-primary: #f8fafc;
-  --color-text-secondary: #94a3b8;
-  --color-text-muted: #64748b;
-  --color-accent: #3b82f6;
-  --color-accent-hover: #2563eb;
-  --color-success: #22c55e;
-  --color-warning: #f59e0b;
-  --color-error: #ef4444;
-  --color-border: #334155;
+  color-scheme: light;
+  --canvas: #f3f5f7;
+  --surface: #ffffff;
+  --sunken: #eef1f4;
+  --sunken-strong: #e2e7ec;
+  --line: #d8dee4;
+  --line-strong: #b9c3cc;
+  --ink: #17212b;
+  --ink-2: #4b5865;
+  --ink-3: #5f6b77;
+  --on-accent: #ffffff;
+  --band: #17212b;
+  --on-band: #f3f5f7;
+
+  --train: #1572ae;
+  --train-soft: #dceef9;
+  --train-ink: #0e5a8c;
+  --eat: #2a7f47;
+  --eat-soft: #dff2e5;
+  --eat-ink: #1d6237;
+  --body: #b3570a;
+  --body-soft: #fcead9;
+  --body-ink: #8f4507;
+
+  --danger: #b42318;
+  --danger-soft: #fde8e6;
+  --warn: #9a6700;
+  --warn-soft: #fbf0d4;
+
+  --macro-calories: #2a7f47;
+  --macro-protein: #1f8fd0;
+  --macro-carbs: #c99a00;
+  --macro-fat: #d9701a;
+  /* Text-safe macro colours (>= 4.5:1 on surface). */
+  --macro-calories-ink: #1d6237;
+  --macro-protein-ink: #1569a0;
+  --macro-carbs-ink: #8a6a00;
+  --macro-fat-ink: #a8520c;
 }
 
-* {
-  box-sizing: border-box;
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --canvas: #0e151c;
+    --surface: #16202a;
+    --sunken: #1e2a36;
+    --sunken-strong: #283746;
+    --line: #2a3846;
+    --line-strong: #3a4b5c;
+    --ink: #edf1f4;
+    --ink-2: #a9b6c2;
+    --ink-3: #8593a0;
+    --on-accent: #0b1218;
+    --band: #1e2a36;
+    --on-band: #edf1f4;
+
+    --train: #4aa8e3;
+    --train-soft: #12324a;
+    --train-ink: #8ccbf2;
+    --eat: #48b56b;
+    --eat-soft: #14331f;
+    --eat-ink: #8bd7a3;
+    --body: #ec9448;
+    --body-soft: #3a2514;
+    --body-ink: #f5b47a;
+
+    --danger: #f0705f;
+    --danger-soft: #3a1a17;
+    --warn: #e0b44a;
+    --warn-soft: #33290f;
+
+    --macro-calories: #48b56b;
+    --macro-protein: #4aa8e3;
+    --macro-carbs: #e3bb3a;
+    --macro-fat: #ec9448;
+    --macro-calories-ink: #48b56b;
+    --macro-protein-ink: #4aa8e3;
+    --macro-carbs-ink: #e3bb3a;
+    --macro-fat-ink: #ec9448;
+  }
 }
 
-html {
-  /* Native app feel: slightly smaller base font */
-  font-size: 14px;
+@theme inline {
+  --font-sans: "Archivo", ui-sans-serif, system-ui, sans-serif;
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-sunken-strong: var(--sunken-strong);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-on-accent: var(--on-accent);
+  --color-band: var(--band);
+  --color-on-band: var(--on-band);
+
+  --color-train: var(--train);
+  --color-train-soft: var(--train-soft);
+  --color-train-ink: var(--train-ink);
+  --color-eat: var(--eat);
+  --color-eat-soft: var(--eat-soft);
+  --color-eat-ink: var(--eat-ink);
+  --color-body: var(--body);
+  --color-body-soft: var(--body-soft);
+  --color-body-ink: var(--body-ink);
+
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+
+  /* Utilities are for text; fills use var(--macro-*) directly. */
+  --color-macro-calories: var(--macro-calories-ink);
+  --color-macro-protein: var(--macro-protein-ink);
+  --color-macro-carbs: var(--macro-carbs-ink);
+  --color-macro-fat: var(--macro-fat-ink);
 }
 
-html, body, #root {
-  height: 100%;
+/* Condensed tabular numerals: weights, reps, macros, timers. */
+@utility num {
+  font-stretch: 75%;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
   margin: 0;
-  padding: 0;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-  background-color: var(--color-bg-primary);
-  color: var(--color-text-primary);
-  line-height: 1.4;
+  font-family: var(--font-sans);
+  background-color: var(--canvas);
+  color: var(--ink);
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* Prevent text inflation on mobile */
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  caret-color: var(--train);
 }
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+::selection {
+  background: var(--train-soft);
+  color: var(--ink);
 }
 
-::-webkit-scrollbar-track {
-  background: var(--color-bg-secondary);
+:focus-visible {
+  outline: 2px solid var(--train);
+  outline-offset: 2px;
 }
 
-::-webkit-scrollbar-thumb {
-  background: var(--color-bg-tertiary);
-  border-radius: 4px;
+* {
+  scrollbar-color: var(--line-strong) transparent;
+  scrollbar-width: thin;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-muted);
+input,
+textarea,
+select {
+  background-color: var(--surface);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
 }
 
-/* Input styling for dark mode */
-input, textarea, select {
-  background-color: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-primary);
+input::placeholder,
+textarea::placeholder {
+  color: var(--ink-3);
 }
 
-input::placeholder, textarea::placeholder {
-  color: var(--color-text-muted);
-}
-
-input:focus, textarea:focus, select:focus {
+input:focus,
+textarea:focus,
+select:focus {
   outline: none;
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  border-color: var(--train);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--train) 25%, transparent);
 }
 
-/* Remove number input spinners */
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none;
@@ -88,4 +209,13 @@ input[type="number"]::-webkit-outer-spin-button {
 
 input[type="number"] {
   -moz-appearance: textfield;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

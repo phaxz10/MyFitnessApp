@@ -1,32 +1,25 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import {
-  ArrowLeft,
-  Check,
-  Clock,
-  Combine,
-  Dumbbell,
-  Play,
-  Plus,
-  Send,
-  Trash2,
-} from 'lucide-react';
+import { Combine, Flag, Plus } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Button,
-  Card,
-  CardContent,
-  Input,
-  Modal,
-  TextArea,
-} from '../components/ui';
+  AddExerciseModal,
+  CancelWorkoutModal,
+  EndWorkoutModal,
+  type ExerciseInfo,
+  ExerciseInfoModal,
+  type ExerciseNotesData,
+  ExerciseNotesModal,
+  SessionBar,
+  SessionExerciseList,
+  useExerciseCoaching,
+} from '../components/session';
+import { Button, Card, Skeleton, SkeletonCard } from '../components/ui';
 import {
   DurationTimer,
-  ExerciseCard,
   RestTimer,
   SessionChangesModal,
-  SupersetCard,
 } from '../components/workout';
 import { useWorkoutLogs } from '../hooks/useWorkoutLogs';
 import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
@@ -35,22 +28,11 @@ import {
   type WorkoutNotesFormData,
   workoutNotesSchema,
 } from '../schemas/forms';
-import { getAICapability } from '../services/ai/useAICapability';
-import { getExerciseCoaching } from '../services/coaching/workoutCoach';
-import { getDB } from '../services/db';
-import { sessions as exerciseSessions } from '../services/queries/exerciseHistory';
-import type { AIExerciseCoachingResponse, Exercise } from '../types';
 import { parseLocalTimestamp } from '../utils/date';
-import { formatElapsedTime } from '../utils/formatters';
 import {
   compareSessionToProgram,
   type SessionDiff,
 } from '../utils/sessionDiff';
-
-// Generate unique superset ID
-function generateSupersetId(): string {
-  return `ss-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-}
 
 export function WorkoutSession() {
   const navigate = useNavigate();
@@ -60,32 +42,22 @@ export function WorkoutSession() {
   const dateOverride = searchParams.get('date') || undefined;
 
   // Main workout session hook
+  const session = useWorkoutSession(dateOverride);
   const {
     activeWorkout,
     exercisesWithSets,
-    groupedExercises,
     allExercises,
     totalCompletedSets,
     isInitialized,
-    isLoading,
-    handleSetChange,
     handleCompleteSet,
     handleUncompleteSet,
     handleCompleteRound,
-    handleAddSet,
-    handleAddSetToSuperset,
-    handleDeleteSet,
-    handleDeleteRound,
-    handleRemoveExercise,
     handleAddExercise,
-    handleLinkExercisesAsSuperset,
-    handleBreakSuperset,
-    toggleExerciseExpand,
     saveDurationSet,
     handleEndWorkout,
     handleCancelWorkout,
     getExerciseId,
-  } = useWorkoutSession(dateOverride);
+  } = session;
 
   // Exercise notes from useWorkoutLogs
   const {
@@ -108,10 +80,6 @@ export function WorkoutSession() {
   const [showAddExercise, setShowAddExercise] = useState(false);
   const [showEndWorkout, setShowEndWorkout] = useState(false);
   const [showCancelWorkout, setShowCancelWorkout] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-
-  // Superset selection state in Add Exercise modal
-  const [supersetSelection, setSupersetSelection] = useState<Exercise[]>([]);
 
   // Link superset selection state (for existing exercises)
   const [linkSupersetSelection, setLinkSupersetSelection] = useState<
@@ -128,22 +96,16 @@ export function WorkoutSession() {
   // Elapsed time
   const [elapsedTime, setElapsedTime] = useState(0);
 
-  // AI coaching state
-  const [exerciseCoaching, setExerciseCoaching] = useState<
-    Map<number, AIExerciseCoachingResponse>
-  >(new Map());
-  const [coachingLoading, setCoachingLoading] = useState<Set<number>>(
-    new Set(),
+  // AI coaching tips per exercise (needs an AI key; silent otherwise)
+  const exerciseCoaching = useExerciseCoaching(
+    exercisesWithSets,
+    getExerciseId,
+    getExerciseNotes,
   );
 
   // Exercise notes modal state
-  const [exerciseNotesModal, setExerciseNotesModal] = useState<{
-    exerciseId: number;
-    exerciseName: string;
-    notes: Array<{ id: number; content: string; created_at: string }>;
-    currentWeight: string;
-  } | null>(null);
-  const [newExerciseNoteContent, setNewExerciseNoteContent] = useState('');
+  const [exerciseNotesModal, setExerciseNotesModal] =
+    useState<ExerciseNotesData | null>(null);
 
   // Session changes modal state
   const [showChangesModal, setShowChangesModal] = useState(false);
@@ -152,18 +114,11 @@ export function WorkoutSession() {
   const [isUpdatingProgram, setIsUpdatingProgram] = useState(false);
 
   // Exercise info modal state
-  const [exerciseInfoModal, setExerciseInfoModal] = useState<{
-    exerciseId: number;
-    exerciseName: string;
-    videoUrl: string | null;
-    description: string;
-    muscleGroups: string;
-    equipment: string;
-  } | null>(null);
+  const [exerciseInfoModal, setExerciseInfoModal] =
+    useState<ExerciseInfo | null>(null);
 
   // Wake lock ref
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
-  const notesListRef = useRef<HTMLDivElement>(null);
 
   // Form for workout notes
   const {
@@ -218,102 +173,6 @@ export function WorkoutSession() {
     return () => clearInterval(interval);
   }, [activeWorkout]);
 
-  // Auto-scroll notes when modal opens
-  useEffect(() => {
-    if (exerciseNotesModal && notesListRef.current) {
-      notesListRef.current.scrollTop = notesListRef.current.scrollHeight;
-    }
-  }, [exerciseNotesModal]);
-
-  // Fetch AI coaching for exercises
-  const fetchExerciseCoaching = useCallback(
-    async (
-      exerciseId: number,
-      exerciseName: string,
-      targetRepMin: number,
-      targetRepMax: number,
-      targetSets: number,
-    ) => {
-      if (!getAICapability().available) return;
-      if (coachingLoading.has(exerciseId)) return;
-      if (exerciseCoaching.has(exerciseId)) return;
-
-      setCoachingLoading((prev) => new Set(prev).add(exerciseId));
-
-      try {
-        const db = await getDB();
-        const [recentSessions, notes] = await Promise.all([
-          exerciseSessions(db, exerciseId, {
-            completedWorkoutsOnly: true,
-            limit: 5,
-          }),
-          getExerciseNotes(exerciseId),
-        ]);
-        // Adapter: convert to chronological {date, sets}[] for the coaching API
-        const history = recentSessions
-          .map(({ date, sets }) => ({ date, sets }))
-          .reverse();
-
-        if (history.length === 0) {
-          setCoachingLoading((prev) => {
-            const next = new Set(prev);
-            next.delete(exerciseId);
-            return next;
-          });
-          return;
-        }
-
-        const coaching = await getExerciseCoaching(
-          exerciseName,
-          history,
-          targetRepMin,
-          targetRepMax,
-          targetSets,
-          notes,
-        );
-        coaching.exerciseId = exerciseId;
-        setExerciseCoaching((prev) => new Map(prev).set(exerciseId, coaching));
-      } catch (err) {
-        console.error('Failed to fetch exercise coaching:', err);
-      } finally {
-        setCoachingLoading((prev) => {
-          const next = new Set(prev);
-          next.delete(exerciseId);
-          return next;
-        });
-      }
-    },
-    [coachingLoading, exerciseCoaching, getExerciseNotes],
-  );
-
-  // Fetch coaching when exercises load
-  useEffect(() => {
-    if (!getAICapability().available || exercisesWithSets.length === 0) return;
-
-    exercisesWithSets.forEach((ex) => {
-      const exerciseId = getExerciseId(ex);
-      const exerciseName = ex.exercise.name;
-
-      if (
-        ex.exerciseType === 'duration' ||
-        ex.exerciseType === 'duration_weight'
-      )
-        return;
-
-      const targetRepMin = ex.workoutLogExercise.target_rep_min ?? 8;
-      const targetRepMax = ex.workoutLogExercise.target_rep_max ?? 12;
-      const targetSets = ex.workoutLogExercise.target_sets ?? 3;
-
-      fetchExerciseCoaching(
-        exerciseId,
-        exerciseName,
-        targetRepMin,
-        targetRepMax,
-        targetSets,
-      );
-    });
-  }, [exercisesWithSets, fetchExerciseCoaching, getExerciseId]);
-
   // Exercise info modal handler
   const handleOpenExerciseInfo = useCallback(
     (exerciseId: number, exerciseName: string) => {
@@ -350,10 +209,10 @@ export function WorkoutSession() {
     [getExerciseNotes],
   );
 
-  const handleAddNote = async () => {
-    if (!exerciseNotesModal || !newExerciseNoteContent.trim()) return;
+  const handleAddNote = async (content: string) => {
+    if (!exerciseNotesModal || !content.trim()) return;
 
-    let noteContent = newExerciseNoteContent.trim();
+    let noteContent = content.trim();
     if (
       exerciseNotesModal.currentWeight &&
       parseFloat(exerciseNotesModal.currentWeight) > 0
@@ -380,7 +239,6 @@ export function WorkoutSession() {
           }
         : null,
     );
-    setNewExerciseNoteContent('');
   };
 
   const handleDeleteNote = async (noteId: number) => {
@@ -572,257 +430,104 @@ export function WorkoutSession() {
     navigate('/workout');
   };
 
-  const filteredExercises = allExercises.filter(
-    (ex) =>
-      ex.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ex.muscle_groups?.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
-
-  // Redirect if no active workout
   if (!isInitialized) {
     return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <div className="animate-pulse text-slate-400">Loading workout...</div>
+      <div className="space-y-4 px-4 py-4" aria-busy="true">
+        <Skeleton className="h-16 w-full rounded-xl" />
+        <SkeletonCard />
+        <SkeletonCard />
       </div>
     );
   }
 
   if (!activeWorkout) {
     return (
-      <div className="p-4 text-center">
-        <p className="text-slate-400 mb-4">No active workout found</p>
+      <div className="px-4 py-16 text-center">
+        <p className="mb-4 text-ink-2">
+          No active workout found. Start one from Training.
+        </p>
         <Button onClick={() => navigate('/workout')}>Go to Workout</Button>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 pb-24">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => setShowCancelWorkout(true)}
-          className="p-2 hover:bg-slate-800 rounded-lg"
-        >
-          <ArrowLeft size={24} className="text-slate-400" />
-        </button>
-        <div className="text-center">
-          <h1 className="text-lg font-semibold text-white">Workout</h1>
-          <p className="text-sm text-slate-400">
-            {formatElapsedTime(elapsedTime)}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowEndWorkout(true)}
-          className="p-2 hover:bg-slate-800 rounded-lg"
-        >
-          <Check size={24} className="text-green-400" />
-        </button>
-      </div>
+    // Bottom padding clears the docked rest-timer bar.
+    <div className="pb-28">
+      <SessionBar
+        elapsedSeconds={elapsedTime}
+        completedSets={totalCompletedSets}
+        exerciseCount={exercisesWithSets.length}
+        onCancel={() => setShowCancelWorkout(true)}
+        onFinish={() => setShowEndWorkout(true)}
+      />
 
-      {/* Stats Bar */}
-      <div className="flex justify-around bg-slate-800/50 rounded-lg p-3">
-        <div className="text-center">
-          <p className="text-2xl font-bold text-white">{totalCompletedSets}</p>
-          <p className="text-xs text-slate-400">Sets</p>
-        </div>
-        <div className="text-center">
-          <p className="text-2xl font-bold text-white">
-            {exercisesWithSets.length}
-          </p>
-          <p className="text-xs text-slate-400">Exercises</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowTimer(true)}
-          className="text-center hover:bg-slate-700/50 rounded-lg px-3 py-1 transition-colors"
-        >
-          <p className="text-2xl font-bold text-blue-400">
-            <Clock size={24} />
-          </p>
-          <p className="text-xs text-slate-400">Timer</p>
-        </button>
-      </div>
+      <div className="space-y-4 px-4 py-4">
+        {exercisesWithSets.length === 0 && (
+          <Card className="px-4 py-8 text-center">
+            <p className="mb-4 text-ink-2">
+              No exercises in this workout yet. Add one to start logging.
+            </p>
+            <Button onClick={() => setShowAddExercise(true)}>
+              <Plus size={18} />
+              Add Exercise
+            </Button>
+          </Card>
+        )}
 
-      {/* Exercises */}
-      <div className="space-y-3">
-        {groupedExercises.map((item) => {
-          if (Array.isArray(item)) {
-            // Superset
-            const exerciseIndices = item.map((ex) =>
-              exercisesWithSets.indexOf(ex),
-            );
+        <SessionExerciseList
+          session={session}
+          coachingMap={exerciseCoaching}
+          linkSelection={linkSupersetSelection}
+          onLinkSelectionChange={setLinkSupersetSelection}
+          onCompleteSet={onCompleteSet}
+          onCompleteRound={onCompleteRound}
+          onUncompleteRound={onUncompleteRound}
+          onStartDurationTimer={handleStartDurationTimer}
+          onOpenNotes={handleOpenExerciseNotes}
+          onOpenInfo={handleOpenExerciseInfo}
+        />
 
-            // Generate stable key from superset exercises
-            const supersetKey = item.map((ex) => ex.exercise.id).join('-');
-            const supersetGroupId =
-              item[0]?.workoutLogExercise.superset_group_id;
-
-            return (
-              <Card
-                key={`superset-${supersetKey}`}
-                className="border-purple-500/30 bg-purple-900/10"
-              >
-                <CardContent className="p-3">
-                  <SupersetCard
-                    supersetExercises={item}
-                    exerciseIndices={exerciseIndices}
-                    coachingMap={exerciseCoaching}
-                    isLoading={isLoading}
-                    onToggleExpand={() => {
-                      item.forEach((ex) => {
-                        const exIdx = exercisesWithSets.indexOf(ex);
-                        toggleExerciseExpand(exIdx);
-                      });
-                    }}
-                    onSetChange={handleSetChange}
-                    onCompleteRound={(roundNumber) =>
-                      onCompleteRound(exerciseIndices, roundNumber)
-                    }
-                    onUncompleteRound={(roundNumber) =>
-                      onUncompleteRound(exerciseIndices, roundNumber)
-                    }
-                    onDeleteRound={(roundNumber) =>
-                      handleDeleteRound(exerciseIndices, roundNumber)
-                    }
-                    onAddRound={() => handleAddSetToSuperset(exerciseIndices)}
-                    onStartDurationTimer={handleStartDurationTimer}
-                    onOpenNotes={(
-                      exerciseIndex,
-                      exerciseName,
-                      currentWeight,
-                    ) => {
-                      const exerciseId = getExerciseId(
-                        exercisesWithSets[exerciseIndex],
-                      );
-                      handleOpenExerciseNotes(
-                        exerciseId,
-                        exerciseName,
-                        currentWeight,
-                      );
-                    }}
-                    onExerciseNameClick={(exerciseId, exerciseName) => {
-                      handleOpenExerciseInfo(exerciseId, exerciseName);
-                    }}
-                    onBreakSuperset={
-                      supersetGroupId
-                        ? () => handleBreakSuperset(supersetGroupId)
-                        : undefined
-                    }
-                    getExerciseId={getExerciseId}
-                  />
-                </CardContent>
-              </Card>
-            );
-          }
-
-          // Single exercise
-          const exerciseIndex = exercisesWithSets.indexOf(item);
-          const exerciseId = getExerciseId(item);
-          const isInSuperset = !!item.workoutLogExercise.superset_group_id;
-
-          return (
-            <Card
-              key={`exercise-${item.exercise.id}`}
-              className={
-                linkSupersetSelection === exerciseIndex
-                  ? 'border-purple-500/50 bg-purple-900/10'
-                  : ''
-              }
+        {linkSupersetSelection !== null && (
+          <div className="flex items-center justify-between gap-2 rounded-xl bg-sunken py-1 pr-1 pl-3">
+            <p className="flex items-center gap-2 text-sm text-ink">
+              <Combine size={16} aria-hidden="true" />
+              Select another exercise to create superset
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setLinkSupersetSelection(null)}
             >
-              <CardContent className="p-3">
-                <ExerciseCard
-                  exerciseData={item}
-                  exerciseIndex={exerciseIndex}
-                  coaching={exerciseCoaching.get(exerciseId)}
-                  isSelectedForLink={linkSupersetSelection === exerciseIndex}
-                  isLoading={isLoading}
-                  onToggleExpand={() => toggleExerciseExpand(exerciseIndex)}
-                  onSetChange={(setIndex, field, value) =>
-                    handleSetChange(exerciseIndex, setIndex, field, value)
-                  }
-                  onCompleteSet={(setIndex) =>
-                    onCompleteSet(exerciseIndex, setIndex)
-                  }
-                  onUncompleteSet={(setIndex) =>
-                    handleUncompleteSet(exerciseIndex, setIndex)
-                  }
-                  onDeleteSet={(setIndex) =>
-                    handleDeleteSet(exerciseIndex, setIndex)
-                  }
-                  onAddSet={() => handleAddSet(exerciseIndex)}
-                  onStartDurationTimer={(setIndex) =>
-                    handleStartDurationTimer(exerciseIndex, setIndex)
-                  }
-                  onOpenNotes={() => {
-                    const name = item.exercise.name;
-                    handleOpenExerciseNotes(
-                      exerciseId,
-                      name,
-                      item.sets[0]?.weight || '0',
-                    );
-                  }}
-                  onExerciseNameClick={() => {
-                    handleOpenExerciseInfo(exerciseId, item.exercise.name);
-                  }}
-                  onRemoveExercise={() => handleRemoveExercise(exerciseIndex)}
-                  onLinkExercise={
-                    !isInSuperset
-                      ? () => {
-                          if (linkSupersetSelection === null) {
-                            // First selection - mark this exercise
-                            setLinkSupersetSelection(exerciseIndex);
-                          } else if (linkSupersetSelection === exerciseIndex) {
-                            // Clicking same exercise - deselect
-                            setLinkSupersetSelection(null);
-                          } else {
-                            // Second selection - create superset
-                            handleLinkExercisesAsSuperset([
-                              linkSupersetSelection,
-                              exerciseIndex,
-                            ]);
-                            setLinkSupersetSelection(null);
-                          }
-                        }
-                      : undefined
-                  }
-                />
-              </CardContent>
-            </Card>
-          );
-        })}
+              Cancel
+            </Button>
+          </div>
+        )}
+
+        {exercisesWithSets.length > 0 && (
+          <Button
+            className="w-full"
+            variant="secondary"
+            onClick={() => setShowAddExercise(true)}
+          >
+            <Plus size={18} />
+            Add Exercise
+          </Button>
+        )}
+
+        {/* Finish sits after the work, well apart from set controls, and confirms first. */}
+        <div className="border-t border-line pt-6">
+          <Button
+            size="lg"
+            className="w-full"
+            onClick={() => setShowEndWorkout(true)}
+          >
+            <Flag size={18} />
+            Finish Workout
+          </Button>
+        </div>
       </div>
 
-      {/* Link superset hint */}
-      {linkSupersetSelection !== null && (
-        <div className="p-3 bg-purple-900/30 border border-purple-500/30 rounded-lg flex items-center justify-between">
-          <div className="text-sm text-purple-300">
-            <Combine size={14} className="inline mr-2" />
-            Select another exercise to create superset
-          </div>
-          <button
-            type="button"
-            onClick={() => setLinkSupersetSelection(null)}
-            className="text-xs text-slate-400 hover:text-white px-2 py-1"
-          >
-            Cancel
-          </button>
-        </div>
-      )}
-
-      {/* Add Exercise Button */}
-      <Button
-        className="w-full"
-        variant="secondary"
-        onClick={() => setShowAddExercise(true)}
-      >
-        <Plus size={20} className="mr-2" />
-        Add Exercise
-      </Button>
-
-      {/* Rest Timer */}
       <RestTimer
         isOpen={showTimer}
         onOpenChange={setShowTimer}
@@ -834,7 +539,6 @@ export function WorkoutSession() {
         setInitialSeconds={setTimerInitialSeconds}
       />
 
-      {/* Duration Timer */}
       {durationTimerData && (
         <DurationTimer
           targetSeconds={durationTimerData.targetSeconds}
@@ -843,283 +547,35 @@ export function WorkoutSession() {
         />
       )}
 
-      {/* Add Exercise Modal */}
-      <Modal
+      <AddExerciseModal
         isOpen={showAddExercise}
-        onClose={() => {
-          setShowAddExercise(false);
-          setSearchQuery('');
-          setSupersetSelection([]);
-        }}
-        title={
-          supersetSelection.length > 0
-            ? `Add Superset (${supersetSelection.length} selected)`
-            : 'Add Exercise'
-        }
-      >
-        <Input
-          placeholder="Search exercises..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="mb-4"
-        />
+        onClose={() => setShowAddExercise(false)}
+        exercises={allExercises}
+        onAddExercise={handleAddExercise}
+      />
 
-        {/* Selection info and actions */}
-        {supersetSelection.length > 0 && (
-          <div className="mb-4 p-3 bg-purple-900/30 border border-purple-500/30 rounded-lg">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-purple-300">
-                <Combine size={14} className="inline mr-1" />
-                {supersetSelection.length} exercise
-                {supersetSelection.length > 1 ? 's' : ''} selected
-              </span>
-              <button
-                type="button"
-                onClick={() => setSupersetSelection([])}
-                className="text-xs text-slate-400 hover:text-white"
-              >
-                Clear
-              </button>
-            </div>
-            <div className="text-xs text-slate-400 mb-2">
-              {supersetSelection.map((ex) => ex.name).join(' + ')}
-            </div>
-            {supersetSelection.length >= 2 && (
-              <Button
-                className="w-full"
-                onClick={async () => {
-                  const supersetId = generateSupersetId();
-                  for (const exercise of supersetSelection) {
-                    await handleAddExercise(exercise, supersetId);
-                  }
-                  setShowAddExercise(false);
-                  setSearchQuery('');
-                  setSupersetSelection([]);
-                }}
-              >
-                <Combine size={16} className="mr-2" />
-                Add as Superset
-              </Button>
-            )}
-            {supersetSelection.length === 1 && (
-              <p className="text-xs text-slate-500 text-center">
-                Select 1 more exercise for superset
-              </p>
-            )}
-          </div>
-        )}
-
-        <div className="max-h-80 overflow-y-auto space-y-2">
-          {filteredExercises.map((exercise) => {
-            const isSelected = supersetSelection.some(
-              (ex) => ex.id === exercise.id,
-            );
-
-            return (
-              <button
-                key={exercise.id}
-                type="button"
-                onClick={() => {
-                  if (isSelected) {
-                    // Deselect
-                    setSupersetSelection((prev) =>
-                      prev.filter((ex) => ex.id !== exercise.id),
-                    );
-                  } else if (supersetSelection.length > 0) {
-                    // Add to superset selection
-                    setSupersetSelection((prev) => [...prev, exercise]);
-                  } else {
-                    // No selection mode - add single exercise
-                    handleAddExercise(exercise);
-                    setShowAddExercise(false);
-                    setSearchQuery('');
-                  }
-                }}
-                onContextMenu={(e) => {
-                  // Long press / right click to start superset selection
-                  e.preventDefault();
-                  if (!isSelected) {
-                    setSupersetSelection((prev) => [...prev, exercise]);
-                  }
-                }}
-                className={`w-full text-left p-3 rounded-lg transition-colors ${
-                  isSelected
-                    ? 'bg-purple-900/50 border border-purple-500/50'
-                    : 'bg-slate-800 hover:bg-slate-700'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  {isSelected ? (
-                    <Check size={16} className="text-purple-400" />
-                  ) : exercise.exercise_type === 'duration' ||
-                    exercise.exercise_type === 'duration_weight' ? (
-                    <Clock size={16} className="text-slate-400" />
-                  ) : (
-                    <Dumbbell size={16} className="text-slate-400" />
-                  )}
-                  <span className="font-medium text-white">
-                    {exercise.name}
-                  </span>
-                  {supersetSelection.length === 0 && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSupersetSelection([exercise]);
-                      }}
-                      className="ml-auto p-1 text-slate-500 hover:text-purple-400 hover:bg-purple-900/30 rounded"
-                      title="Start superset"
-                    >
-                      <Combine size={14} />
-                    </button>
-                  )}
-                </div>
-                {exercise.muscle_groups && (
-                  <p className="text-xs text-slate-400 mt-1">
-                    {exercise.muscle_groups}
-                  </p>
-                )}
-              </button>
-            );
-          })}
-          {filteredExercises.length === 0 && (
-            <p className="text-center text-slate-400 py-4">
-              No exercises found
-            </p>
-          )}
-        </div>
-
-        {/* Hint for superset mode */}
-        {supersetSelection.length === 0 && (
-          <p className="text-xs text-slate-500 text-center mt-3">
-            Tap <Combine size={10} className="inline mx-1" /> to create a
-            superset
-          </p>
-        )}
-      </Modal>
-
-      {/* End Workout Modal */}
-      <Modal
+      <EndWorkoutModal
         isOpen={showEndWorkout}
         onClose={() => setShowEndWorkout(false)}
-        title="End Workout"
-      >
-        <form onSubmit={handleSubmit(onEndWorkout)} className="space-y-4">
-          <div>
-            <p className="text-slate-300 mb-2">
-              Great work! You completed {totalCompletedSets} sets in{' '}
-              {formatElapsedTime(elapsedTime)}.
-            </p>
-            <TextArea
-              {...register('notes')}
-              placeholder="Add any notes about this workout (optional)"
-              rows={3}
-            />
-          </div>
-          <div className="flex gap-3">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setShowEndWorkout(false)}
-              className="flex-1"
-            >
-              Cancel
-            </Button>
-            <Button type="submit" className="flex-1">
-              Save Workout
-            </Button>
-          </div>
-        </form>
-      </Modal>
+        onSubmit={handleSubmit(onEndWorkout)}
+        register={register}
+        completedSets={totalCompletedSets}
+        elapsedSeconds={elapsedTime}
+      />
 
-      {/* Cancel Workout Modal */}
-      <Modal
+      <CancelWorkoutModal
         isOpen={showCancelWorkout}
         onClose={() => setShowCancelWorkout(false)}
-        title="Cancel Workout"
-      >
-        <p className="text-slate-300 mb-4">
-          Are you sure you want to cancel this workout? All progress will be
-          lost.
-        </p>
-        <div className="flex gap-3">
-          <Button
-            variant="secondary"
-            onClick={() => setShowCancelWorkout(false)}
-            className="flex-1"
-          >
-            Keep Going
-          </Button>
-          <Button variant="danger" onClick={onCancelWorkout} className="flex-1">
-            Cancel Workout
-          </Button>
-        </div>
-      </Modal>
+        onConfirm={onCancelWorkout}
+      />
 
-      {/* Exercise Notes Modal */}
-      <Modal
-        isOpen={!!exerciseNotesModal}
+      <ExerciseNotesModal
+        data={exerciseNotesModal}
         onClose={() => setExerciseNotesModal(null)}
-        title={`Notes: ${exerciseNotesModal?.exerciseName || ''}`}
-      >
-        {exerciseNotesModal && (
-          <div className="space-y-4">
-            {/* Notes List */}
-            <div
-              ref={notesListRef}
-              className="max-h-60 overflow-y-auto space-y-2"
-            >
-              {exerciseNotesModal.notes.length === 0 ? (
-                <p className="text-slate-400 text-center py-4">No notes yet</p>
-              ) : (
-                exerciseNotesModal.notes.map((note) => (
-                  <div
-                    key={note.id}
-                    className="flex items-start gap-2 p-2 bg-slate-800 rounded-lg"
-                  >
-                    <div className="flex-1">
-                      <p className="text-sm text-slate-300">{note.content}</p>
-                      <p className="text-xs text-slate-500 mt-1">
-                        {new Date(note.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteNote(note.id)}
-                      className="p-1 text-red-400/70 hover:text-red-400 hover:bg-red-900/30 rounded"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
+        onAddNote={handleAddNote}
+        onDeleteNote={handleDeleteNote}
+      />
 
-            {/* Add Note Input */}
-            <div className="flex gap-2">
-              <Input
-                value={newExerciseNoteContent}
-                onChange={(e) => setNewExerciseNoteContent(e.target.value)}
-                placeholder="Add a note..."
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddNote();
-                  }
-                }}
-              />
-              <Button
-                onClick={handleAddNote}
-                disabled={!newExerciseNoteContent.trim()}
-              >
-                <Send size={16} />
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      {/* Session Changes Modal */}
       {sessionDiff && (
         <SessionChangesModal
           isOpen={showChangesModal}
@@ -1135,82 +591,10 @@ export function WorkoutSession() {
         />
       )}
 
-      {/* Exercise Info Modal */}
-      <Modal
-        isOpen={!!exerciseInfoModal}
+      <ExerciseInfoModal
+        info={exerciseInfoModal}
         onClose={() => setExerciseInfoModal(null)}
-        title={exerciseInfoModal?.exerciseName || 'Exercise Info'}
-      >
-        {exerciseInfoModal && (
-          <div className="space-y-4">
-            {/* Description */}
-            {exerciseInfoModal.description && (
-              <div>
-                <h4 className="text-sm font-medium text-slate-400 mb-1">
-                  Description
-                </h4>
-                <p className="text-slate-300 text-sm">
-                  {exerciseInfoModal.description}
-                </p>
-              </div>
-            )}
-
-            {/* Muscle Groups */}
-            {exerciseInfoModal.muscleGroups && (
-              <div>
-                <h4 className="text-sm font-medium text-slate-400 mb-1">
-                  Muscle Groups
-                </h4>
-                <p className="text-slate-300 text-sm">
-                  {exerciseInfoModal.muscleGroups}
-                </p>
-              </div>
-            )}
-
-            {/* Equipment */}
-            {exerciseInfoModal.equipment && (
-              <div>
-                <h4 className="text-sm font-medium text-slate-400 mb-1">
-                  Equipment
-                </h4>
-                <p className="text-slate-300 text-sm">
-                  {exerciseInfoModal.equipment}
-                </p>
-              </div>
-            )}
-
-            {/* Tutorial Link */}
-            <div>
-              <h4 className="text-sm font-medium text-slate-400 mb-2">
-                Tutorial
-              </h4>
-              {exerciseInfoModal.videoUrl ? (
-                <a
-                  href={exerciseInfoModal.videoUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                >
-                  <Play size={16} />
-                  Watch Tutorial
-                </a>
-              ) : (
-                <a
-                  href={`https://www.youtube.com/results?search_query=${encodeURIComponent(
-                    `${exerciseInfoModal.exerciseName} exercise form tutorial`,
-                  )}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-                >
-                  <Play size={16} />
-                  Search on YouTube
-                </a>
-              )}
-            </div>
-          </div>
-        )}
-      </Modal>
+      />
     </div>
   );
 }

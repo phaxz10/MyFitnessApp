@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { getDB } from '../services/db';
 import { formatDate } from '../utils/date';
+import { pgDate } from '../utils/pgValues';
 
 export interface DayConsistency {
   date: string;
@@ -89,19 +90,13 @@ export function useWeeklyConsistency() {
 
         // Convert to sets for O(1) lookup
         const weightDates = new Set(
-          (weightResult.rows as { date: string }[]).map((r) =>
-            formatDate(r.date),
-          ),
+          (weightResult.rows as { date: string }[]).map((r) => pgDate(r.date)),
         );
         const foodDates = new Set(
-          (foodResult.rows as { date: string }[]).map((r) =>
-            formatDate(r.date),
-          ),
+          (foodResult.rows as { date: string }[]).map((r) => pgDate(r.date)),
         );
         const workoutDates = new Set(
-          (workoutResult.rows as { date: string }[]).map((r) =>
-            formatDate(r.date),
-          ),
+          (workoutResult.rows as { date: string }[]).map((r) => pgDate(r.date)),
         );
 
         // Set of days of week (0-6) that have scheduled workouts

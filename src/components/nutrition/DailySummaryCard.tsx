@@ -1,7 +1,7 @@
 import { Copy } from 'lucide-react';
 import type { DailyCalorieSummary, UserProfile } from '../../types';
+import { Button, Card, CardContent } from '../ui';
 import { MacroLegend } from './MacroLegend';
-import { NutritionRings } from './NutritionRings';
 
 export interface DailySummaryCardProps {
   summary: DailyCalorieSummary;
@@ -28,25 +28,42 @@ export function DailySummaryCard({
     carbs: summary.total_carbs_g,
     fat: summary.total_fat_g,
   };
+  const over = targets.calories > 0 && consumed.calories > targets.calories;
 
   return (
-    <div className="bg-slate-800/80 rounded-3xl p-6 mb-4 backdrop-blur">
-      <div className="flex items-center gap-4">
-        <NutritionRings consumed={consumed} targets={targets} size={144} />
-        <div className="flex-1">
-          <MacroLegend consumed={consumed} targets={targets} />
+    <Card>
+      <CardContent className="space-y-4">
+        <div className="flex items-baseline justify-between gap-3">
+          <p className="num leading-none">
+            <span
+              className={`text-5xl font-bold ${over ? 'text-danger' : 'text-ink'}`}
+            >
+              {Math.round(consumed.calories).toLocaleString()}
+            </span>
+            <span className="text-ink-3 text-lg">
+              {' '}
+              / {Math.round(targets.calories).toLocaleString()} kcal
+            </span>
+          </p>
         </div>
-      </div>
 
-      <button
-        type="button"
-        onClick={onCopyPreviousDay}
-        disabled={copyLoading}
-        className="mt-5 w-full py-2.5 rounded-full text-xs font-semibold tracking-wide text-rose-200 bg-rose-500/10 hover:bg-rose-500/20 transition-colors flex items-center justify-center gap-2 disabled:opacity-40"
-      >
-        <Copy size={14} />
-        COPY YESTERDAY
-      </button>
-    </div>
+        <MacroLegend
+          consumed={consumed}
+          targets={targets}
+          showCalories={false}
+        />
+
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={onCopyPreviousDay}
+          disabled={copyLoading}
+          className="w-full h-11"
+        >
+          <Copy size={14} aria-hidden="true" />
+          Copy yesterday's meals
+        </Button>
+      </CardContent>
+    </Card>
   );
 }

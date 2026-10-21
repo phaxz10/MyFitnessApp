@@ -1,10 +1,16 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQueryClient } from '@tanstack/react-query';
-import { Dumbbell } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
-import { MACRO_PALETTE } from '../components/nutrition';
+import { ChoiceList } from '../components/onboarding/ChoiceList';
+import { OnboardingFrame } from '../components/onboarding/OnboardingFrame';
+import {
+  CalculatingScreen,
+  ReadyScreen,
+} from '../components/onboarding/StatusScreens';
+import { TargetsEditor } from '../components/onboarding/TargetsEditor';
+import { WelcomeScreen } from '../components/onboarding/WelcomeScreen';
 import { AISetupForm } from '../components/settings/AISetupForm';
 import { Button, Input } from '../components/ui';
 import { AI_PROVIDER, FALLBACK_MODEL } from '../constants/aiProviders';
@@ -33,14 +39,35 @@ type Step =
   | 'targets'
   | 'ready';
 
-const activityOptions = [
+type ActivityLevel = OnboardingFormData['activityLevel'];
+type Goal = OnboardingFormData['goal'];
+
+const TOTAL_STEPS = 6;
+
+// Steps that show the progress indicator, in order, with the step to return
+// to on Back.
+const STEP_FLOW: Partial<Record<Step, { index: number; back: Step }>> = {
+  basic: { index: 1, back: 'welcome' },
+  weight: { index: 2, back: 'basic' },
+  activity: { index: 3, back: 'weight' },
+  goal: { index: 4, back: 'activity' },
+  api: { index: 5, back: 'goal' },
+  targets: { index: 6, back: 'api' },
+};
+
+const GENDER_OPTIONS = [
+  { value: 'male', label: 'Male' },
+  { value: 'female', label: 'Female' },
+] as const;
+
+const activityOptions: { value: ActivityLevel; label: string }[] = [
   { value: 'sedentary', label: 'Sedentary (little or no exercise)' },
   { value: 'light', label: 'Light (exercise 1-3 days/week)' },
   { value: 'moderate', label: 'Moderate (exercise 3-5 days/week)' },
   { value: 'active', label: 'Active (hard exercise 6-7 days/week)' },
 ];
 
-const goalOptions = [
+const goalOptions: { value: Goal; label: string }[] = [
   { value: 'bulk', label: 'Bulk - Aggressive muscle gain' },
   { value: 'lean_bulk', label: 'Lean Bulk - Slow muscle gain, minimize fat' },
   { value: 'recomp', label: 'Recomp - Maintain weight, change composition' },
@@ -280,260 +307,187 @@ export function Onboarding() {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        {/* Welcome Step */}
-        {step === 'welcome' && (
-          <div className="text-center">
-            <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-6">
-              <Dumbbell size={40} className="text-white" />
-            </div>
-            <h1 className="text-3xl font-bold text-white mb-2">
-              MyPersonalFitness
-            </h1>
-            <p className="text-slate-400 mb-8">
-              Your AI-powered fitness companion
-            </p>
-            <Button onClick={handleNext} size="lg" className="w-full">
-              Get Started
-            </Button>
+  // Screens that sit outside the numbered flow.
+  if (step === 'welcome') {
+    return (
+      <WelcomeScreen
+        onStart={handleNext}
+        onGoogleSignIn={handleGoogleSignIn}
+        isSigningIn={isSigningIn}
+        error={error}
+      />
+    );
+  }
+  if (step === 'calculating') return <CalculatingScreen />;
+  if (step === 'ready') return <ReadyScreen onContinue={goToDashboard} />;
 
-            {/* Google Sign-In for backup */}
-            <div className="mt-6 pt-6 border-t border-slate-700">
-              <p className="text-slate-500 text-sm mb-3">
-                Sign in to sync your data
-              </p>
-              <Button
-                variant="secondary"
-                onClick={handleGoogleSignIn}
-                size="lg"
-                className="w-full"
-                isLoading={isSigningIn}
-              >
-                <svg
-                  aria-hidden="true"
-                  className="w-5 h-5 mr-2"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    fill="#4285F4"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  />
-                </svg>
-                Sign in with Google
-              </Button>
-              {error && <p className="text-red-400 text-sm mt-3">{error}</p>}
-            </div>
-          </div>
-        )}
+  const flow = STEP_FLOW[step];
+  if (!flow) return null;
 
-        {/* Basic Info Step */}
-        {step === 'basic' && (
-          <div>
-            <h2 className="text-2xl font-bold text-white mb-6">
-              Basic Information
-            </h2>
-            <div className="space-y-4">
-              <Input
-                label="Birthdate"
-                type="date"
-                {...register('birthdate')}
-                error={errors.birthdate?.message}
-              />
-              <div>
-                <label
-                  htmlFor="gender-selection"
-                  className="block text-sm font-medium text-slate-300 mb-2"
-                >
-                  Gender
-                </label>
-                <div id="gender-selection" className="flex gap-2">
-                  <Button
-                    variant={gender === 'male' ? 'primary' : 'secondary'}
-                    onClick={() => setValue('gender', 'male')}
-                    className="flex-1"
-                    type="button"
-                  >
-                    Male
-                  </Button>
-                  <Button
-                    variant={gender === 'female' ? 'primary' : 'secondary'}
-                    onClick={() => setValue('gender', 'female')}
-                    className="flex-1"
-                    type="button"
-                  >
-                    Female
-                  </Button>
-                </div>
-              </div>
-              <Input
-                label="Height (cm)"
-                type="number"
-                {...register('heightCm')}
-                placeholder="Enter your height in cm"
-                error={errors.heightCm?.message}
-              />
-            </div>
-            {error && <p className="text-red-400 text-sm mt-4">{error}</p>}
-            <Button onClick={handleNext} size="lg" className="w-full mt-6">
-              Continue
-            </Button>
-          </div>
-        )}
+  const frame = {
+    step: flow.index,
+    total: TOTAL_STEPS,
+    onBack: () => {
+      setError(null);
+      setStep(flow.back);
+    },
+    error,
+  };
+  const continueButton = (label: string, disabled = false) => (
+    <Button
+      onClick={handleNext}
+      size="lg"
+      className="w-full"
+      disabled={disabled}
+    >
+      {label}
+    </Button>
+  );
 
-        {/* Weight Step */}
-        {step === 'weight' && (
-          <div>
-            <h2 className="text-2xl font-bold text-white mb-6">
-              Current Weight
-            </h2>
+  switch (step) {
+    case 'basic':
+      return (
+        <OnboardingFrame
+          {...frame}
+          title="Basic Information"
+          actions={continueButton('Continue')}
+        >
+          <div className="space-y-4">
             <Input
-              label="Weight (kg)"
-              type="number"
-              step="0.1"
-              {...register('weightKg')}
-              placeholder="Enter your current weight"
-              error={errors.weightKg?.message}
+              label="Birthdate"
+              type="date"
+              {...register('birthdate')}
+              error={errors.birthdate?.message}
             />
-            <p className="text-slate-500 text-sm mt-2">
-              This will be your starting point for tracking progress.
-            </p>
-            {error && <p className="text-red-400 text-sm mt-4">{error}</p>}
-            <Button onClick={handleNext} size="lg" className="w-full mt-6">
-              Continue
-            </Button>
-          </div>
-        )}
-
-        {/* Activity Level Step */}
-        {step === 'activity' && (
-          <div>
-            <h2 className="text-2xl font-bold text-white mb-6">
-              Activity Level
-            </h2>
-            <div className="space-y-2">
-              {activityOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() =>
-                    setValue(
-                      'activityLevel',
-                      option.value as typeof activityLevel,
-                    )
-                  }
-                  className={`w-full p-4 rounded-lg border text-left transition-colors ${
-                    activityLevel === option.value
-                      ? 'border-blue-500 bg-blue-500/10 text-white'
-                      : 'border-slate-600 bg-slate-800 text-slate-300 hover:border-slate-500'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
+            <div>
+              <p
+                id="gender-label"
+                className="block text-sm font-semibold text-ink-2 mb-1.5"
+              >
+                Gender
+              </p>
+              <div
+                role="radiogroup"
+                aria-labelledby="gender-label"
+                className="flex gap-2"
+              >
+                {GENDER_OPTIONS.map((option) => (
+                  <Button
+                    key={option.value}
+                    variant={gender === option.value ? 'primary' : 'secondary'}
+                    onClick={() => setValue('gender', option.value)}
+                    className="flex-1"
+                    type="button"
+                    role="radio"
+                    aria-checked={gender === option.value}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+              </div>
             </div>
-            <Button onClick={handleNext} size="lg" className="w-full mt-6">
-              Continue
-            </Button>
+            <Input
+              label="Height (cm)"
+              type="number"
+              inputMode="decimal"
+              {...register('heightCm')}
+              placeholder="Enter your height in cm"
+              error={errors.heightCm?.message}
+            />
           </div>
-        )}
+        </OnboardingFrame>
+      );
 
-        {/* Goal Step */}
-        {step === 'goal' && (
-          <div>
-            <h2 className="text-2xl font-bold text-white mb-6">Your Goal</h2>
-            <div className="space-y-2">
-              {goalOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setValue('goal', option.value as typeof goal)}
-                  className={`w-full p-4 rounded-lg border text-left transition-colors ${
-                    goal === option.value
-                      ? 'border-blue-500 bg-blue-500/10 text-white'
-                      : 'border-slate-600 bg-slate-800 text-slate-300 hover:border-slate-500'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+    case 'weight':
+      return (
+        <OnboardingFrame
+          {...frame}
+          title="Current Weight"
+          description="This will be your starting point for tracking progress."
+          actions={continueButton('Continue')}
+        >
+          <Input
+            label="Weight (kg)"
+            type="number"
+            inputMode="decimal"
+            step="0.1"
+            {...register('weightKg')}
+            placeholder="Enter your current weight"
+            error={errors.weightKg?.message}
+          />
+        </OnboardingFrame>
+      );
 
-            <h3 className="text-lg font-semibold text-white mt-8 mb-1">
-              Diet Type
-            </h3>
-            <p className="text-slate-400 text-sm mb-3">
+    case 'activity':
+      return (
+        <OnboardingFrame
+          {...frame}
+          title="Activity Level"
+          actions={continueButton('Continue')}
+        >
+          <ChoiceList
+            label="Activity level"
+            options={activityOptions}
+            value={activityLevel}
+            onChange={(next) => setValue('activityLevel', next)}
+          />
+        </OnboardingFrame>
+      );
+
+    case 'goal':
+      return (
+        <OnboardingFrame
+          {...frame}
+          title="Your Goal"
+          actions={continueButton('Continue')}
+        >
+          <ChoiceList
+            label="Goal"
+            options={goalOptions}
+            value={goal}
+            onChange={(next) => setValue('goal', next)}
+          />
+
+          <div className="space-y-1 pt-4">
+            <h2 className="text-lg font-bold text-ink">Diet Type</h2>
+            <p className="text-ink-2 text-sm">
               How carbs are split. Low carb / keto pin carbs low and let fat
               fill the rest.
             </p>
-            <div className="space-y-2">
-              {dietTypeOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setValue('dietType', option.value)}
-                  className={`w-full p-4 rounded-lg border text-left transition-colors ${
-                    dietType === option.value
-                      ? 'border-blue-500 bg-blue-500/10 text-white'
-                      : 'border-slate-600 bg-slate-800 text-slate-300 hover:border-slate-500'
-                  }`}
-                >
-                  <span className="block font-medium">{option.label}</span>
-                  <span className="block text-sm text-slate-400">
-                    {option.description}
-                  </span>
-                </button>
-              ))}
-            </div>
-            {dietType === 'keto' && (
-              <p className="text-amber-400/80 text-xs mt-3">
-                Keto is a therapeutic approach — worth discussing with a doctor
-                if you manage blood sugar or take medication.
-              </p>
-            )}
-            <Button onClick={handleNext} size="lg" className="w-full mt-6">
-              Continue
-            </Button>
           </div>
-        )}
-
-        {/* AI Setup Step */}
-        {step === 'api' && (
-          <div>
-            <h2 className="text-2xl font-bold text-white mb-6">AI Setup</h2>
-            <AISetupForm
-              value={{ model: aiModel, apiKey }}
-              onChange={(next) => {
-                setValue('aiModel', next.model);
-                setValue('apiKey', next.apiKey);
-              }}
-            />
-            <p className="text-slate-500 text-sm mt-4">
-              You can skip this and add it later in Settings.
+          <ChoiceList
+            label="Diet type"
+            options={dietTypeOptions}
+            value={dietType}
+            onChange={(next) => setValue('dietType', next)}
+          />
+          {dietType === 'keto' && (
+            <p className="text-warn text-sm">
+              Keto is a therapeutic approach — worth discussing with a doctor if
+              you manage blood sugar or take medication.
             </p>
-            {error && <p className="text-red-400 text-sm mt-4">{error}</p>}
-            <div className="flex gap-2 mt-6">
+          )}
+        </OnboardingFrame>
+      );
+
+    case 'api':
+      return (
+        <OnboardingFrame
+          {...frame}
+          title="AI Setup"
+          description="You can skip this and add it later in Settings."
+          actions={
+            <div className="flex gap-2">
               <Button
                 variant="secondary"
+                size="lg"
                 onClick={handleNext}
                 className="flex-1"
               >
                 Skip for now
               </Button>
               <Button
+                size="lg"
                 onClick={handleNext}
                 className="flex-1"
                 disabled={!aiModel || !apiKey}
@@ -541,127 +495,34 @@ export function Onboarding() {
                 Continue
               </Button>
             </div>
-          </div>
-        )}
+          }
+        >
+          <AISetupForm
+            value={{ model: aiModel, apiKey }}
+            onChange={(next) => {
+              setValue('aiModel', next.model);
+              setValue('apiKey', next.apiKey);
+            }}
+          />
+        </OnboardingFrame>
+      );
 
-        {/* Calculating Step */}
-        {step === 'calculating' && (
-          <div className="text-center">
-            <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-6" />
-            <h2 className="text-2xl font-bold text-white mb-2">
-              Calculating...
-            </h2>
-            <p className="text-slate-400">
-              Setting up your personalized targets
-            </p>
-          </div>
-        )}
+    case 'targets':
+      return (
+        <OnboardingFrame
+          {...frame}
+          title="Your Targets"
+          description="You can adjust these values or change them later in Settings."
+          actions={continueButton('Confirm & Continue')}
+        >
+          <TargetsEditor
+            values={targets}
+            onChange={(next) => setValue('targets', next)}
+          />
+        </OnboardingFrame>
+      );
 
-        {/* Targets Step */}
-        {step === 'targets' && (
-          <div>
-            <h2 className="text-2xl font-bold text-white mb-6">Your Targets</h2>
-            <div className="bg-slate-800 rounded-xl p-4 space-y-4">
-              <TargetRow
-                label="Daily Calories"
-                value={targets.calories}
-                onChange={(v) =>
-                  setValue('targets', { ...targets, calories: v })
-                }
-                dotColor={MACRO_PALETTE.calories.hex}
-              />
-              <TargetRow
-                label="Protein (g)"
-                value={targets.protein}
-                onChange={(v) =>
-                  setValue('targets', { ...targets, protein: v })
-                }
-                dotColor={MACRO_PALETTE.protein.hex}
-              />
-              <TargetRow
-                label="Carbs (g)"
-                value={targets.carbs}
-                onChange={(v) => setValue('targets', { ...targets, carbs: v })}
-                dotColor={MACRO_PALETTE.carbs.hex}
-              />
-              <TargetRow
-                label="Fat (g)"
-                value={targets.fat}
-                onChange={(v) => setValue('targets', { ...targets, fat: v })}
-                dotColor={MACRO_PALETTE.fat.hex}
-              />
-            </div>
-            <p className="text-slate-500 text-sm mt-4">
-              You can adjust these values or change them later in Settings.
-            </p>
-            {error && <p className="text-red-400 text-sm mt-4">{error}</p>}
-            <Button onClick={handleNext} size="lg" className="w-full mt-6">
-              Confirm & Continue
-            </Button>
-          </div>
-        )}
-
-        {/* Ready Step */}
-        {step === 'ready' && (
-          <div className="text-center">
-            <div className="w-20 h-20 bg-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
-              <svg
-                className="w-10 h-10 text-white"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                aria-labelledby="check-icon-title"
-              >
-                <title id="check-icon-title">Success checkmark</title>
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
-            </div>
-            <h2 className="text-2xl font-bold text-white mb-2">
-              You're All Set!
-            </h2>
-            <p className="text-slate-400 mb-8">
-              Your fitness journey starts now.
-            </p>
-            <Button onClick={goToDashboard} size="lg" className="w-full">
-              Go to Dashboard
-            </Button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// Macro target row with a color dot from MACRO_PALETTE so each line carries
-// the same color identity as the rings on CalorieLog.
-interface TargetRowProps {
-  label: string;
-  value: number;
-  onChange: (next: number) => void;
-  dotColor: string;
-}
-
-function TargetRow({ label, value, onChange, dotColor }: TargetRowProps) {
-  return (
-    <div className="flex justify-between items-center">
-      <div className="flex items-center gap-2">
-        <span
-          className="w-2 h-2 rounded-full flex-shrink-0"
-          style={{ background: dotColor }}
-        />
-        <span className="text-slate-300">{label}</span>
-      </div>
-      <Input
-        type="number"
-        value={value}
-        onChange={(e) => onChange(parseInt(e.target.value, 10) || 0)}
-        className="w-24 text-right"
-      />
-    </div>
-  );
+    default:
+      return null;
+  }
 }

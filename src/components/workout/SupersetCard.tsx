@@ -1,21 +1,27 @@
 import {
-  Check,
   ChevronDown,
-  ChevronUp,
+  Combine,
   Loader2,
   PencilLine,
-  Play,
   Plus,
+  SquarePen,
   Trash2,
-  X,
+  Unlink,
 } from 'lucide-react';
+import { useState } from 'react';
 import type { ExerciseWithSets } from '../../hooks/useWorkoutSession';
 import type { AIExerciseCoachingResponse } from '../../types';
+import { getProgressionArrow } from '../../utils/workoutHelpers';
+import { Button, ExerciseMark } from '../ui';
 import {
-  getExerciseTypeIcon,
-  getProgressionArrow,
-} from '../../utils/workoutHelpers';
-import { Input } from '../ui';
+  CoachingTip,
+  DoneButton,
+  exerciseKind,
+  NumberCell,
+  type SetField,
+  StartHoldButton,
+  ToolButton,
+} from './SetCells';
 
 interface SupersetCardProps {
   supersetExercises: ExerciseWithSets[];
@@ -26,7 +32,7 @@ interface SupersetCardProps {
   onSetChange: (
     exerciseIndex: number,
     setIndex: number,
-    field: 'reps' | 'weight' | 'durationSeconds',
+    field: SetField,
     value: string,
   ) => void;
   onCompleteRound: (roundNumber: number) => void;
@@ -43,6 +49,10 @@ interface SupersetCardProps {
   onBreakSuperset?: () => void;
   getExerciseId: (ex: ExerciseWithSets) => number;
 }
+
+// Fixed columns inside a round: exercise / weight / reps (or sec) / status.
+const ROUND_GRID =
+  'grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem_3rem] items-center gap-2';
 
 export function SupersetCard({
   supersetExercises,
@@ -61,373 +71,327 @@ export function SupersetCard({
   onBreakSuperset,
   getExerciseId,
 }: SupersetCardProps) {
+  const [editing, setEditing] = useState(false);
   const maxSets = Math.max(...supersetExercises.map((ex) => ex.sets.length));
   const allExpanded = supersetExercises.every((ex) => ex.isExpanded);
+  const firstIndex = exerciseIndices[0];
 
-  // Calculate totals based on completed field
-  const totalCompletedSets = supersetExercises.reduce(
-    (sum, ex) => sum + ex.sets.filter((s) => s.completed).length,
-    0,
-  );
-  const totalSetsInSuperset = supersetExercises.reduce(
-    (sum, ex) => sum + ex.sets.length,
-    0,
-  );
+  const isRoundComplete = (roundNumber: number): boolean =>
+    supersetExercises.every((ex) => ex.sets[roundNumber]?.completed);
 
-  // Check if a round is complete (all sets completed)
-  const isRoundComplete = (roundNumber: number): boolean => {
-    return supersetExercises.every((ex) => {
-      const set = ex.sets[roundNumber];
-      return set?.completed;
-    });
-  };
+  const rounds = Array.from({ length: maxSets }, (_, i) => isRoundComplete(i));
+  const roundsDone = rounds.filter(Boolean).length;
+  const nextRound = rounds.indexOf(false);
+  const anyDuration = supersetExercises.some(
+    (ex) => exerciseKind(ex.exerciseType).isDuration,
+  );
+  const anyWeight = supersetExercises.some(
+    (ex) => exerciseKind(ex.exerciseType).hasWeight,
+  );
+  const isAddingRound = isLoading(`addRound:${firstIndex}`);
+  const isDeletingRound = isLoading(`deleteRound:${firstIndex}`);
 
   return (
     <>
-      {/* Superset Header */}
-      <div className="flex items-center justify-between w-full text-left mb-4">
-        <div className="flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            {supersetExercises.map((ex, idx) => {
-              const exerciseName = ex.exercise.name;
-              const exerciseId = getExerciseId(ex);
-              return (
-                <div key={ex.exercise.id} className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onExerciseNameClick?.(exerciseId, exerciseName);
-                    }}
-                    className="font-medium text-white hover:text-blue-400 transition-colors underline decoration-dotted underline-offset-2"
-                  >
-                    {exerciseName}
-                  </button>
-                  {getExerciseTypeIcon(ex.exerciseType)}
-                  {idx < supersetExercises.length - 1 && (
-                    <span className="text-purple-400 font-bold ml-1">+</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <p className="text-slate-400 text-sm mt-1">
-            {totalCompletedSets} / {totalSetsInSuperset} sets complete
+      {/* Superset header */}
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1 space-y-2">
+          <p className="flex items-center gap-1.5 text-sm font-semibold text-ink-2">
+            <Combine size={16} aria-hidden="true" />
+            Superset
           </p>
+          {supersetExercises.map((ex) => (
+            <div key={ex.exercise.id} className="flex items-center gap-3">
+              <ExerciseMark
+                name={ex.exercise.name}
+                muscleGroups={ex.exercise.muscle_groups}
+                size={36}
+              />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onExerciseNameClick?.(getExerciseId(ex), ex.exercise.name);
+                }}
+                className="min-h-11 min-w-0 truncate py-2.5 text-left text-base leading-6 font-bold text-ink hover:text-train-ink"
+              >
+                {ex.exercise.name}
+              </button>
+            </div>
+          ))}
         </div>
         <button
           type="button"
           onClick={onToggleExpand}
-          className="flex items-center p-2 hover:bg-slate-700/50 rounded transition-colors"
+          aria-expanded={allExpanded}
+          aria-label={allExpanded ? 'Collapse rounds' : 'Show rounds'}
+          className="grid size-11 shrink-0 place-items-center rounded-lg text-ink-2 hover:bg-sunken"
         >
-          {allExpanded ? (
-            <ChevronUp size={20} className="text-slate-400" />
-          ) : (
-            <ChevronDown size={20} className="text-slate-400" />
-          )}
+          <ChevronDown
+            size={22}
+            className={`transition-transform ${allExpanded ? 'rotate-180' : ''}`}
+          />
         </button>
       </div>
 
-      {/* Exercise Notes Buttons */}
-      {allExpanded && (
-        <div className="mb-4 flex flex-wrap gap-2">
-          {supersetExercises.map((ex, localIdx) => {
-            const exerciseName = ex.exercise.name;
-            const currentWeight = ex.sets[0]?.weight || '0';
-            const exerciseIndex = exerciseIndices[localIdx];
-
-            return (
-              <button
-                key={`notes-btn-${ex.exercise.id}`}
-                type="button"
-                onClick={() =>
-                  onOpenNotes(exerciseIndex, exerciseName, currentWeight)
-                }
-                className="px-2 py-1.5 text-xs bg-slate-700/50 hover:bg-slate-700 border border-slate-600 rounded text-slate-300 flex items-center gap-1.5 transition-colors"
-              >
-                <PencilLine size={12} />
-                {exerciseName}
-              </button>
-            );
-          })}
-          {onBreakSuperset && (
-            <button
-              type="button"
-              onClick={onBreakSuperset}
-              className="px-2 py-1.5 text-xs bg-red-900/30 hover:bg-red-900/50 border border-red-700/50 rounded text-red-400 flex items-center gap-1.5 transition-colors ml-auto"
-            >
-              <X size={12} />
-              Break Superset
-            </button>
-          )}
+      {/* Round progress */}
+      <div className="mt-3 flex items-center gap-3">
+        <p className="shrink-0 text-sm text-ink-2">
+          Round{' '}
+          <span className="num text-xl font-bold text-ink">
+            {nextRound === -1 ? roundsDone : nextRound + 1}
+          </span>
+          <span className="num text-ink-3"> of {maxSets}</span>
+        </p>
+        <div className="flex flex-1 gap-1" aria-hidden="true">
+          {rounds.map((done, i) => (
+            <span
+              // biome-ignore lint/suspicious/noArrayIndexKey: round position is the identity
+              key={i}
+              className={`h-2 flex-1 rounded-full ${
+                done
+                  ? 'bg-train'
+                  : i === nextRound
+                    ? 'bg-train-soft'
+                    : 'bg-sunken-strong'
+              }`}
+            />
+          ))}
         </div>
-      )}
+      </div>
 
-      {/* AI Coaching Tips for each exercise in superset */}
       {allExpanded && (
-        <div className="mb-4 space-y-1.5">
+        <div className="mt-4 space-y-3">
           {supersetExercises.map((ex) => {
-            const exerciseId = getExerciseId(ex);
-            const coaching = coachingMap.get(exerciseId);
-            if (!coaching?.coachingTip) return null;
-
+            const tip = coachingMap.get(getExerciseId(ex))?.coachingTip;
+            if (!tip) return null;
             return (
-              <div
-                key={`coaching-${ex.exercise.id}`}
-                className="px-2 py-1.5 bg-blue-900/30 border border-blue-700/50 rounded text-xs text-blue-300"
-              >
-                <span className="font-medium text-blue-400">
+              <CoachingTip key={`coaching-${ex.exercise.id}`}>
+                <span className="font-semibold text-ink">
                   {ex.exercise.name}:
                 </span>{' '}
-                {coaching.coachingTip}
-              </div>
+                {tip}
+              </CoachingTip>
             );
           })}
-        </div>
-      )}
 
-      {/* Rounds */}
-      {allExpanded && (
-        <div className="space-y-4">
-          {Array.from({ length: maxSets }).map((_, roundNumber) => {
-            const roundKey = supersetExercises
-              .map((ex) => `${ex.exercise.id}-${roundNumber}`)
-              .join('-');
-            const roundComplete = isRoundComplete(roundNumber);
+          {/* Column heads */}
+          <div className={`${ROUND_GRID} px-2 text-xs font-medium text-ink-3`}>
+            <span>Exercise</span>
+            <span className="text-center">{anyWeight ? 'lbs' : ''}</span>
+            <span className="text-center">
+              {anyDuration ? 'Reps/sec' : 'Reps'}
+            </span>
+            <span className="text-center">Done</span>
+          </div>
 
-            return (
-              <div
-                key={`superset-round-${roundKey}`}
-                className={`border rounded-lg p-3 ${
-                  roundComplete
-                    ? 'border-green-600/50 bg-green-900/10'
-                    : 'border-slate-700 bg-slate-800/30'
-                }`}
-              >
-                {/* Round Header */}
-                <div className="flex items-center justify-between mb-2 pb-2 border-b border-slate-700/50">
-                  <span
-                    className={`text-sm font-medium ${
-                      roundComplete ? 'text-green-400' : 'text-purple-400'
-                    }`}
-                  >
-                    Round {roundNumber + 1}
-                    {roundComplete && ' ✓'}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {!roundComplete ? (
-                      <button
-                        type="button"
-                        onClick={() => onCompleteRound(roundNumber)}
-                        disabled={isLoading(
-                          `completeRound:${exerciseIndices[0]}:${roundNumber}`,
-                        )}
-                        className="px-2 py-1 text-xs bg-green-900/30 hover:bg-green-900/50 border border-green-700/50 rounded text-green-400 flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {isLoading(
-                          `completeRound:${exerciseIndices[0]}:${roundNumber}`,
-                        ) ? (
-                          <Loader2 size={12} className="animate-spin" />
-                        ) : (
-                          <Check size={12} />
-                        )}
-                        {isLoading(
-                          `completeRound:${exerciseIndices[0]}:${roundNumber}`,
-                        )
-                          ? 'Completing...'
-                          : 'Complete'}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => onUncompleteRound(roundNumber)}
-                        className="px-2 py-1 text-xs bg-orange-900/30 hover:bg-orange-900/50 border border-orange-700/50 rounded text-orange-400 flex items-center gap-1.5 transition-colors"
-                        title="Mark as incomplete to edit"
-                      >
-                        <X size={12} />
-                        Undo
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => onDeleteRound(roundNumber)}
-                      disabled={isLoading(`deleteRound:${exerciseIndices[0]}`)}
-                      className="p-1 text-red-400/70 hover:text-red-400 hover:bg-red-900/30 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isLoading(`deleteRound:${exerciseIndices[0]}`) ? (
-                        <Loader2 size={14} className="animate-spin" />
-                      ) : (
-                        <Trash2 size={14} />
+          <div className="space-y-2">
+            {rounds.map((roundComplete, roundNumber) => {
+              const roundKey = supersetExercises
+                .map((ex) => `${ex.exercise.id}-${roundNumber}`)
+                .join('-');
+              const isNext = roundNumber === nextRound;
+              const completing = isLoading(
+                `completeRound:${firstIndex}:${roundNumber}`,
+              );
+
+              return (
+                <div
+                  key={`superset-round-${roundKey}`}
+                  className={`rounded-xl px-2 py-2 transition-colors ${
+                    roundComplete ? 'bg-train-soft' : isNext ? 'bg-sunken' : ''
+                  }`}
+                >
+                  {/* Round header: label + round done in the done column */}
+                  <div className={ROUND_GRID}>
+                    <div className="col-span-3 flex items-center gap-2">
+                      {editing && !roundComplete && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteRound(roundNumber)}
+                          disabled={isDeletingRound}
+                          aria-label={`Delete round ${roundNumber + 1}`}
+                          className="grid size-11 place-items-center rounded-lg text-danger hover:bg-danger-soft disabled:opacity-50"
+                        >
+                          {isDeletingRound ? (
+                            <Loader2 size={18} className="animate-spin" />
+                          ) : (
+                            <Trash2 size={18} />
+                          )}
+                        </button>
                       )}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Exercise Rows in Round */}
-                <div className="space-y-2">
-                  {supersetExercises.map((ex, localIdx) => {
-                    const set = ex.sets[roundNumber];
-                    if (!set) return null;
-
-                    const exerciseIndex = exerciseIndices[localIdx];
-                    const exerciseId = getExerciseId(ex);
-                    const exerciseName = ex.exercise.name;
-                    const isDuration =
-                      ex.exerciseType === 'duration' ||
-                      ex.exerciseType === 'duration_weight';
-                    const hasWeight =
-                      ex.exerciseType === 'reps_weight' ||
-                      ex.exerciseType === 'duration_weight';
-                    const isCompleted = set.completed;
-                    const coaching = coachingMap.get(exerciseId);
-                    const setCoaching = coaching?.sets?.[roundNumber];
-
-                    // Target info from workoutLogExercise
-                    const targetRepMin = ex.workoutLogExercise.target_rep_min;
-                    const targetRepMax = ex.workoutLogExercise.target_rep_max;
-                    const targetDuration =
-                      ex.workoutLogExercise.target_duration_seconds;
-
-                    return (
-                      <div
-                        // biome-ignore lint/suspicious/noArrayIndexKey: roundNumber is the stable round position, unique together with exercise.id
-                        key={`${ex.exercise.id}-${roundNumber}`}
-                        className={`flex items-center gap-2 py-1.5 px-2 rounded ${
-                          isCompleted ? 'bg-green-900/20' : 'bg-slate-800/30'
+                      <span
+                        className={`text-base font-bold ${
+                          roundComplete || isNext
+                            ? 'text-train-ink'
+                            : 'text-ink'
                         }`}
                       >
-                        {/* Exercise Name (truncated) */}
-                        <span className="w-20 text-xs text-slate-400 truncate">
-                          {exerciseName}
+                        Round <span className="num">{roundNumber + 1}</span>
+                      </span>
+                      {isNext && (
+                        <span className="rounded-full bg-train px-2 py-0.5 text-xs font-semibold text-on-accent">
+                          Next
                         </span>
+                      )}
+                    </div>
+                    <DoneButton
+                      completed={roundComplete}
+                      isNext={isNext}
+                      loading={completing}
+                      label={`round ${roundNumber + 1}`}
+                      onComplete={() => onCompleteRound(roundNumber)}
+                      onUncomplete={() => onUncompleteRound(roundNumber)}
+                    />
+                  </div>
 
-                        {/* Weight Input */}
-                        {hasWeight && (
-                          <div className="flex items-center gap-1">
-                            {!isCompleted &&
-                              getProgressionArrow(setCoaching?.weight)}
-                            <Input
-                              type="number"
-                              value={set.weight}
-                              onChange={(e) =>
-                                onSetChange(
-                                  exerciseIndex,
-                                  roundNumber,
-                                  'weight',
-                                  e.target.value,
-                                )
-                              }
-                              onFocus={(e) => e.target.select()}
-                              className="w-14 h-7 text-center text-xs p-1"
-                              placeholder={set.placeholderWeight || 'lbs'}
-                              disabled={isCompleted}
-                            />
-                            <span className="text-slate-500 text-xs">lbs</span>
-                          </div>
-                        )}
-
-                        {/* Separator */}
-                        {hasWeight && (
-                          <span className="text-slate-600 text-xs">x</span>
-                        )}
-
-                        {/* Reps or Duration */}
-                        {isDuration ? (
-                          <div className="flex items-center gap-1">
-                            <Input
-                              type="number"
-                              value={set.durationSeconds}
-                              onChange={(e) =>
-                                onSetChange(
-                                  exerciseIndex,
-                                  roundNumber,
-                                  'durationSeconds',
-                                  e.target.value,
-                                )
-                              }
-                              onFocus={(e) => e.target.select()}
-                              className="w-14 h-7 text-center text-xs p-1"
-                              placeholder={set.placeholderDuration || 'sec'}
-                              disabled={isCompleted}
-                            />
-                            <span className="text-slate-500 text-xs">sec</span>
-                            {!isCompleted && targetDuration && (
-                              <span className="text-blue-400 text-xs">
-                                ({targetDuration}s)
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1">
-                            {!isCompleted &&
-                              getProgressionArrow(setCoaching?.reps)}
-                            <Input
-                              type="number"
-                              value={set.reps}
-                              onChange={(e) =>
-                                onSetChange(
-                                  exerciseIndex,
-                                  roundNumber,
-                                  'reps',
-                                  e.target.value,
-                                )
-                              }
-                              onFocus={(e) => e.target.select()}
-                              className="w-12 h-7 text-center text-xs p-1"
-                              placeholder={set.placeholderReps || 'reps'}
-                              disabled={isCompleted}
-                            />
-                            {!isCompleted && targetRepMin && targetRepMax && (
-                              <span className="text-blue-400 text-xs whitespace-nowrap">
-                                ({targetRepMin}-{targetRepMax})
-                              </span>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Status indicator */}
-                        <div className="ml-auto flex items-center gap-1">
-                          {isDuration && !isCompleted && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onStartDurationTimer(exerciseIndex, roundNumber)
-                              }
-                              className="p-1 text-green-400 hover:bg-green-900/30 rounded transition-colors"
-                            >
-                              <Play size={14} />
-                            </button>
-                          )}
-                          {isCompleted && (
-                            <Check size={14} className="text-green-400" />
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                  <div className="mt-1 space-y-1">
+                    {supersetExercises.map((ex, localIdx) => {
+                      const set = ex.sets[roundNumber];
+                      if (!set) return null;
+                      return (
+                        <RoundRow
+                          // biome-ignore lint/suspicious/noArrayIndexKey: roundNumber is the stable round position, unique together with exercise.id
+                          key={`${ex.exercise.id}-${roundNumber}`}
+                          ex={ex}
+                          roundNumber={roundNumber}
+                          exerciseIndex={exerciseIndices[localIdx]}
+                          coaching={coachingMap.get(getExerciseId(ex))}
+                          onSetChange={onSetChange}
+                          onStartDurationTimer={onStartDurationTimer}
+                        />
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
 
-          {/* Add Round Button */}
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            className="w-full"
             onClick={onAddRound}
-            disabled={isLoading(`addRound:${exerciseIndices[0]}`)}
-            className="w-full py-2 text-purple-400 text-sm flex items-center justify-center gap-1 hover:text-purple-300 border border-dashed border-slate-700 rounded-lg hover:border-purple-400/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            isLoading={isAddingRound}
           >
-            {isLoading(`addRound:${exerciseIndices[0]}`) ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Plus size={14} />
+            {!isAddingRound && <Plus size={18} />}
+            {isAddingRound ? 'Adding...' : 'Add Round'}
+          </Button>
+
+          {/* Superset tools */}
+          <div className="-mx-1 flex flex-wrap items-center gap-1 border-t border-line pt-2">
+            {supersetExercises.map((ex, localIdx) => (
+              <ToolButton
+                key={`notes-btn-${ex.exercise.id}`}
+                onClick={() =>
+                  onOpenNotes(
+                    exerciseIndices[localIdx],
+                    ex.exercise.name,
+                    ex.sets[0]?.weight || '0',
+                  )
+                }
+                icon={<PencilLine size={16} />}
+              >
+                <span className="max-w-32 truncate">{ex.exercise.name}</span>
+              </ToolButton>
+            ))}
+            <ToolButton
+              onClick={() => setEditing((v) => !v)}
+              pressed={editing}
+              icon={<SquarePen size={16} />}
+            >
+              {editing ? 'Done editing' : 'Edit rounds'}
+            </ToolButton>
+            {onBreakSuperset && (
+              <span className="ml-auto">
+                <ToolButton
+                  onClick={onBreakSuperset}
+                  tone="danger"
+                  icon={<Unlink size={16} />}
+                >
+                  Break Superset
+                </ToolButton>
+              </span>
             )}
-            {isLoading(`addRound:${exerciseIndices[0]}`)
-              ? 'Adding...'
-              : 'Add Round'}
-          </button>
+          </div>
         </div>
       )}
     </>
+  );
+}
+
+interface RoundRowProps {
+  ex: ExerciseWithSets;
+  roundNumber: number;
+  exerciseIndex: number;
+  coaching?: AIExerciseCoachingResponse;
+  onSetChange: SupersetCardProps['onSetChange'];
+  onStartDurationTimer: SupersetCardProps['onStartDurationTimer'];
+}
+
+function RoundRow({
+  ex,
+  roundNumber,
+  exerciseIndex,
+  coaching,
+  onSetChange,
+  onStartDurationTimer,
+}: RoundRowProps) {
+  const set = ex.sets[roundNumber];
+  const { isDuration, hasWeight } = exerciseKind(ex.exerciseType);
+  const isCompleted = set.completed;
+  const setCoaching = coaching?.sets?.[roundNumber];
+  const name = ex.exercise.name;
+  const change = (field: SetField) => (value: string) =>
+    onSetChange(exerciseIndex, roundNumber, field, value);
+
+  return (
+    <div className={ROUND_GRID}>
+      <span className="truncate text-sm text-ink-2">{name}</span>
+
+      {hasWeight ? (
+        <NumberCell
+          size="md"
+          label={`${name} weight, lbs`}
+          value={set.weight}
+          placeholder={set.placeholderWeight || '0'}
+          disabled={isCompleted}
+          onChange={change('weight')}
+          hint={!isCompleted && getProgressionArrow(setCoaching?.weight)}
+        />
+      ) : (
+        <span className="text-center text-sm text-ink-3">—</span>
+      )}
+
+      {isDuration ? (
+        <NumberCell
+          size="md"
+          label={`${name} seconds`}
+          value={set.durationSeconds}
+          placeholder={set.placeholderDuration || '0'}
+          disabled={isCompleted}
+          onChange={change('durationSeconds')}
+        />
+      ) : (
+        <NumberCell
+          size="md"
+          label={`${name} reps`}
+          value={set.reps}
+          placeholder={set.placeholderReps || '0'}
+          disabled={isCompleted}
+          onChange={change('reps')}
+          hint={!isCompleted && getProgressionArrow(setCoaching?.reps)}
+        />
+      )}
+
+      {isDuration && !isCompleted ? (
+        <StartHoldButton
+          label={name}
+          onClick={() => onStartDurationTimer(exerciseIndex, roundNumber)}
+        />
+      ) : (
+        <span aria-hidden="true" />
+      )}
+    </div>
   );
 }

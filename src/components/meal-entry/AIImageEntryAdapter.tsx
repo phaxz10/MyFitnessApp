@@ -1,22 +1,26 @@
-import { ChevronLeft, Loader2, Minus, Plus, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { mealTypes } from '../../constants/options';
 import { useCalories } from '../../hooks/useCalories';
 import { useProfile } from '../../hooks/useProfile';
 import { analyzeFoodImage } from '../../services/coaching/nutritionCoach';
-import type { AIFoodItem, MealType } from '../../types';
-import { recalculateMacros } from '../../utils/calculations';
+import type { MealType } from '../../types';
 import { MealImpactPreview, mapSummaryToMacros } from '../nutrition';
 import { Button, CameraCapture, Select, TextArea } from '../ui';
+import {
+  AIActionButton,
+  AnalyzingState,
+  BackLink,
+  FoodItemList,
+} from './AIResultParts';
+import {
+  defaultMealTypeForNow,
+  type EditableFoodItem,
+  sumItems,
+  toEditableItems,
+  withPortion,
+} from './aiResults';
 import { describeAIError } from './describeAIError';
-
-interface EditableFoodItem extends AIFoodItem {
-  originalPortion: number;
-  // Stable client-side ID assigned when the AI response lands. Used as React
-  // list key — names can repeat ("egg", "egg") and array indices shift when
-  // the user removes an item, both of which would break key stability.
-  id: string;
-}
 
 interface AIImageEntryAdapterProps {
   date: string;
@@ -90,13 +94,7 @@ export function AIImageEntryAdapter({
         setStep('capture');
         return;
       }
-      setResults(
-        result.items.map((item) => ({
-          ...item,
-          originalPortion: item.portion_grams,
-          id: crypto.randomUUID(),
-        })),
-      );
+      setResults(toEditableItems(result.items));
       setStep('results');
     } catch (err) {
       setError(
@@ -108,25 +106,9 @@ export function AIImageEntryAdapter({
 
   const handlePortionChange = (index: number, newPortion: number) => {
     setResults((prev) =>
-      prev.map((item, i) => {
-        if (i !== index) return item;
-        const ratio = item.originalPortion / item.portion_grams;
-        const recalculated = recalculateMacros(
-          item.originalPortion,
-          newPortion,
-          {
-            calories: item.calories * ratio,
-            protein_g: item.protein_g * ratio,
-            carbs_g: item.carbs_g * ratio,
-            fat_g: item.fat_g * ratio,
-          },
-        );
-        return {
-          ...item,
-          portion_grams: newPortion,
-          ...recalculated,
-        };
-      }),
+      prev.map((item, i) =>
+        i === index ? withPortion(item, newPortion) : item,
+      ),
     );
   };
 
@@ -164,25 +146,11 @@ export function AIImageEntryAdapter({
   };
 
   if (step === 'analyzing') {
-    return (
-      <div className="flex flex-col items-center justify-center py-12">
-        <Loader2 size={48} className="text-blue-400 animate-spin mb-4" />
-        <p className="text-white font-medium">Analyzing your meal...</p>
-        <p className="text-slate-400 text-sm">This may take a few seconds</p>
-      </div>
-    );
+    return <AnalyzingState label="Analyzing your meal..." />;
   }
 
   if (step === 'results') {
-    const totals = results.reduce(
-      (acc, item) => ({
-        calories: acc.calories + item.calories,
-        protein: acc.protein + item.protein_g,
-        carbs: acc.carbs + item.carbs_g,
-        fat: acc.fat + item.fat_g,
-      }),
-      { calories: 0, protein: 0, carbs: 0, fat: 0 },
-    );
+    const totals = sumItems(results);
 
     const previewUrl = imageData
       ? `data:${imageData.mimeType};base64,${imageData.base64}`
@@ -190,76 +158,29 @@ export function AIImageEntryAdapter({
 
     return (
       <div className="space-y-4">
-        <button
-          type="button"
+        <BackLink
           onClick={() => {
             setStep('capture');
             setImageData(null);
             setResults([]);
           }}
-          className="flex items-center gap-1 text-slate-400 hover:text-white text-sm"
         >
-          <ChevronLeft size={16} />
           Scan another
-        </button>
+        </BackLink>
 
         {previewUrl && (
           <img
             src={previewUrl}
             alt="Meal"
-            className="w-full h-32 object-cover rounded-lg"
+            className="w-full h-32 object-cover rounded-xl"
           />
         )}
 
-        <div className="space-y-2">
-          {results.map((item, index) => (
-            <div key={item.id} className="bg-slate-700/50 rounded-lg p-3">
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex-1">
-                  <p className="text-white font-medium text-sm">{item.name}</p>
-                  <p className="text-slate-400 text-xs">
-                    {Math.round(item.calories)} kcal | P:{' '}
-                    {Math.round(item.protein_g)}g | C:{' '}
-                    {Math.round(item.carbs_g)}g | F: {Math.round(item.fat_g)}g
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleRemoveItem(index)}
-                  className="text-slate-400 hover:text-red-400 p-1"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    handlePortionChange(
-                      index,
-                      Math.max(5, item.portion_grams - 5),
-                    )
-                  }
-                  className="p-1 bg-slate-600 rounded hover:bg-slate-500"
-                >
-                  <Minus size={14} className="text-white" />
-                </button>
-                <span className="text-white text-sm min-w-[60px] text-center">
-                  {Math.round(item.portion_grams / 5) * 5}g
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    handlePortionChange(index, item.portion_grams + 5)
-                  }
-                  className="p-1 bg-slate-600 rounded hover:bg-slate-500"
-                >
-                  <Plus size={14} className="text-white" />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+        <FoodItemList
+          items={results}
+          onPortionChange={handlePortionChange}
+          onRemove={handleRemoveItem}
+        />
 
         {results.length > 0 && (
           <MealImpactPreview
@@ -274,9 +195,11 @@ export function AIImageEntryAdapter({
           />
         )}
 
-        {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+        {error && <p className="text-danger text-sm text-center">{error}</p>}
 
         <Button
+          tone="eat"
+          size="lg"
           onClick={handleSave}
           disabled={isSaving || results.length === 0}
           className="w-full"
@@ -292,26 +215,17 @@ export function AIImageEntryAdapter({
   // Capture step
   return (
     <div className="space-y-4">
-      {onBack && (
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex items-center gap-1 text-slate-400 hover:text-white text-sm"
-        >
-          <ChevronLeft size={16} />
-          Back
-        </button>
-      )}
+      {onBack && <BackLink onClick={onBack}>Back</BackLink>}
 
       <Select
-        label="Meal Type"
+        label="Meal type"
         options={mealTypes}
         value={mealType}
         onChange={(e) => setMealType(e.target.value as MealType)}
       />
 
       {imageData ? (
-        <div className="rounded-lg overflow-hidden">
+        <div className="rounded-xl overflow-hidden">
           <div className="relative aspect-[5/7] bg-black">
             <img
               src={`data:${imageData.mimeType};base64,${imageData.base64}`}
@@ -321,7 +235,7 @@ export function AIImageEntryAdapter({
             <button
               type="button"
               onClick={() => setImageData(null)}
-              className="absolute top-2 right-2 p-2 bg-black/50 rounded-full text-white hover:bg-black/70"
+              className="absolute top-1 right-1 grid place-items-center size-11 bg-black/50 rounded-full text-white hover:bg-black/70"
               aria-label="Discard photo"
             >
               <X size={18} />
@@ -340,19 +254,11 @@ export function AIImageEntryAdapter({
         rows={2}
       />
 
-      {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+      {error && <p className="text-danger text-sm text-center">{error}</p>}
 
-      <Button onClick={handleAnalyze} disabled={!imageData} className="w-full">
+      <AIActionButton onClick={handleAnalyze} disabled={!imageData}>
         Analyze meal
-      </Button>
+      </AIActionButton>
     </div>
   );
-}
-
-function defaultMealTypeForNow(): MealType {
-  const hour = new Date().getHours();
-  if (hour >= 5 && hour < 10) return 'breakfast';
-  if (hour >= 11 && hour < 14) return 'lunch';
-  if (hour >= 17 && hour < 21) return 'dinner';
-  return 'snack';
 }

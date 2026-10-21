@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode, useEffect, useId } from 'react';
 
 interface ModalProps {
   isOpen: boolean;
@@ -9,6 +9,14 @@ interface ModalProps {
   size?: 'sm' | 'md' | 'lg' | 'full';
 }
 
+const SIZE = {
+  sm: 'sm:max-w-sm',
+  md: 'sm:max-w-md',
+  lg: 'sm:max-w-lg',
+  full: 'sm:max-w-2xl',
+};
+
+// Bottom sheet on phones (thumb reach), centred dialog from sm up.
 export function Modal({
   isOpen,
   onClose,
@@ -16,57 +24,54 @@ export function Modal({
   children,
   size = 'md',
 }: ModalProps) {
+  const titleId = useId();
+
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-    return () => {
-      document.body.style.overflow = 'unset';
+    if (!isOpen) return;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
     };
-  }, [isOpen]);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = '';
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
-  const sizeStyles = {
-    sm: 'max-w-sm',
-    md: 'max-w-md',
-    lg: 'max-w-lg',
-    full: 'max-w-full mx-4',
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
       <button
         type="button"
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm w-full h-full cursor-default"
+        className="absolute inset-0 bg-ink/50 w-full h-full cursor-default"
         onClick={onClose}
-        aria-label="Close modal"
+        aria-label="Close"
+        tabIndex={-1}
       />
-
-      {/* Modal */}
       <div
-        className={`relative bg-slate-800 rounded-xl border border-slate-700 w-full ${sizeStyles[size]} max-h-[90vh] overflow-hidden flex flex-col`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
+        className={`relative bg-surface w-full ${SIZE[size]} max-h-[92dvh] rounded-t-2xl sm:rounded-2xl shadow-[0_-8px_32px_rgb(0_0_0/0.18)] overflow-hidden flex flex-col pb-[env(safe-area-inset-bottom)]`}
       >
-        {/* Header */}
         {title && (
-          <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-700">
-            <h2 className="text-base font-semibold text-white">{title}</h2>
+          <div className="flex items-center justify-between pl-4 pr-1.5 h-14 border-b border-line shrink-0">
+            <h2 id={titleId} className="text-lg font-bold text-ink">
+              {title}
+            </h2>
             <button
               type="button"
               onClick={onClose}
-              className="p-1 text-slate-400 hover:text-white transition-colors rounded-lg hover:bg-slate-700"
-              aria-label="Close modal"
+              className="grid place-items-center size-11 rounded-full text-ink-2 hover:bg-sunken hover:text-ink transition-colors"
+              aria-label="Close"
             >
-              <X size={18} />
+              <X size={20} />
             </button>
           </div>
         )}
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-3">{children}</div>
+        <div className="flex-1 overflow-y-auto p-4">{children}</div>
       </div>
     </div>
   );

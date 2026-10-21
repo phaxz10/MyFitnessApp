@@ -2,7 +2,7 @@ import { ChevronRight, ClipboardCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useWeeklyReview } from '../../hooks/useWeeklyReview';
 import type { UserProfile, WeeklyReviewSufficiency } from '../../types';
-import { Card, CardContent } from '../ui';
+import { Card } from '../ui';
 
 interface WeeklyReviewButtonProps {
   profile: UserProfile | null;
@@ -56,47 +56,54 @@ export function WeeklyReviewButton({
   }
 
   return (
-    <Card
-      className="bg-gradient-to-r from-purple-900/50 to-blue-900/50 border-purple-500/30 hover:border-purple-400/50 transition-all cursor-pointer"
-      onClick={onStartReview}
-    >
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-purple-600/30 rounded-xl flex items-center justify-center">
-              <ClipboardCheck size={24} className="text-purple-400" />
-            </div>
-            <div>
-              <p className="text-white font-semibold text-lg">
-                Weekly Check-In
-              </p>
-              <p className="text-slate-300 text-sm">
-                Review your progress and get AI recommendations
-              </p>
-              {sufficiency && (
-                <div className="flex gap-2 mt-1">
-                  {sufficiency.hasWeightData && (
-                    <span className="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded">
-                      {sufficiency.weightDaysLogged} weight logs
-                    </span>
-                  )}
-                  {sufficiency.hasCalorieData && (
-                    <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">
-                      {sufficiency.calorieDaysLogged} days tracked
-                    </span>
-                  )}
-                  {sufficiency.hasWorkoutData && (
-                    <span className="text-xs bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded">
-                      {sufficiency.workoutDaysLogged} workouts
-                    </span>
-                  )}
-                </div>
+    <Card onClick={onStartReview}>
+      <div className="flex items-center gap-3 p-4">
+        <span
+          aria-hidden="true"
+          className="grid place-items-center size-11 rounded-xl bg-sunken text-ink shrink-0"
+        >
+          <ClipboardCheck size={22} />
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className="text-ink font-bold text-lg">Weekly Check-In</p>
+          <p className="text-ink-2 text-sm">
+            Review your progress and get AI recommendations
+          </p>
+          {sufficiency && (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {sufficiency.hasWeightData && (
+                <span className="text-sm bg-body-soft text-body-ink px-2 py-0.5 rounded-lg">
+                  <span className="num font-bold">
+                    {sufficiency.weightDaysLogged}
+                  </span>{' '}
+                  weight logs
+                </span>
+              )}
+              {sufficiency.hasCalorieData && (
+                <span className="text-sm bg-eat-soft text-eat-ink px-2 py-0.5 rounded-lg">
+                  <span className="num font-bold">
+                    {sufficiency.calorieDaysLogged}
+                  </span>{' '}
+                  days tracked
+                </span>
+              )}
+              {sufficiency.hasWorkoutData && (
+                <span className="text-sm bg-train-soft text-train-ink px-2 py-0.5 rounded-lg">
+                  <span className="num font-bold">
+                    {sufficiency.workoutDaysLogged}
+                  </span>{' '}
+                  workouts
+                </span>
               )}
             </div>
-          </div>
-          <ChevronRight size={24} className="text-purple-400" />
+          )}
         </div>
-      </CardContent>
+        <ChevronRight
+          size={20}
+          className="text-ink-3 shrink-0"
+          aria-hidden="true"
+        />
+      </div>
     </Card>
   );
 }

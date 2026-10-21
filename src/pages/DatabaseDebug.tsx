@@ -1,7 +1,14 @@
-import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Loader2, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Card, CardContent } from '../components/ui';
+import {
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  TextArea,
+} from '../components/ui';
 import { getDB } from '../services/db';
 
 interface TableInfo {
@@ -94,106 +101,117 @@ export function DatabaseDebug() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-dvh bg-canvas grid place-items-center">
+        <Loader2
+          size={40}
+          className="text-ink-2 animate-spin"
+          aria-label="Loading tables"
+        />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 p-4">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
+    <div className="min-h-dvh bg-canvas px-4 py-4 space-y-4">
+      <div className="flex items-center gap-1 -ml-2">
         <button
           type="button"
           onClick={() => navigate(-1)}
-          className="p-2 text-slate-400 hover:text-white"
+          aria-label="Back"
+          className="grid place-items-center size-11 rounded-full text-ink-2 hover:bg-sunken hover:text-ink"
         >
-          <ArrowLeft size={24} />
+          <ArrowLeft size={22} />
         </button>
-        <h1 className="text-xl font-bold text-white">Database Debug</h1>
+        <h1 className="text-lg font-bold text-ink">Database Debug</h1>
         <button
           type="button"
           onClick={fetchTables}
-          className="ml-auto p-2 text-slate-400 hover:text-white"
+          aria-label="Refresh tables"
+          className="ml-auto grid place-items-center size-11 rounded-full text-ink-2 hover:bg-sunken hover:text-ink"
         >
           <RefreshCw size={20} />
         </button>
       </div>
 
-      {/* Tables Overview */}
-      <Card className="mb-4">
-        <CardContent className="p-4">
-          <h2 className="text-lg font-semibold text-white mb-3">Tables</h2>
+      <Card>
+        <CardHeader>
+          <CardTitle>Tables</CardTitle>
+        </CardHeader>
+        <CardContent>
           <div className="grid grid-cols-2 gap-2">
             {tables.map((table) => (
               <button
                 key={table.name}
                 type="button"
                 onClick={() => fetchTableData(table.name)}
-                className={`p-3 rounded-lg text-left transition-colors ${
+                className={`min-h-11 px-3 py-2 rounded-lg text-left transition-colors ${
                   selectedTable === table.name
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    ? 'bg-train text-on-accent'
+                    : 'bg-sunken text-ink-2 hover:bg-sunken-strong'
                 }`}
               >
-                <p className="font-medium text-sm">{table.name}</p>
-                <p className="text-xs opacity-70">{table.count} rows</p>
+                <p className="font-semibold text-sm">{table.name}</p>
+                <p className="text-sm opacity-80">
+                  <span className="num">{table.count}</span> rows
+                </p>
               </button>
             ))}
           </div>
         </CardContent>
       </Card>
 
-      {/* Custom Query */}
-      <Card className="mb-4">
-        <CardContent className="p-4">
-          <h2 className="text-lg font-semibold text-white mb-3">
-            Custom Query
-          </h2>
-          <textarea
+      <Card>
+        <CardHeader>
+          <CardTitle>Custom Query</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <TextArea
+            label="SQL"
             value={customQuery}
             onChange={(e) => setCustomQuery(e.target.value)}
             placeholder="SELECT * FROM workout_sets WHERE workout_log_id = 100"
-            className="w-full h-24 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm font-mono placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="font-mono"
+            rows={4}
           />
-          <Button onClick={runCustomQuery} className="mt-2">
+          <Button onClick={runCustomQuery} size="lg" className="w-full">
             Run Query
           </Button>
 
           {queryError && (
-            <div className="mt-3 p-3 bg-red-900/30 border border-red-700 rounded text-red-300 text-sm">
+            <div
+              role="alert"
+              className="p-3 bg-danger-soft border border-danger rounded-xl text-danger text-sm"
+            >
               {queryError}
             </div>
           )}
 
           {queryResult && (
-            <div className="mt-3">
-              <p className="text-slate-400 text-sm mb-2">
-                {queryResult.length} results
+            <div className="space-y-2">
+              <p className="text-ink-2 text-sm">
+                <span className="num font-bold">{queryResult.length}</span>{' '}
+                results
               </p>
-              <div className="overflow-x-auto">
-                <pre className="text-xs text-slate-300 bg-slate-800 p-3 rounded overflow-auto max-h-64">
-                  {JSON.stringify(queryResult, null, 2)}
-                </pre>
-              </div>
+              <pre className="text-xs text-ink-2 bg-sunken p-3 rounded-lg overflow-auto max-h-64">
+                {JSON.stringify(queryResult, null, 2)}
+              </pre>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Table Data */}
       {selectedTable && (
         <Card>
-          <CardContent className="p-4">
-            <h2 className="text-lg font-semibold text-white mb-3">
-              {selectedTable} ({tableData.length} rows shown)
-            </h2>
-            <div className="overflow-x-auto">
-              <pre className="text-xs text-slate-300 bg-slate-800 p-3 rounded overflow-auto max-h-96">
-                {JSON.stringify(tableData, null, 2)}
-              </pre>
-            </div>
+          <CardHeader>
+            <CardTitle>
+              {selectedTable} (<span className="num">{tableData.length}</span>{' '}
+              rows shown)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <pre className="text-xs text-ink-2 bg-sunken p-3 rounded-lg overflow-auto max-h-96">
+              {JSON.stringify(tableData, null, 2)}
+            </pre>
           </CardContent>
         </Card>
       )}

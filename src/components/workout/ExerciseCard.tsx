@@ -1,25 +1,30 @@
 import {
-  Check,
   ChevronDown,
-  ChevronUp,
   Combine,
   Loader2,
   PencilLine,
-  Play,
   Plus,
+  SquarePen,
   Trash2,
-  X,
 } from 'lucide-react';
+import { useState } from 'react';
 import type { ExerciseWithSets, SetData } from '../../hooks/useWorkoutSession';
 import type {
   AIExerciseCoachingResponse,
   ProgressionDirection,
 } from '../../types';
+import { getProgressionArrow } from '../../utils/workoutHelpers';
+import { Button, ExerciseMark } from '../ui';
 import {
-  getExerciseTypeIcon,
-  getProgressionArrow,
-} from '../../utils/workoutHelpers';
-import { Input } from '../ui';
+  CoachingTip,
+  DoneButton,
+  exerciseKind,
+  formatPrevious,
+  NumberCell,
+  type SetField,
+  StartHoldButton,
+  ToolButton,
+} from './SetCells';
 
 interface ExerciseCardProps {
   exerciseData: ExerciseWithSets;
@@ -28,11 +33,7 @@ interface ExerciseCardProps {
   isSelectedForLink?: boolean;
   isLoading: (key: string) => boolean;
   onToggleExpand: () => void;
-  onSetChange: (
-    setIndex: number,
-    field: 'reps' | 'weight' | 'durationSeconds',
-    value: string,
-  ) => void;
+  onSetChange: (setIndex: number, field: SetField, value: string) => void;
   onCompleteSet: (setIndex: number) => void;
   onUncompleteSet: (setIndex: number) => void;
   onDeleteSet: (setIndex: number) => void;
@@ -43,6 +44,10 @@ interface ExerciseCardProps {
   onRemoveExercise: () => void;
   onLinkExercise?: () => void;
 }
+
+// Fixed columns: set # / previous / weight / reps (or sec) / done.
+const SET_GRID =
+  'grid grid-cols-[2.75rem_3.75rem_minmax(0,1fr)_minmax(0,1fr)_3rem] items-center gap-2';
 
 export function ExerciseCard({
   exerciseData,
@@ -62,190 +67,182 @@ export function ExerciseCard({
   onRemoveExercise,
   onLinkExercise,
 }: ExerciseCardProps) {
-  const exerciseName = exerciseData.exercise.name;
+  const [editing, setEditing] = useState(false);
+  const { exercise, workoutLogExercise, sets } = exerciseData;
+  const { isDuration, hasWeight } = exerciseKind(exerciseData.exerciseType);
 
-  const isDuration =
-    exerciseData.exerciseType === 'duration' ||
-    exerciseData.exerciseType === 'duration_weight';
-  const hasWeight =
-    exerciseData.exerciseType === 'reps_weight' ||
-    exerciseData.exerciseType === 'duration_weight';
-
-  // Loading states
   const isAddingSet = isLoading(`addSet:${exerciseIndex}`);
   const isDeletingSet = isLoading(`deleteSet:${exerciseIndex}`);
 
-  // Get target info from workoutLogExercise
-  const targetRepMin = exerciseData.workoutLogExercise.target_rep_min;
-  const targetRepMax = exerciseData.workoutLogExercise.target_rep_max;
-  const targetDuration =
-    exerciseData.workoutLogExercise.target_duration_seconds;
+  const targetRepMin = workoutLogExercise.target_rep_min;
+  const targetRepMax = workoutLogExercise.target_rep_max;
+  const targetDuration = workoutLogExercise.target_duration_seconds;
 
   const targetInfo = isDuration
     ? targetDuration
       ? `${targetDuration}s`
       : null
     : targetRepMin && targetRepMax
-      ? `${targetRepMin}-${targetRepMax} reps`
+      ? `${targetRepMin}–${targetRepMax} reps`
       : null;
 
-  // Count completed sets
-  const completedSetsCount = exerciseData.sets.filter(
-    (s) => s.completed,
-  ).length;
+  const completedSetsCount = sets.filter((s) => s.completed).length;
+  const nextSetIndex = sets.findIndex((s) => !s.completed);
+  const allDone = sets.length > 0 && nextSetIndex === -1;
 
   return (
     <>
-      {/* Exercise Header */}
-      <div className="flex items-center justify-between w-full text-left">
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onExerciseNameClick?.();
-              }}
-              className="font-semibold text-white hover:text-blue-400 transition-colors underline decoration-dotted underline-offset-2"
-            >
-              {exerciseName}
-            </button>
-            {getExerciseTypeIcon(exerciseData.exerciseType)}
-          </div>
-          {targetInfo && (
-            <p className="text-blue-400 text-sm">Target: {targetInfo}</p>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-slate-400 text-sm">
-            {completedSetsCount}/{exerciseData.sets.length}
-          </span>
+      {/* Exercise header */}
+      <div className="flex items-center gap-3">
+        <ExerciseMark
+          name={exercise.name}
+          muscleGroups={exercise.muscle_groups}
+        />
+        <div className="min-w-0 flex-1">
           <button
             type="button"
-            onClick={onToggleExpand}
-            className="p-2 hover:bg-slate-700/50 rounded transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              onExerciseNameClick?.();
+            }}
+            className="block min-h-11 max-w-full truncate py-2.5 text-left text-base leading-6 font-bold text-ink hover:text-train-ink"
           >
-            {exerciseData.isExpanded ? (
-              <ChevronUp size={20} className="text-slate-400" />
-            ) : (
-              <ChevronDown size={20} className="text-slate-400" />
-            )}
+            {exercise.name}
           </button>
+          {targetInfo && (
+            <p className="text-sm text-ink-2">
+              Target <span className="num font-semibold">{targetInfo}</span>
+            </p>
+          )}
         </div>
+        <span
+          className={`num text-xl font-bold ${allDone ? 'text-train-ink' : 'text-ink'}`}
+        >
+          {completedSetsCount}
+          <span className="text-ink-3">/{sets.length}</span>
+        </span>
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          aria-expanded={exerciseData.isExpanded}
+          aria-label={exerciseData.isExpanded ? 'Collapse sets' : 'Show sets'}
+          className="grid size-11 shrink-0 place-items-center rounded-lg text-ink-2 hover:bg-sunken"
+        >
+          <ChevronDown
+            size={22}
+            className={`transition-transform ${exerciseData.isExpanded ? 'rotate-180' : ''}`}
+          />
+        </button>
       </div>
 
-      {/* Sets */}
       {exerciseData.isExpanded && (
-        <div className="mt-3">
-          {/* AI Coaching Tip */}
+        <div className="mt-4 space-y-3">
           {coaching?.coachingTip && (
-            <div className="mb-2 px-2 py-1.5 bg-blue-900/30 border border-blue-700/50 rounded text-xs text-blue-300">
-              {coaching.coachingTip}
-            </div>
+            <CoachingTip>{coaching.coachingTip}</CoachingTip>
           )}
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2 mb-2">
-            <button
-              type="button"
-              onClick={onOpenNotes}
-              className="px-2 py-1.5 text-xs bg-slate-700/50 hover:bg-slate-700 border border-slate-600 rounded text-slate-300 flex items-center gap-1.5 transition-colors"
-            >
-              <PencilLine size={12} />
-              Notes
-            </button>
-            {onLinkExercise && (
-              <button
-                type="button"
-                onClick={onLinkExercise}
-                className={`px-2 py-1.5 text-xs border rounded flex items-center gap-1.5 transition-colors ${
-                  isSelectedForLink
-                    ? 'bg-purple-900/50 border-purple-500/50 text-purple-300'
-                    : 'bg-slate-700/50 hover:bg-purple-900/30 border-slate-600 hover:border-purple-500/50 text-slate-300 hover:text-purple-300'
-                }`}
-              >
-                <Combine size={12} />
-                {isSelectedForLink ? 'Selected' : 'Superset'}
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={onRemoveExercise}
-              className="px-2 py-1.5 text-xs bg-red-900/30 hover:bg-red-900/50 border border-red-700/50 rounded text-red-400 flex items-center gap-1.5 transition-colors ml-auto"
-            >
-              <Trash2 size={12} />
-              Remove
-            </button>
+          {/* Column heads */}
+          <div className={`${SET_GRID} px-1 text-xs font-medium text-ink-3`}>
+            <span className="text-center">Set</span>
+            <span>Previous</span>
+            <span className="text-center">{hasWeight ? 'lbs' : ''}</span>
+            <span className="text-center">{isDuration ? 'sec' : 'Reps'}</span>
+            <span className="text-center">Done</span>
           </div>
 
-          {/* Sets List */}
           <div className="space-y-1.5">
-            {exerciseData.sets.map((set, setIndex) => {
-              const setCoaching = coaching?.sets?.[setIndex];
-              const isCompletingSet = isLoading(
-                `completeSet:${exerciseIndex}:${setIndex}`,
-              );
-
-              return (
-                <SetRow
-                  key={set.id}
-                  set={set}
-                  setIndex={setIndex}
-                  isDuration={isDuration}
-                  hasWeight={hasWeight}
-                  targetRepMin={targetRepMin}
-                  targetRepMax={targetRepMax}
-                  targetDuration={targetDuration}
-                  setCoaching={setCoaching}
-                  isCompleting={isCompletingSet}
-                  isDeleting={isDeletingSet}
-                  onSetChange={onSetChange}
-                  onComplete={() => onCompleteSet(setIndex)}
-                  onUncomplete={() => onUncompleteSet(setIndex)}
-                  onDelete={() => onDeleteSet(setIndex)}
-                  onStartTimer={() => onStartDurationTimer(setIndex)}
-                />
-              );
-            })}
+            {sets.length === 0 && (
+              <p className="py-3 text-center text-sm text-ink-2">
+                No sets yet. Add one to start logging.
+              </p>
+            )}
+            {sets.map((set, setIndex) => (
+              <SetRow
+                key={set.id}
+                set={set}
+                setIndex={setIndex}
+                isNext={setIndex === nextSetIndex}
+                editing={editing}
+                isDuration={isDuration}
+                hasWeight={hasWeight}
+                previous={formatPrevious(
+                  exerciseData.lastPerformance?.[setIndex],
+                  isDuration,
+                  hasWeight,
+                )}
+                setCoaching={coaching?.sets?.[setIndex]}
+                isCompleting={isLoading(
+                  `completeSet:${exerciseIndex}:${setIndex}`,
+                )}
+                isDeleting={isDeletingSet}
+                onSetChange={onSetChange}
+                onComplete={() => onCompleteSet(setIndex)}
+                onUncomplete={() => onUncompleteSet(setIndex)}
+                onDelete={() => onDeleteSet(setIndex)}
+                onStartTimer={() => onStartDurationTimer(setIndex)}
+              />
+            ))}
           </div>
 
-          {/* Add Set Button */}
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            className="w-full"
             onClick={onAddSet}
-            disabled={isAddingSet}
-            className="mt-2 text-blue-400 text-sm flex items-center gap-1 hover:text-blue-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            isLoading={isAddingSet}
           >
-            {isAddingSet ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Plus size={14} />
-            )}
+            {!isAddingSet && <Plus size={18} />}
             {isAddingSet ? 'Adding...' : 'Add Set'}
-          </button>
+          </Button>
+
+          {/* Exercise tools */}
+          <div className="-mx-1 flex flex-wrap items-center gap-1 border-t border-line pt-2">
+            <ToolButton onClick={onOpenNotes} icon={<PencilLine size={16} />}>
+              Notes
+            </ToolButton>
+            {onLinkExercise && (
+              <ToolButton
+                onClick={onLinkExercise}
+                pressed={isSelectedForLink}
+                icon={<Combine size={16} />}
+              >
+                {isSelectedForLink ? 'Selected' : 'Superset'}
+              </ToolButton>
+            )}
+            <ToolButton
+              onClick={() => setEditing((v) => !v)}
+              pressed={editing}
+              icon={<SquarePen size={16} />}
+            >
+              {editing ? 'Done editing' : 'Edit sets'}
+            </ToolButton>
+            <span className="ml-auto">
+              <ToolButton
+                onClick={onRemoveExercise}
+                tone="danger"
+                icon={<Trash2 size={16} />}
+              >
+                Remove
+              </ToolButton>
+            </span>
+          </div>
         </div>
       )}
     </>
   );
 }
 
-// Individual Set Row Component
 interface SetRowProps {
   set: SetData;
   setIndex: number;
+  isNext: boolean;
+  editing: boolean;
   isDuration: boolean;
   hasWeight: boolean;
-  targetRepMin: number | null;
-  targetRepMax: number | null;
-  targetDuration: number | null;
+  previous: string;
   setCoaching?: { reps?: ProgressionDirection; weight?: ProgressionDirection };
-  isCompleting?: boolean;
-  isDeleting?: boolean;
-  onSetChange: (
-    setIndex: number,
-    field: 'reps' | 'weight' | 'durationSeconds',
-    value: string,
-  ) => void;
+  isCompleting: boolean;
+  isDeleting: boolean;
+  onSetChange: (setIndex: number, field: SetField, value: string) => void;
   onComplete: () => void;
   onUncomplete: () => void;
   onDelete: () => void;
@@ -255,14 +252,14 @@ interface SetRowProps {
 function SetRow({
   set,
   setIndex,
+  isNext,
+  editing,
   isDuration,
   hasWeight,
-  targetRepMin,
-  targetRepMax,
-  targetDuration,
+  previous,
   setCoaching,
-  isCompleting = false,
-  isDeleting = false,
+  isCompleting,
+  isDeleting,
   onSetChange,
   onComplete,
   onUncomplete,
@@ -270,128 +267,85 @@ function SetRow({
   onStartTimer,
 }: SetRowProps) {
   const isCompleted = set.completed;
+  const label = `set ${setIndex + 1}`;
 
   return (
     <div
-      className={`flex items-center gap-2 py-1.5 px-2 rounded ${
-        isCompleted ? 'bg-green-900/30' : 'bg-slate-800/50'
+      className={`${SET_GRID} rounded-xl px-1 py-1.5 transition-colors ${
+        isCompleted ? 'bg-train-soft' : ''
       }`}
     >
-      {/* Set Number */}
-      <span className="w-6 text-center text-sm font-medium text-slate-400">
-        {setIndex + 1}
-      </span>
-
-      {/* Weight Input */}
-      {hasWeight && (
-        <div className="flex items-center gap-1">
-          {!isCompleted && getProgressionArrow(setCoaching?.weight)}
-          <Input
-            type="number"
-            value={set.weight}
-            onChange={(e) => onSetChange(setIndex, 'weight', e.target.value)}
-            onFocus={(e) => e.target.select()}
-            className="w-16 h-8 text-center text-sm p-1"
-            placeholder={set.placeholderWeight || 'lbs'}
-            disabled={isCompleted}
-          />
-          <span className="text-slate-500 text-xs">lbs</span>
-        </div>
-      )}
-
-      {/* Separator */}
-      {hasWeight && <span className="text-slate-600 text-sm">x</span>}
-
-      {/* Reps or Duration Input */}
-      {isDuration ? (
-        <div className="flex items-center gap-1">
-          <Input
-            type="number"
-            value={set.durationSeconds}
-            onChange={(e) =>
-              onSetChange(setIndex, 'durationSeconds', e.target.value)
-            }
-            onFocus={(e) => e.target.select()}
-            className="w-16 h-8 text-center text-sm p-1"
-            placeholder={set.placeholderDuration || 'sec'}
-            disabled={isCompleted}
-          />
-          <span className="text-slate-500 text-xs">sec</span>
-          {!isCompleted && targetDuration && (
-            <span className="text-blue-400 text-xs">({targetDuration}s)</span>
+      {/* Set number (delete while editing) */}
+      {editing && !isCompleted ? (
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={isDeleting}
+          aria-label={`Delete ${label}`}
+          className="grid size-11 place-items-center rounded-lg text-danger hover:bg-danger-soft disabled:opacity-50"
+        >
+          {isDeleting ? (
+            <Loader2 size={18} className="animate-spin" />
+          ) : (
+            <Trash2 size={18} />
           )}
-        </div>
+        </button>
       ) : (
-        <div className="flex items-center gap-1">
-          {!isCompleted && getProgressionArrow(setCoaching?.reps)}
-          <Input
-            type="number"
-            value={set.reps}
-            onChange={(e) => onSetChange(setIndex, 'reps', e.target.value)}
-            onFocus={(e) => e.target.select()}
-            className="w-14 h-8 text-center text-sm p-1"
-            placeholder={set.placeholderReps || 'reps'}
-            disabled={isCompleted}
-          />
-          {!isCompleted && targetRepMin && targetRepMax && (
-            <span className="text-blue-400 text-xs whitespace-nowrap">
-              ({targetRepMin}-{targetRepMax})
-            </span>
-          )}
-        </div>
+        <span
+          className={`num mx-auto grid size-8 place-items-center rounded-lg text-base font-bold ${
+            isNext ? 'bg-train text-on-accent' : 'text-ink-2'
+          }`}
+        >
+          {setIndex + 1}
+        </span>
       )}
 
-      {/* Action buttons */}
-      <div className="flex items-center gap-1 ml-auto">
-        {!isCompleted && (
-          <>
-            <button
-              type="button"
-              onClick={onDelete}
-              disabled={isDeleting}
-              className="p-1.5 text-red-400/70 hover:text-red-400 hover:bg-red-900/30 rounded transition-colors disabled:opacity-50"
-            >
-              {isDeleting ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <Trash2 size={16} />
-              )}
-            </button>
-            {isDuration ? (
-              <button
-                type="button"
-                onClick={onStartTimer}
-                className="p-1.5 text-green-400 hover:bg-green-900/30 rounded transition-colors"
-              >
-                <Play size={16} />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={onComplete}
-                disabled={isCompleting}
-                className="p-1.5 text-green-400/70 hover:text-green-400 hover:bg-green-900/30 rounded transition-colors disabled:opacity-50"
-              >
-                {isCompleting ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <Check size={16} />
-                )}
-              </button>
-            )}
-          </>
-        )}
-        {isCompleted && (
-          <button
-            type="button"
-            onClick={onUncomplete}
-            className="p-1.5 text-orange-400/70 hover:text-orange-400 hover:bg-orange-900/30 rounded transition-colors"
-            title="Mark as incomplete to edit"
-          >
-            <X size={16} />
-          </button>
-        )}
-      </div>
+      <span className="num truncate text-sm text-ink-3">{previous}</span>
+
+      {hasWeight ? (
+        <NumberCell
+          label={`Weight for ${label}, lbs`}
+          value={set.weight}
+          placeholder={set.placeholderWeight || '0'}
+          disabled={isCompleted}
+          onChange={(v) => onSetChange(setIndex, 'weight', v)}
+          hint={!isCompleted && getProgressionArrow(setCoaching?.weight)}
+        />
+      ) : (
+        <span className="text-center text-sm text-ink-3">—</span>
+      )}
+
+      {isDuration ? (
+        <NumberCell
+          label={`Seconds for ${label}`}
+          value={set.durationSeconds}
+          placeholder={set.placeholderDuration || '0'}
+          disabled={isCompleted}
+          onChange={(v) => onSetChange(setIndex, 'durationSeconds', v)}
+        />
+      ) : (
+        <NumberCell
+          label={`Reps for ${label}`}
+          value={set.reps}
+          placeholder={set.placeholderReps || '0'}
+          disabled={isCompleted}
+          onChange={(v) => onSetChange(setIndex, 'reps', v)}
+          hint={!isCompleted && getProgressionArrow(setCoaching?.reps)}
+        />
+      )}
+
+      {isDuration && !isCompleted ? (
+        <StartHoldButton label={label} onClick={onStartTimer} />
+      ) : (
+        <DoneButton
+          completed={isCompleted}
+          isNext={isNext}
+          loading={isCompleting}
+          label={label}
+          onComplete={onComplete}
+          onUncomplete={onUncomplete}
+        />
+      )}
     </div>
   );
 }

@@ -21,30 +21,40 @@ interface TimeRangeSelectorProps {
   className?: string;
   /** Use compact styling (smaller padding). Defaults to false */
   compact?: boolean;
+  /** Discipline colour of the selected segment. Defaults to train. */
+  tone?: 'train' | 'body';
 }
+
+const ACTIVE_TONE = {
+  train: 'bg-train text-on-accent',
+  body: 'bg-body text-on-accent',
+};
 
 export function TimeRangeSelector({
   value,
   onChange,
   className = '',
   compact = false,
+  tone = 'train',
 }: TimeRangeSelectorProps) {
   return (
-    <div className={`flex gap-1 ${className}`}>
+    <fieldset
+      className={`m-0 flex min-w-0 gap-1 rounded-xl border-0 bg-sunken p-1 ${className}`}
+      aria-label="Time range"
+    >
       {TIME_RANGE_OPTIONS.map((range) => (
         <button
           key={range}
           type="button"
           onClick={() => onChange(range)}
-          className={`${compact ? 'px-3 py-1' : 'flex-1 py-2'} rounded text-sm font-medium transition-colors ${
-            value === range
-              ? 'bg-blue-600 text-white'
-              : 'bg-slate-700 text-slate-400 hover:text-white'
+          aria-pressed={value === range}
+          className={`${compact ? 'px-3 h-10' : 'flex-1 h-10'} rounded-lg text-sm font-semibold transition-colors ${
+            value === range ? ACTIVE_TONE[tone] : 'text-ink-2 hover:text-ink'
           }`}
         >
           {TIME_RANGE_LABELS[range]}
         </button>
       ))}
-    </div>
+    </fieldset>
   );
 }

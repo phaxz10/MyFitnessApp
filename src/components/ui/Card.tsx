@@ -1,17 +1,21 @@
 import type { ReactNode } from 'react';
 
+// Hairline-ruled module: one border, no shadow, 12px radius.
+
 interface CardProps {
   children: ReactNode;
   className?: string;
   onClick?: () => void;
 }
 
+const MODULE = 'bg-surface rounded-xl border border-line';
+
 export function Card({ children, className = '', onClick }: CardProps) {
   if (onClick) {
     return (
       <button
         type="button"
-        className={`bg-slate-800 rounded-xl border border-slate-700 cursor-pointer hover:bg-slate-700 transition-colors text-left w-full ${className}`}
+        className={`${MODULE} text-left w-full transition-colors hover:border-line-strong active:bg-sunken ${className}`}
         onClick={onClick}
       >
         {children}
@@ -19,46 +23,28 @@ export function Card({ children, className = '', onClick }: CardProps) {
     );
   }
 
+  return <div className={`${MODULE} ${className}`}>{children}</div>;
+}
+
+interface SlotProps {
+  children: ReactNode;
+  className?: string;
+}
+
+export function CardHeader({ children, className = '' }: SlotProps) {
   return (
-    <div
-      className={`bg-slate-800 rounded-xl border border-slate-700 ${className}`}
-    >
+    <div className={`px-4 pt-3.5 pb-2 border-b border-line ${className}`}>
       {children}
     </div>
   );
 }
 
-interface CardHeaderProps {
-  children: ReactNode;
-  className?: string;
+export function CardContent({ children, className = '' }: SlotProps) {
+  return <div className={`p-4 ${className}`}>{children}</div>;
 }
 
-export function CardHeader({ children, className = '' }: CardHeaderProps) {
+export function CardTitle({ children, className = '' }: SlotProps) {
   return (
-    <div className={`px-3 py-2.5 border-b border-slate-700 ${className}`}>
-      {children}
-    </div>
-  );
-}
-
-interface CardContentProps {
-  children: ReactNode;
-  className?: string;
-}
-
-export function CardContent({ children, className = '' }: CardContentProps) {
-  return <div className={`p-3 ${className}`}>{children}</div>;
-}
-
-interface CardTitleProps {
-  children: ReactNode;
-  className?: string;
-}
-
-export function CardTitle({ children, className = '' }: CardTitleProps) {
-  return (
-    <h3 className={`text-base font-semibold text-white ${className}`}>
-      {children}
-    </h3>
+    <h3 className={`text-base font-bold text-ink ${className}`}>{children}</h3>
   );
 }

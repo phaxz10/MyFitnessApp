@@ -6,6 +6,7 @@ import {
   Outlet,
   Route,
   Routes,
+  useLocation,
 } from 'react-router-dom';
 import { GlobalModalContainer } from './components/modals';
 import { BottomNav, Header } from './components/ui';
@@ -34,11 +35,21 @@ import {
 import { getDB, isOnboardingComplete } from './services/db';
 import { attemptSilentTokenRefresh, isSignedIn } from './services/googleAuth';
 
+// Each route starts at the top instead of inheriting the previous scroll.
+function useScrollToTopOnNavigate() {
+  const { pathname } = useLocation();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: pathname is the trigger, not a value read inside
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+}
+
 function MainLayout() {
+  useScrollToTopOnNavigate();
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col">
+    <div className="min-h-dvh bg-canvas flex flex-col">
       <Header />
-      <main className="flex-1 max-w-lg mx-auto w-full">
+      <main className="flex-1 max-w-lg mx-auto w-full pb-[calc(4rem+env(safe-area-inset-bottom))]">
         <Outlet />
       </main>
       <BottomNav />
@@ -48,8 +59,9 @@ function MainLayout() {
 
 // Layout without bottom nav for workout session
 function SessionLayout() {
+  useScrollToTopOnNavigate();
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col">
+    <div className="min-h-dvh bg-canvas flex flex-col">
       <main className="flex-1 max-w-lg mx-auto w-full">
         <Outlet />
       </main>
@@ -135,8 +147,8 @@ function AppRoutes() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen bg-canvas flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-train border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }

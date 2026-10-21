@@ -85,6 +85,18 @@ const INITIAL_STATE: GeneratorState = {
   streamlinedResult: null,
 };
 
+/**
+ * Make an already-saved program the only active one. Kept separate from
+ * saving so "Set as Active" after a save never writes the program twice.
+ */
+async function activateProgram(programId: number): Promise<void> {
+  const db = await getDB();
+  await db.query('UPDATE workout_programs SET is_active = false');
+  await db.query('UPDATE workout_programs SET is_active = true WHERE id = $1', [
+    programId,
+  ]);
+}
+
 export function useProgramGenerator() {
   const [state, setState] = useState<GeneratorState>(INITIAL_STATE);
 
@@ -720,14 +732,7 @@ export function useProgramGenerator() {
       const shouldAutoActivate = autoActivate ?? state.isOnlyProgram;
 
       if (shouldAutoActivate) {
-        const db = await getDB();
-        // Deactivate all other programs
-        await db.query('UPDATE workout_programs SET is_active = false');
-        // Activate this program
-        await db.query(
-          'UPDATE workout_programs SET is_active = true WHERE id = $1',
-          [programId],
-        );
+        await activateProgram(programId);
         return { programId, wasAutoActivated: true };
       }
 
@@ -742,6 +747,7 @@ export function useProgramGenerator() {
     generateProgramStreamlined,
     saveProgram,
     saveProgramWithAutoActivation,
+    activateProgram,
     overrideDuplicateMapping,
     resetState,
     checkProgramCount,

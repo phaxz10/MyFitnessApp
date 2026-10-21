@@ -1,21 +1,26 @@
-import {
-  ArrowLeft,
-  Calendar,
-  Dumbbell,
-  Minus,
-  TrendingDown,
-  TrendingUp,
-  Trophy,
-} from 'lucide-react';
+import { Dumbbell } from 'lucide-react';
 import {
   type TimeRange,
   useAllExercisesProgress,
   useExercisePRs,
   useExerciseSessionData,
 } from '../../hooks/useStrengthProgress';
-import { formatDisplayDate } from '../../utils/date';
-import { Button, Card, CardContent } from '../ui';
+import {
+  Card,
+  CardContent,
+  ExerciseMark,
+  getProgressTrendLabel,
+  progressTrendToDirection,
+  Skeleton,
+  SkeletonCard,
+  SkeletonChart,
+  TrendIndicator,
+} from '../ui';
+import { BackButton } from './BackButton';
+import { formatSessionCount } from './format';
 import { OneRMChart } from './OneRMChart';
+import { PersonalRecordsCard } from './PersonalRecordsCard';
+import { SessionHistoryCard } from './SessionHistoryCard';
 
 interface ExerciseProgressDetailProps {
   exerciseId: number;
@@ -41,196 +46,56 @@ export function ExerciseProgressDetail({
 
   const isLoading = sessionsLoading || prsLoading;
 
-  const getTrendInfo = () => {
-    if (!summary)
-      return { icon: null, label: 'Unknown', color: 'text-slate-400' };
-    switch (summary.trend) {
-      case 'progressing':
-        return {
-          icon: <TrendingUp className="text-green-400" size={20} />,
-          label: 'Progressing',
-          color: 'text-green-400',
-        };
-      case 'regressing':
-        return {
-          icon: <TrendingDown className="text-red-400" size={20} />,
-          label: 'Regressing',
-          color: 'text-red-400',
-        };
-      default:
-        return {
-          icon: <Minus className="text-slate-400" size={20} />,
-          label: 'Plateau',
-          color: 'text-slate-400',
-        };
-    }
-  };
-
-  const trendInfo = getTrendInfo();
-
   if (isLoading && sessions.length === 0) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+      <div className="space-y-4">
+        <Skeleton className="h-11 w-2/3" />
+        <SkeletonCard>
+          <SkeletonChart />
+        </SkeletonCard>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <div className="flex items-center gap-3">
-        <Button variant="secondary" onClick={onBack} className="p-2">
-          <ArrowLeft size={20} />
-        </Button>
-        <div className="flex-1">
-          <h2 className="text-xl font-bold text-white">{exerciseName}</h2>
-          <div className="flex items-center gap-2 mt-1">
-            {trendInfo.icon}
-            <span className={`text-sm ${trendInfo.color}`}>
-              {trendInfo.label}
-            </span>
-            {summary && (
-              <span className="text-slate-500 text-sm">
-                - {summary.totalSessions} sessions
+        <BackButton onClick={onBack} label="Back to exercises" />
+        <ExerciseMark
+          name={exerciseName}
+          muscleGroups={summary?.muscleGroups}
+        />
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-lg font-bold text-ink">
+            {exerciseName}
+          </h2>
+          {summary && (
+            <div className="flex items-center gap-2">
+              <TrendIndicator
+                direction={progressTrendToDirection(summary.trend)}
+                label={getProgressTrendLabel(summary.trend)}
+              />
+              <span className="num text-sm text-ink-3">
+                {formatSessionCount(summary.totalSessions)}
               </span>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* 1RM Chart */}
-      <OneRMChart data={sessions} title="Strength Progress" height={200} />
+      <OneRMChart data={sessions} title="Estimated 1RM" height={200} />
 
-      {/* Personal Records */}
-      {prs && (
-        <Card>
-          <CardContent className="p-4">
-            <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-              <Trophy className="text-yellow-400" size={20} />
-              Personal Records
-            </h3>
-            <div className="grid grid-cols-2 gap-3">
-              {prs.maxWeight && (
-                <div className="bg-slate-700/50 rounded-lg p-3">
-                  <p className="text-slate-400 text-sm">Max Weight</p>
-                  <p className="text-white text-xl font-bold">
-                    {prs.maxWeight.value} lbs
-                  </p>
-                  <p className="text-slate-500 text-xs">
-                    {prs.maxWeight.reps} reps
-                  </p>
-                </div>
-              )}
-              {prs.max1RM && (
-                <div className="bg-slate-700/50 rounded-lg p-3">
-                  <p className="text-slate-400 text-sm">Est. 1RM</p>
-                  <p className="text-white text-xl font-bold">
-                    {prs.max1RM.value} lbs
-                  </p>
-                  <p className="text-slate-500 text-xs">
-                    {formatDisplayDate(prs.max1RM.date)}
-                  </p>
-                </div>
-              )}
-              {prs.maxReps && (
-                <div className="bg-slate-700/50 rounded-lg p-3">
-                  <p className="text-slate-400 text-sm">Max Reps</p>
-                  <p className="text-white text-xl font-bold">
-                    {prs.maxReps.value} reps
-                  </p>
-                  <p className="text-slate-500 text-xs">
-                    @ {prs.maxReps.weight} lbs
-                  </p>
-                </div>
-              )}
-              {prs.maxVolume && (
-                <div className="bg-slate-700/50 rounded-lg p-3">
-                  <p className="text-slate-400 text-sm">Max Volume</p>
-                  <p className="text-white text-xl font-bold">
-                    {prs.maxVolume.value >= 1000
-                      ? `${(prs.maxVolume.value / 1000).toFixed(1)}K`
-                      : prs.maxVolume.value}{' '}
-                    lbs
-                  </p>
-                  <p className="text-slate-500 text-xs">single session</p>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {prs && <PersonalRecordsCard prs={prs} />}
 
-      {/* Session History */}
-      <Card>
-        <CardContent className="p-4">
-          <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-            <Calendar size={20} className="text-slate-400" />
-            Session History
-          </h3>
-          {sessions.length === 0 ? (
-            <p className="text-slate-500 text-center py-4">
-              {isLoading ? (
-                <span className="flex items-center justify-center">
-                  <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500 mr-2" />
-                  Loading...
-                </span>
-              ) : (
-                'No sessions in this time range'
-              )}
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {sessions
-                .slice()
-                .reverse()
-                .slice(0, 10)
-                .map((session) => (
-                  <div
-                    key={session.date}
-                    className="border-b border-slate-700 last:border-0 pb-3 last:pb-0"
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <p className="text-white font-medium">
-                        {formatDisplayDate(session.date)}
-                      </p>
-                      <div className="text-right">
-                        {session.estimated1RM && (
-                          <p className="text-blue-400 text-sm">
-                            1RM: {session.estimated1RM} lbs
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {session.sets.map((set, setIndex) => (
-                        <span
-                          // biome-ignore lint/suspicious/noArrayIndexKey: sets have no stable id; static read-only list that never reorders
-                          key={`${session.date}-set-${setIndex}-${set.weight}-${set.reps}`}
-                          className="bg-slate-700 text-slate-300 text-sm px-2 py-1 rounded"
-                        >
-                          {set.weight ?? 0} x {set.reps ?? 0}
-                        </span>
-                      ))}
-                    </div>
-                    <p className="text-slate-500 text-sm mt-1">
-                      Volume: {session.totalVolume.toLocaleString()} lbs
-                    </p>
-                  </div>
-                ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <SessionHistoryCard sessions={sessions} isLoading={isLoading} />
 
-      {/* Empty State */}
       {sessions.length === 0 && !prs && !isLoading && (
         <Card>
-          <CardContent className="p-8 text-center">
-            <Dumbbell className="mx-auto mb-3 text-slate-600" size={48} />
-            <p className="text-slate-400 mb-2">No data for this exercise</p>
-            <p className="text-slate-500 text-sm">
-              Start tracking this exercise in your workouts
+          <CardContent className="space-y-1 py-8 text-center">
+            <Dumbbell className="mx-auto mb-3 text-ink-3" size={40} />
+            <p className="font-semibold text-ink">No data for this exercise</p>
+            <p className="text-sm text-ink-3">
+              Log it in a workout to start tracking.
             </p>
           </CardContent>
         </Card>

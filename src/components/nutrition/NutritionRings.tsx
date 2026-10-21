@@ -1,8 +1,6 @@
-// Concentric progress rings (Apple Watch-inspired) for daily nutrition.
-// Outer-to-inner: calories, protein, carbs, fat. Each ring fills as the
-// consumed value approaches its target. Selected over flat bars + a stacked
-// macro bar in the visual prototype (see /calories ?variant= history) — the
-// rings win on at-a-glance legibility for four simultaneous progress signals.
+// Concentric progress rings for the weekly-review summary. Outer-to-inner:
+// calories, protein, carbs, fat. Dashboard and CalorieLog use the ruled
+// MacroLegend bars instead.
 //
 // Palette is exported because the meal-entry results screen, Settings target
 // card, and Onboarding targets display use the same per-macro colors even
@@ -12,10 +10,11 @@ import type { ReactNode } from 'react';
 export const MACRO_PALETTE = {
   // Hex used as raw SVG stroke; the *_TEXT variants are Tailwind utility
   // classes so consumers don't have to thread CSS variables.
-  calories: { hex: '#f43f5e', text: 'text-rose-400' }, // rose-500
-  protein: { hex: '#facc15', text: 'text-amber-300' }, // yellow-400
-  carbs: { hex: '#22d3ee', text: 'text-cyan-400' }, // cyan-400
-  fat: { hex: '#c084fc', text: 'text-violet-400' }, // purple-400
+  // `hex` is a CSS colour (token var) usable as SVG stroke or inline style.
+  calories: { hex: 'var(--macro-calories)', text: 'text-macro-calories' },
+  protein: { hex: 'var(--macro-protein)', text: 'text-macro-protein' },
+  carbs: { hex: 'var(--macro-carbs)', text: 'text-macro-carbs' },
+  fat: { hex: 'var(--macro-fat)', text: 'text-macro-fat' },
 } as const;
 
 export interface NutritionRingsProps {
@@ -125,10 +124,10 @@ export function NutritionRings({
       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
         {center ?? (
           <>
-            <p className="text-3xl font-black text-white tabular-nums leading-none">
+            <p className="num text-3xl font-bold text-ink leading-none">
               {Math.round(consumed.calories).toLocaleString()}
             </p>
-            <p className="text-[10px] text-slate-400 uppercase tracking-wider mt-1">
+            <p className="text-xs text-ink-3 mt-1">
               of {Math.round(targets.calories).toLocaleString()} kcal
             </p>
           </>

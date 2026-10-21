@@ -18,6 +18,7 @@
  */
 
 import type { WorkoutStatus } from '../../types';
+import { pgDate, pgTimestamp } from '../../utils/pgValues';
 import type { DB } from '../db';
 import type { WorkoutLogWithSets } from './types';
 
@@ -114,20 +115,14 @@ function parseLogRow(row: Record<string, unknown>): WorkoutLogWithSets {
     id: row.id as number,
     program_id: row.program_id as number | null,
     session_id: row.session_id as number | null,
-    date: dateToString(row.date),
-    started_at: String(row.started_at ?? ''),
-    ended_at: row.ended_at != null ? String(row.ended_at) : null,
+    date: pgDate(row.date),
+    started_at: pgTimestamp(row.started_at),
+    ended_at: row.ended_at != null ? pgTimestamp(row.ended_at) : null,
     status: row.status as WorkoutStatus,
     notes: row.notes as string | null,
-    created_at: String(row.created_at ?? ''),
+    created_at: pgTimestamp(row.created_at),
     session_name: (row.session_name as string) ?? undefined,
     program_name: (row.program_name as string) ?? undefined,
     sets,
   };
-}
-
-/** PGlite may return DATE columns as Date objects — normalise to YYYY-MM-DD. */
-function dateToString(val: unknown): string {
-  if (val instanceof Date) return val.toISOString().split('T')[0];
-  return String(val ?? '');
 }

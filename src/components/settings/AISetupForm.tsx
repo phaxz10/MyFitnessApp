@@ -30,7 +30,7 @@ export function AISetupForm({ value, onChange, compact }: AISetupFormProps) {
   return (
     <div className="space-y-4">
       {!compact && (
-        <p className="text-slate-400 text-sm">
+        <p className="text-ink-2 text-sm">
           Paste your OpenRouter API key and pick a model to enable AI features.
           You can change this any time in Settings.
         </p>
@@ -39,7 +39,7 @@ export function AISetupForm({ value, onChange, compact }: AISetupFormProps) {
       <div>
         <label
           htmlFor="ai-model"
-          className="block text-sm font-medium text-slate-300 mb-2"
+          className="block text-sm font-semibold text-ink-2 mb-1.5"
         >
           Model
         </label>
@@ -48,7 +48,7 @@ export function AISetupForm({ value, onChange, compact }: AISetupFormProps) {
           onChange={(next) => onChange({ ...value, model: next })}
         />
         {!compact && (
-          <p className="text-slate-500 text-xs mt-1">{PROVIDER_BLURB}</p>
+          <p className="text-ink-3 text-sm mt-1.5">{PROVIDER_BLURB}</p>
         )}
       </div>
 
@@ -65,7 +65,7 @@ export function AISetupForm({ value, onChange, compact }: AISetupFormProps) {
           href={API_KEY_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-blue-400 text-xs hover:underline mt-1 inline-block"
+          className="text-train-ink text-sm font-semibold hover:underline inline-flex items-center min-h-11"
         >
           Get your {PROVIDER_LABEL} API key
         </a>

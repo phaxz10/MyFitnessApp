@@ -71,103 +71,129 @@ export function DurationTimer({
   const progress = Math.min((seconds / targetSeconds) * 100, 100);
   const isOverTarget = seconds >= targetSeconds;
 
+  const reset = () => {
+    stopAlarm();
+    setIsRunning(false);
+    setSeconds(0);
+    lastRingSecondRef.current = null;
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
-      <div className="w-full max-w-sm bg-slate-800 rounded-2xl p-6">
-        <div className="text-center mb-6">
-          <p className="text-slate-400 text-sm mb-2">
-            Target: {formatTimerDisplay(targetSeconds)}
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Hold timer"
+      className="fixed inset-0 z-50 flex flex-col bg-canvas pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
+    >
+      <div className="mx-auto flex w-full max-w-lg flex-1 flex-col px-4 py-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold text-ink">Hold</h2>
+          <p className="text-sm text-ink-2">
+            Target{' '}
+            <span className="num text-lg font-bold text-ink">
+              {formatTimerDisplay(targetSeconds)}
+            </span>
           </p>
+        </div>
+
+        {/* Count-up display */}
+        <div className="flex flex-1 flex-col justify-center">
           <p
-            className={`text-5xl font-mono font-bold ${isOverTarget ? 'text-green-400' : 'text-white'}`}
+            role="timer"
+            className={`num text-center text-8xl font-bold leading-none ${
+              isOverTarget ? 'text-train-ink' : 'text-ink'
+            }`}
           >
             {formatTimerDisplay(seconds)}
           </p>
-        </div>
-
-        {/* Progress bar */}
-        <div className="h-2 bg-slate-700 rounded-full mb-6 overflow-hidden">
           <div
-            className={`h-full transition-all duration-300 ${isOverTarget ? 'bg-green-500' : 'bg-blue-500'}`}
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-
-        <div className="flex items-center gap-3 mb-6">
-          <label
-            htmlFor="duration-ring-interval"
-            className="text-sm text-slate-400"
+            className="mt-6 h-2 overflow-hidden rounded-full bg-sunken-strong"
+            aria-hidden="true"
           >
-            Ring every
-          </label>
-          <Input
-            id="duration-ring-interval"
-            type="number"
-            min={0}
-            inputMode="numeric"
-            value={ringIntervalSeconds === 0 ? '' : ringIntervalSeconds}
-            onChange={(event) => handleRingIntervalChange(event.target.value)}
-            placeholder="Off"
-            className="w-20 text-center"
-          />
-          <span className="text-sm text-slate-400">sec</span>
-        </div>
-
-        <div className="flex gap-3">
-          <Button
-            variant="secondary"
-            className="flex-1"
-            onClick={() => {
-              stopAlarm();
-              setIsRunning(false);
-              setSeconds(0);
-              lastRingSecondRef.current = null;
-            }}
-          >
-            <RotateCcw size={18} className="mr-2" />
-            Reset
-          </Button>
-
-          {!isRunning ? (
-            <Button className="flex-1" onClick={() => setIsRunning(true)}>
-              <Play size={18} className="mr-2" />
-              {seconds > 0 ? 'Resume' : 'Start'}
-            </Button>
-          ) : (
-            <Button
-              variant="secondary"
-              className="flex-1"
-              onClick={() => setIsRunning(false)}
-            >
-              <Pause size={18} className="mr-2" />
-              Pause
-            </Button>
+            <div
+              className="h-full bg-train transition-[width] duration-300"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          {isOverTarget && (
+            <p className="mt-3 text-center text-base font-semibold text-train-ink">
+              Target reached
+            </p>
           )}
         </div>
 
-        <div className="flex gap-3 mt-3">
-          <Button
-            variant="secondary"
-            className="flex-1"
-            onClick={() => {
-              stopAlarm();
-              onCancel();
-            }}
-          >
-            Cancel
-          </Button>
-          <Button
-            className="flex-1 bg-green-600 hover:bg-green-700"
-            onClick={() => {
-              stopAlarm();
-              setIsRunning(false);
-              onComplete(seconds);
-            }}
-            disabled={seconds === 0}
-          >
-            <Check size={18} className="mr-2" />
-            Complete
-          </Button>
+        {/* Controls in thumb reach */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <label
+              htmlFor="duration-ring-interval"
+              className="text-sm text-ink-2"
+            >
+              Ring every
+            </label>
+            <div className="w-20">
+              <Input
+                id="duration-ring-interval"
+                type="number"
+                min={0}
+                inputMode="numeric"
+                value={ringIntervalSeconds === 0 ? '' : ringIntervalSeconds}
+                onChange={(event) =>
+                  handleRingIntervalChange(event.target.value)
+                }
+                placeholder="Off"
+                className="num text-center"
+              />
+            </div>
+            <span className="text-sm text-ink-2">sec</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Button variant="secondary" size="lg" onClick={reset}>
+              <RotateCcw size={18} />
+              Reset
+            </Button>
+            {!isRunning ? (
+              <Button size="lg" onClick={() => setIsRunning(true)}>
+                <Play size={18} />
+                {seconds > 0 ? 'Resume' : 'Start'}
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                size="lg"
+                onClick={() => setIsRunning(false)}
+              >
+                <Pause size={18} />
+                Pause
+              </Button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Button
+              variant="ghost"
+              size="lg"
+              onClick={() => {
+                stopAlarm();
+                onCancel();
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="lg"
+              onClick={() => {
+                stopAlarm();
+                setIsRunning(false);
+                onComplete(seconds);
+              }}
+              disabled={seconds === 0}
+            >
+              <Check size={18} />
+              Complete
+            </Button>
+          </div>
         </div>
       </div>
     </div>

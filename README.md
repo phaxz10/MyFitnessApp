@@ -5,7 +5,7 @@
 
 A free, open-source, offline-first fitness tracker with AI-powered coaching. Built as a Progressive Web App (PWA) — your data stays in your browser, your AI key stays in your hands.
 
-**BYOK (Bring Your Own Key)** — This app uses your own API key from your choice of AI provider (OpenAI, Anthropic, or Google). No accounts, no subscriptions, no data collection. You pay your chosen provider directly for what you use (typically $0.01-0.05 per AI interaction).
+**BYOK (Bring Your Own Key)** — This app uses your own [OpenRouter](https://openrouter.ai) API key, which works with models from OpenAI, Anthropic, Google, Meta and more. No accounts, no subscriptions, no data collection. You pay OpenRouter directly for what you use (typically $0.01-0.05 per AI interaction).
 
 [Live Demo](https://my-fitness-app-opal.vercel.app) | [Report a Bug](https://github.com/phaxz10/MyFitnessApp/issues)
 
@@ -25,8 +25,8 @@ Most fitness apps either cost $10-20/month, lock your data behind accounts, or s
 
 - **Free forever** — no premium tiers, no feature gates
 - **Your data, your browser** — everything stored locally via PGlite (PostgreSQL in IndexedDB)
-- **Your API key, your choice** — pick OpenAI, Anthropic, or Google in Settings; AI features call that provider directly, so you control costs
-- **No backend** — the entire app runs client-side; optional Google Drive backup uses your own Drive
+- **Your API key, your model** — paste an OpenRouter key and pick any model in Settings; AI features call OpenRouter directly, so you control costs
+- **No backend** — the entire app runs client-side; backups are a `.zip` file you download and keep
 - **Installable** — works offline as a PWA on any device
 
 ## Features
@@ -66,7 +66,7 @@ Most fitness apps either cost $10-20/month, lock your data behind accounts, or s
 ### Weight & Body Composition
 - **Weight tracking** — daily logs with weekly trend projection
 - **Body fat estimation** — US Navy method from circumference measurements
-- **Progress photos** — front/side/back photos stored locally with optional Drive backup
+- **Progress photos** — front/side/back photos stored locally and included in backups
 
 ### Exercise Library
 - **AI-generated details** — descriptions, muscle groups, form tips, and exercise type classification
@@ -74,11 +74,9 @@ Most fitness apps either cost $10-20/month, lock your data behind accounts, or s
 - **Batch operations** — bulk-create exercises or regenerate details after prompt improvements
 
 ### Data & Backup
-- **Google Drive auto-backup** — automatic 60-second debounced backup after any data change
-- **Photo sync** — progress photos uploaded individually to your Drive
-- **Restore on load** — detects newer remote backups and pulls them automatically
-- **Manual export/import** — JSON snapshot of all data for manual backup
-- **Privacy-first** — API keys are stripped from exports; photos stored separately
+- **Zip backup** — export a `.zip` (pick which data categories) containing `backup.json` plus your progress photos as real image files
+- **Restore anywhere** — import a backup in Settings or straight from onboarding; older `.json` backups still restore
+- **Privacy-first** — backups never leave the device unless you move the file; API keys are always stripped
 
 ## Tech Stack
 
@@ -89,13 +87,12 @@ Most fitness apps either cost $10-20/month, lock your data behind accounts, or s
 | **State** | Zustand 5 (persisted), TanStack React Query 5 |
 | **Forms** | React Hook Form 7, Zod 4 (validation) |
 | **Database** | PGlite 0.4 (PostgreSQL in IndexedDB) |
-| **AI** | Vercel AI SDK 6 (OpenAI / Anthropic / Google) |
+| **AI** | Vercel AI SDK 6 via OpenRouter (OpenAI-compatible) |
 | **Charts** | Recharts 3 |
 | **Build** | Vite 8, Biome 2 (lint + format) |
 | **PWA** | Workbox 7, vite-plugin-pwa |
 | **Testing** | Vitest 4 (integration tests with real PGlite) |
-| **Backup** | Google Drive API (client-side OAuth) |
-| **CORS Proxy** | Cloudflare Worker (optional, advanced — only OpenAI + web_search) |
+| **Backup** | Local `.zip` export/import (fflate) |
 
 ## Getting Started
 
@@ -122,28 +119,6 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 3. Search and pick a model from OpenRouter's live catalog (or type any model id)
 
 OpenRouter is browser-direct — no proxy required. Web search uses OpenRouter's `:online` plugin (see [ADR-0007](docs/adr/0007-openrouter-single-provider.md)).
-
-### Configure Google Drive Backup
-
-Google sign-in and Drive backup require a Google OAuth client ID. The app reads it from a Vite environment variable at build time, so you'll need a `.env` file in the project root before running `pnpm dev` or `pnpm build`.
-
-1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and create (or select) a project
-2. Enable the **Google Drive API** under *APIs & Services > Library*
-3. Under *APIs & Services > Credentials*, create an **OAuth 2.0 Client ID** of type **Web application**
-4. Add your dev and prod URLs to **Authorized JavaScript origins** — e.g. `http://localhost:5173` and your deployed origin (e.g. `https://your-app.vercel.app`). No redirect URI is needed (the app uses the implicit token flow).
-5. Configure the OAuth consent screen with the `.../auth/drive.file`, `email`, and `profile` scopes
-6. Copy the generated client ID into a `.env` file at the project root:
-
-   ```bash
-   # .env
-   VITE_GOOGLE_CLIENT_ID=your-client-id-here.apps.googleusercontent.com
-   ```
-
-7. Restart `pnpm dev` so Vite picks up the new variable
-8. In the app, go to Settings > Cloud Backup and sign in with Google (uses `drive.file` scope — can only access files it created)
-9. Auto-backup starts automatically after any data change
-
-When deploying (e.g. to Vercel), set `VITE_GOOGLE_CLIENT_ID` in the host's environment variables so the production build includes it.
 
 ## Project Structure
 
@@ -203,15 +178,15 @@ PGlite runs PostgreSQL directly in the browser via IndexedDB. The database schem
 Key patterns:
 - **json_agg** — collapses N+1 queries into single round-trips (see `src/services/queries/workoutHistory.ts`)
 - **generate_series** — pre-creates workout sets in bulk instead of looping (see `src/services/writers/workoutWriter.ts`)
-- **Write Bus** — intercepts mutations and emits events for auto-backup subscription
+- **Write Bus** — intercepts mutations and emits `WriteEvent`s to `onDbWrite` listeners
 
 ### Backup
 
-Google Drive backup uses client-side OAuth (implicit flow) with the `drive.file` scope. Two artifacts are synced:
-- `MyFitnessApp/backup.json` — all structured data (photo blobs excluded)
-- `MyFitnessApp/photos/photo-{id}.jpg` — individual progress photos
+Backups are local files (`src/services/backup.ts`, see [ADR-0008](docs/adr/0008-local-zip-backup-replaces-google-drive.md)). Export writes `mypersonalfitness-backup-YYYY-MM-DD.zip`:
+- `backup.json` — all selected tables; each `progress_photos` row carries `photo_file` instead of the inline image
+- `photos/<id>.<ext>` — each progress photo as a decoded image file
 
-Photos with NULL `photo_data` are lazy-loaded from Drive on demand.
+Import accepts that `.zip` or a legacy `.json` backup (photos inline), and restores inside a single transaction.
 
 ## Scripts
 
@@ -272,8 +247,8 @@ Contributions are welcome! Here's how to get started:
 - **No accounts** — no sign-up, no email, no passwords
 - **Local-first** — all data stored in your browser's IndexedDB
 - **BYOK** — your AI API key is stored in PGlite, never transmitted to any server except your chosen AI provider
-- **Export safety** — API keys are automatically stripped from JSON exports
-- **Drive scope** — Google OAuth uses `drive.file` scope (can only access files the app created)
+- **Export safety** — API keys are automatically stripped from backups
+- **No cloud sync** — backups are files you download; nothing is uploaded anywhere
 
 
 ---

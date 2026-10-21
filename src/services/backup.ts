@@ -1,11 +1,25 @@
+import { strFromU8, strToU8, unzipSync, type Zippable, zipSync } from 'fflate';
 import { toOpenRouterModelId } from '../constants/aiProviders';
 import { getLocalDateString } from '../utils/date';
 import { getDB } from './db';
 
+// ---------------------------------------------------------------------------
+// Backup format (ADR-0008)
+//
+// A backup is a `.zip` holding:
+//   backup.json          BackupData; progress_photos rows carry `photo_file`
+//                        instead of the inline `photo_data` data URL
+//   photos/<id>.<ext>    the decoded image bytes for each photo
+//
+// Legacy `.json` backups (version '0', photo_data inline) still import.
+// ---------------------------------------------------------------------------
+
+export const BACKUP_VERSION = '2.0';
+const BACKUP_JSON = 'backup.json';
+const PHOTOS_DIR = 'photos/';
+
 interface BackupData {
   version: string;
-  syncVersion?: number; // Auto-incrementing version for cross-device sync
-  deviceId?: string; // Identifies which device created this backup
   exported_at: string;
   data: {
     user_profile: unknown[];
@@ -61,64 +75,102 @@ export const EXPORT_OPTION_LABELS: Record<keyof ExportOptions, string> = {
   progressPhotos: 'Progress Photos',
 };
 
+export const UNSUPPORTED_FILE_ERROR =
+  'This file is not a MyPersonalFitness backup. Choose a backup .zip or .json file.';
+const DAMAGED_FILE_ERROR =
+  'This backup file is damaged or incomplete and could not be restored.';
+
+// API keys never leave the device, whatever the export path.
 const SENSITIVE_FIELD_REGEX = /api_key/i;
-
-const stripSensitiveFields = (
-  row: Record<string, unknown>,
-): Record<string, unknown> => {
-  const sanitized: Record<string, unknown> = {};
-
-  for (const [key, value] of Object.entries(row)) {
-    if (SENSITIVE_FIELD_REGEX.test(key)) {
-      continue;
-    }
-    sanitized[key] = value;
-  }
-
-  return sanitized;
-};
 
 const sanitizeRows = (rows: unknown[]): unknown[] =>
   rows.map((row) =>
     row && typeof row === 'object'
-      ? stripSensitiveFields(row as Record<string, unknown>)
+      ? Object.fromEntries(
+          Object.entries(row).filter(
+            ([key]) => !SENSITIVE_FIELD_REGEX.test(key),
+          ),
+        )
       : row,
   );
 
-export interface SyncMetadata {
-  syncVersion?: number;
-  deviceId?: string;
+// ---------------------------------------------------------------------------
+// Photo <-> file conversion
+// ---------------------------------------------------------------------------
+
+const DATA_URL_RE = /^data:image\/([a-z0-9.+-]+);base64,(.*)$/is;
+
+// MIME subtype <-> file extension where they differ.
+const EXT_FOR_SUBTYPE: Record<string, string> = {
+  jpeg: 'jpg',
+  'svg+xml': 'svg',
+};
+const SUBTYPE_FOR_EXT: Record<string, string> = { jpg: 'jpeg', svg: 'svg+xml' };
+
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
 }
 
-export interface ExportDataOptions {
-  options?: ExportOptions;
-  syncMetadata?: SyncMetadata;
-  /** When true, strip sensitive fields (api keys). Defaults to true for manual exports, false for Drive backups. */
-  stripSecrets?: boolean;
-}
-
-export async function exportData(
-  optionsOrConfig: ExportOptions | ExportDataOptions = DEFAULT_EXPORT_OPTIONS,
-  syncMetadata?: SyncMetadata,
-): Promise<string> {
-  // Support both old signature (options, syncMetadata) and new config object
-  let options: ExportOptions;
-  let stripSecrets: boolean;
-  if ('userProfile' in optionsOrConfig) {
-    // Old call signature: exportData(ExportOptions, SyncMetadata?)
-    options = optionsOrConfig;
-    stripSecrets = true;
-  } else {
-    // New call signature: exportData(ExportDataOptions)
-    options = optionsOrConfig.options ?? DEFAULT_EXPORT_OPTIONS;
-    syncMetadata = optionsOrConfig.syncMetadata ?? syncMetadata;
-    stripSecrets = optionsOrConfig.stripSecrets ?? true;
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
   }
+  return btoa(binary);
+}
 
-  const processRows = (rows: unknown[]): unknown[] =>
-    stripSecrets ? sanitizeRows(rows) : rows;
+/** Split a base64 image data URL into a zip-relative path and its bytes. */
+function photoToFile(
+  id: unknown,
+  dataUrl: string,
+): { path: string; bytes: Uint8Array } | null {
+  const match = DATA_URL_RE.exec(dataUrl);
+  if (!match) return null;
+  const subtype = match[1].toLowerCase();
+  const ext = EXT_FOR_SUBTYPE[subtype] ?? subtype;
+  try {
+    return {
+      path: `${PHOTOS_DIR}${String(id)}.${ext}`,
+      bytes: base64ToBytes(match[2]),
+    };
+  } catch {
+    return null;
+  }
+}
 
-  const db = await getDB();
+function fileToDataUrl(path: string, bytes: Uint8Array): string {
+  const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
+  const subtype = SUBTYPE_FOR_EXT[ext] ?? ext;
+  return `data:image/${subtype};base64,${bytesToBase64(bytes)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Export
+// ---------------------------------------------------------------------------
+
+// Read date/time columns as Postgres text, not JS Dates. PGlite parses
+// TIMESTAMP (no time zone) as *local* time; serialising that Date to UTC ISO
+// and inserting it back into a TIMESTAMP column drops the offset, so every
+// restore shifted created_at/updated_at by the device's UTC offset.
+const keepText = (value: string) => value;
+const RAW_DATETIME_PARSERS = {
+  1082: keepText, // date
+  1083: keepText, // time
+  1114: keepText, // timestamp
+  1184: keepText, // timestamptz
+};
+
+async function collectBackupData(options: ExportOptions): Promise<BackupData> {
+  const raw = await getDB();
+  const db = {
+    query: (sql: string) =>
+      raw.query(sql, [], { parsers: RAW_DATETIME_PARSERS }),
+  };
+  const none = Promise.resolve({ rows: [] as unknown[] });
 
   // Only query tables that are selected for export
   const [
@@ -137,117 +189,192 @@ export async function exportData(
     weeklyReviews,
     progressPhotos,
   ] = await Promise.all([
-    options.userProfile
-      ? db.query('SELECT * FROM user_profile')
-      : Promise.resolve({ rows: [] }),
+    options.userProfile ? db.query('SELECT * FROM user_profile') : none,
     options.weightLogs
       ? db.query('SELECT * FROM weight_logs ORDER BY date')
-      : Promise.resolve({ rows: [] }),
+      : none,
     options.calorieLogs
       ? db.query('SELECT * FROM food_entries ORDER BY date, id')
-      : Promise.resolve({ rows: [] }),
-    options.exercises
-      ? db.query('SELECT * FROM exercises ORDER BY id')
-      : Promise.resolve({ rows: [] }),
+      : none,
+    options.exercises ? db.query('SELECT * FROM exercises ORDER BY id') : none,
     options.workoutPrograms
       ? db.query('SELECT * FROM workout_programs ORDER BY id')
-      : Promise.resolve({ rows: [] }),
+      : none,
     options.workoutPrograms
       ? db.query(
           'SELECT * FROM program_sessions ORDER BY program_id, order_index',
         )
-      : Promise.resolve({ rows: [] }),
+      : none,
     options.workoutPrograms
       ? db.query(
           'SELECT * FROM program_exercises ORDER BY session_id, order_index',
         )
-      : Promise.resolve({ rows: [] }),
+      : none,
     options.workoutHistory
       ? db.query('SELECT * FROM workout_logs ORDER BY date')
-      : Promise.resolve({ rows: [] }),
+      : none,
     options.workoutHistory
       ? db.query(
           'SELECT * FROM workout_log_exercises ORDER BY workout_log_id, order_index',
         )
-      : Promise.resolve({ rows: [] }),
+      : none,
     options.workoutHistory
       ? db.query(
           'SELECT * FROM workout_sets ORDER BY workout_log_id, set_number',
         )
-      : Promise.resolve({ rows: [] }),
+      : none,
     options.exercises
       ? db.query(
           'SELECT * FROM exercise_notes ORDER BY exercise_id, created_at',
         )
-      : Promise.resolve({ rows: [] }),
+      : none,
     options.aiReviews
       ? db.query('SELECT * FROM ai_goal_reviews ORDER BY review_date')
-      : Promise.resolve({ rows: [] }),
+      : none,
     options.aiReviews
       ? db.query('SELECT * FROM weekly_reviews ORDER BY week_start')
-      : Promise.resolve({ rows: [] }),
+      : none,
     options.progressPhotos
       ? db.query('SELECT * FROM progress_photos ORDER BY date, created_at')
-      : Promise.resolve({ rows: [] }),
+      : none,
   ]);
 
-  const sanitizedUserProfile = processRows(userProfile.rows);
-  const sanitizedWeightLogs = processRows(weightLogs.rows);
-  const sanitizedFoodEntries = processRows(foodEntries.rows);
-  const sanitizedExercises = processRows(exercises.rows);
-  const sanitizedWorkoutPrograms = processRows(workoutPrograms.rows);
-  const sanitizedProgramSessions = processRows(programSessions.rows);
-  const sanitizedProgramExercises = processRows(programExercises.rows);
-  const sanitizedWorkoutLogs = processRows(workoutLogs.rows);
-  const sanitizedWorkoutLogExercises = processRows(workoutLogExercises.rows);
-  const sanitizedWorkoutSets = processRows(workoutSets.rows);
-  const sanitizedExerciseNotes = processRows(exerciseNotes.rows);
-  const sanitizedAiGoalReviews = processRows(aiGoalReviews.rows);
-  const sanitizedWeeklyReviews = processRows(weeklyReviews.rows);
-  const sanitizedProgressPhotos = processRows(progressPhotos.rows);
-
-  const backup: BackupData = {
-    version: '0',
-    ...(syncMetadata?.syncVersion !== undefined && {
-      syncVersion: syncMetadata.syncVersion,
-    }),
-    ...(syncMetadata?.deviceId && { deviceId: syncMetadata.deviceId }),
+  return {
+    version: BACKUP_VERSION,
     exported_at: new Date().toISOString(),
     data: {
-      user_profile: sanitizedUserProfile,
-      weight_logs: sanitizedWeightLogs,
-      food_entries: sanitizedFoodEntries,
-      exercises: sanitizedExercises,
-      workout_programs: sanitizedWorkoutPrograms,
-      program_sessions: sanitizedProgramSessions,
-      program_exercises: sanitizedProgramExercises,
-      workout_logs: sanitizedWorkoutLogs,
-      workout_log_exercises: sanitizedWorkoutLogExercises,
-      workout_sets: sanitizedWorkoutSets,
-      exercise_notes: sanitizedExerciseNotes,
-      ai_goal_reviews: sanitizedAiGoalReviews,
-      weekly_reviews: sanitizedWeeklyReviews,
-      progress_photos: sanitizedProgressPhotos,
+      user_profile: sanitizeRows(userProfile.rows),
+      weight_logs: sanitizeRows(weightLogs.rows),
+      food_entries: sanitizeRows(foodEntries.rows),
+      exercises: sanitizeRows(exercises.rows),
+      workout_programs: sanitizeRows(workoutPrograms.rows),
+      program_sessions: sanitizeRows(programSessions.rows),
+      program_exercises: sanitizeRows(programExercises.rows),
+      workout_logs: sanitizeRows(workoutLogs.rows),
+      workout_log_exercises: sanitizeRows(workoutLogExercises.rows),
+      workout_sets: sanitizeRows(workoutSets.rows),
+      exercise_notes: sanitizeRows(exerciseNotes.rows),
+      ai_goal_reviews: sanitizeRows(aiGoalReviews.rows),
+      weekly_reviews: sanitizeRows(weeklyReviews.rows),
+      progress_photos: sanitizeRows(progressPhotos.rows),
     },
   };
-
-  return JSON.stringify(backup, null, 2);
 }
 
-export async function importData(jsonString: string): Promise<void> {
-  const db = await getDB();
+/** Build a backup `.zip` (backup.json + photos/) for the selected categories. */
+export async function exportBackup(
+  options: ExportOptions = DEFAULT_EXPORT_OPTIONS,
+): Promise<Uint8Array> {
+  const backup = await collectBackupData(options);
+  const files: Zippable = {};
 
-  let backup: BackupData;
+  backup.data.progress_photos = backup.data.progress_photos.map((raw) => {
+    const { photo_data, ...row } = raw as Record<string, unknown>;
+    const file =
+      typeof photo_data === 'string' ? photoToFile(row.id, photo_data) : null;
+    if (file) {
+      // Images are already compressed; store them as-is.
+      files[file.path] = [file.bytes, { level: 0 }];
+      return { ...row, photo_file: file.path };
+    }
+    // Not a base64 image data URL (or no image at all): keep it inline so
+    // nothing is lost.
+    return { ...row, photo_file: null, photo_data: photo_data ?? null };
+  });
+
+  files[BACKUP_JSON] = strToU8(JSON.stringify(backup, null, 2));
+  return zipSync(files);
+}
+
+// ---------------------------------------------------------------------------
+// Import
+// ---------------------------------------------------------------------------
+
+function isZip(bytes: Uint8Array): boolean {
+  return (
+    bytes.length >= 4 &&
+    bytes[0] === 0x50 &&
+    bytes[1] === 0x4b &&
+    bytes[2] === 0x03 &&
+    bytes[3] === 0x04
+  );
+}
+
+function assertBackupShape(value: unknown): asserts value is BackupData {
+  const v = value as Partial<BackupData> | null;
+  if (
+    !v ||
+    typeof v !== 'object' ||
+    typeof v.version !== 'string' ||
+    !v.data ||
+    typeof v.data !== 'object'
+  ) {
+    throw new Error(UNSUPPORTED_FILE_ERROR);
+  }
+}
+
+function parseZipBackup(bytes: Uint8Array): BackupData {
+  let entries: Record<string, Uint8Array>;
   try {
-    backup = JSON.parse(jsonString);
+    entries = unzipSync(bytes);
   } catch {
-    throw new Error('Invalid JSON file');
+    throw new Error(DAMAGED_FILE_ERROR);
   }
+  const json = entries[BACKUP_JSON];
+  if (!json) throw new Error(UNSUPPORTED_FILE_ERROR);
 
-  // Validate structure
-  if (!backup.version || !backup.data) {
-    throw new Error('Invalid backup file structure');
+  let backup: unknown;
+  try {
+    backup = JSON.parse(strFromU8(json));
+  } catch {
+    throw new Error(DAMAGED_FILE_ERROR);
   }
+  assertBackupShape(backup);
+
+  if (Array.isArray(backup.data.progress_photos)) {
+    backup.data.progress_photos = backup.data.progress_photos.map((raw) => {
+      const { photo_file, ...row } = raw as Record<string, unknown>;
+      if (typeof photo_file !== 'string') {
+        return { ...row, photo_data: row.photo_data ?? null };
+      }
+      const file = entries[photo_file];
+      if (!photo_file.startsWith(PHOTOS_DIR) || !file) {
+        throw new Error(DAMAGED_FILE_ERROR);
+      }
+      return { ...row, photo_data: fileToDataUrl(photo_file, file) };
+    });
+  }
+  return backup;
+}
+
+function parseJsonBackup(bytes: Uint8Array): BackupData {
+  let backup: unknown;
+  try {
+    backup = JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    throw new Error(UNSUPPORTED_FILE_ERROR);
+  }
+  assertBackupShape(backup);
+  return backup;
+}
+
+/** Parse a backup file's bytes: the `.zip` format, or a legacy `.json`. */
+export function parseBackup(bytes: Uint8Array): BackupData {
+  return isZip(bytes) ? parseZipBackup(bytes) : parseJsonBackup(bytes);
+}
+
+export interface ImportResult {
+  /** Whether the backup restored a user profile (onboarding can be skipped). */
+  hasProfile: boolean;
+}
+
+/**
+ * Restore a backup file (`.zip` or legacy `.json`). Tables present in the
+ * backup are replaced; the whole restore runs in one transaction.
+ */
+export async function importBackup(bytes: Uint8Array): Promise<ImportResult> {
+  const backup = parseBackup(bytes);
+  const db = await getDB();
 
   // Wrap the entire import in a transaction. Without this, a single failing
   // INSERT mid-restore (most often a FK violation when a program_exercises row
@@ -263,6 +390,9 @@ export async function importData(jsonString: string): Promise<void> {
     await db.exec('ROLLBACK');
     throw err;
   }
+
+  const profiles = backup.data.user_profile;
+  return { hasProfile: Array.isArray(profiles) && profiles.length > 0 };
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: PGlite db type is wide; this stays internal.
@@ -615,7 +745,7 @@ async function importDataInner(db: any, backup: BackupData): Promise<void> {
     }
   }
 
-  // Progress photos (photo_data may be null when restoring from Google Drive)
+  // Progress photos (photo_data may be null: a backup row can carry no image)
   if (hasData(data.progress_photos)) {
     for (const row of data.progress_photos as Record<string, unknown>[]) {
       await db.query(
@@ -706,11 +836,10 @@ async function importDataInner(db: any, backup: BackupData): Promise<void> {
   }
 }
 
-export function downloadBackup(jsonString: string): void {
-  const date = getLocalDateString();
-  const filename = `mypersonalfitness-backup-${date}.json`;
+export function downloadBackup(zip: Uint8Array): void {
+  const filename = `mypersonalfitness-backup-${getLocalDateString()}.zip`;
 
-  const blob = new Blob([jsonString], { type: 'application/json' });
+  const blob = new Blob([zip as BlobPart], { type: 'application/zip' });
   const url = URL.createObjectURL(blob);
 
   const link = document.createElement('a');
@@ -722,11 +851,6 @@ export function downloadBackup(jsonString: string): void {
   URL.revokeObjectURL(url);
 }
 
-export async function readBackupFile(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error('Failed to read file'));
-    reader.readAsText(file);
-  });
+export async function readBackupFile(file: File): Promise<Uint8Array> {
+  return new Uint8Array(await file.arrayBuffer());
 }

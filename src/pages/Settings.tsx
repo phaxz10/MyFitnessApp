@@ -1,9 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  AlertTriangle,
-  Cloud,
-  CloudOff,
   Coffee,
   Download,
   Sparkles,
@@ -16,7 +13,6 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { AISetupForm } from '../components/settings/AISetupForm';
-import { BackupPanel } from '../components/settings/BackupPanel';
 import { ClearDataModal } from '../components/settings/ClearDataModal';
 import { ExportModal } from '../components/settings/ExportModal';
 import { GoalsForm } from '../components/settings/GoalsForm';
@@ -41,30 +37,14 @@ import {
   profileFormSchema,
 } from '../schemas/forms';
 import {
-  getBackupStatus,
-  performAutoBackup,
-  restoreFromDrive,
-} from '../services/autoBackup';
-import {
   downloadBackup,
   type ExportOptions,
-  exportData,
-  importData,
+  exportBackup,
+  importBackup,
   readBackupFile,
 } from '../services/backup';
 import { calculateTargets } from '../services/coaching/nutritionCoach';
 import { resetDatabase } from '../services/db';
-import {
-  getGoogleAuthStatus,
-  signOut as googleSignOut,
-  requestGoogleAccessToken,
-  signIn,
-} from '../services/googleAuth';
-import {
-  clearDriveState,
-  deleteAppFolder,
-  hasRemoteBackup,
-} from '../services/googleDrive';
 import { calculateAgeFromBirthdate, formatDate } from '../utils/date';
 
 export function Settings() {
@@ -82,26 +62,6 @@ export function Settings() {
   const [success, setSuccess] = useState<string | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
   const [showClearDataModal, setShowClearDataModal] = useState(false);
-
-  // Auto-backup state — auth and backup metadata refresh together via
-  // refreshBackupState() to avoid drift between the user record and the
-  // valid-token signal.
-  const [authStatus, setAuthStatus] = useState(getGoogleAuthStatus());
-  const [backupStatus, setBackupStatus] = useState(getBackupStatus());
-  const [isBackupLoading, setIsBackupLoading] = useState(false);
-  const googleUser = authStatus.user;
-  const driveNeedsReconnect = authStatus.needsReconnect;
-  const isDriveReady = !!googleUser && authStatus.hasValidAccessToken;
-  const backupSummary = driveNeedsReconnect
-    ? 'Reconnect Google Drive to resume'
-    : isDriveReady
-      ? 'Backing up to Google Drive'
-      : 'Not configured';
-
-  const refreshBackupState = () => {
-    setAuthStatus(getGoogleAuthStatus());
-    setBackupStatus(getBackupStatus());
-  };
 
   // Profile form
   const profileForm = useForm<ProfileFormData>({
@@ -284,9 +244,8 @@ export function Settings() {
   const handleExport = async (options: ExportOptions) => {
     setIsLoading(true);
     try {
-      const data = await exportData(options);
-      downloadBackup(data);
-      setSuccess('Data exported successfully');
+      downloadBackup(await exportBackup(options));
+      setSuccess('Backup downloaded');
     } catch (_err) {
       setError('Failed to export data');
     } finally {
@@ -301,13 +260,14 @@ export function Settings() {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await readBackupFile(file);
-      await importData(data);
-      // Invalidate profile query to trigger refetch after import
-      await queryClient.invalidateQueries({ queryKey: ['profile'] });
-      setSuccess('Data imported successfully');
-    } catch (_err) {
-      setError('Failed to import data');
+      await importBackup(await readBackupFile(file));
+      // Refetch everything the restore may have replaced
+      await queryClient.invalidateQueries();
+      setSuccess('Backup restored');
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to import the backup',
+      );
     } finally {
       setIsLoading(false);
       e.target.value = '';
@@ -317,16 +277,6 @@ export function Settings() {
   const handleClearData = async () => {
     setIsLoading(true);
     try {
-      if (googleUser) {
-        try {
-          await deleteAppFolder();
-        } catch {
-          // Drive cleanup is best-effort — don't block local reset
-        }
-        googleSignOut();
-        clearDriveState();
-        refreshBackupState();
-      }
       await resetDatabase();
       setOnboardingComplete(false);
       navigate('/onboarding');
@@ -337,102 +287,9 @@ export function Settings() {
     }
   };
 
-  // Google backup handlers
-  const handleGoogleSignIn = async () => {
-    setIsBackupLoading(true);
-    setError(null);
-
-    try {
-      await signIn();
-
-      const backupExists = await hasRemoteBackup();
-      if (backupExists) {
-        await restoreFromDrive();
-        await queryClient.invalidateQueries({ queryKey: ['profile'] });
-        setSuccess('Google Drive backup connected and restored!');
-      } else {
-        const result = await performAutoBackup();
-        if (result.success) {
-          setSuccess('Google Drive backup enabled! Initial backup created.');
-        } else {
-          setSuccess('Google Drive backup enabled!');
-        }
-      }
-
-      setActiveSection(null);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Failed to sign in with Google',
-      );
-    } finally {
-      refreshBackupState();
-      setIsBackupLoading(false);
-    }
-  };
-
-  const handleDisconnectGoogle = () => {
-    googleSignOut();
-    clearDriveState();
-    refreshBackupState();
-    setSuccess('Google Drive backup disconnected');
-  };
-
-  const handleReconnectGoogle = async () => {
-    setIsBackupLoading(true);
-    setError(null);
-
-    try {
-      await requestGoogleAccessToken();
-      const result = await performAutoBackup();
-      if (result.success) {
-        setSuccess('Google Drive reconnected and backup resumed.');
-      } else {
-        setError(
-          `Google Drive reconnected, but backup failed: ${result.error}`,
-        );
-      }
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Failed to reconnect Google Drive',
-      );
-    } finally {
-      refreshBackupState();
-      setIsBackupLoading(false);
-    }
-  };
-
-  const handleManualBackup = async () => {
-    setIsBackupLoading(true);
-    setError(null);
-
-    try {
-      await requestGoogleAccessToken();
-      const result = await performAutoBackup();
-      if (result.success) {
-        setSuccess('Backup completed successfully!');
-      } else {
-        setError(`Backup failed: ${result.error}`);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to backup');
-    } finally {
-      refreshBackupState();
-      setIsBackupLoading(false);
-    }
-  };
-
-  type SectionId = 'profile' | 'goals' | 'api' | 'backup';
+  type SectionId = 'profile' | 'goals' | 'api';
   const toggle = (id: SectionId) =>
     setActiveSection(activeSection === id ? null : id);
-
-  const backupIcon = driveNeedsReconnect ? (
-    <AlertTriangle size={18} />
-  ) : isDriveReady ? (
-    <Cloud size={18} />
-  ) : (
-    <CloudOff size={18} />
-  );
-  const backupTone = driveNeedsReconnect ? 'bg-warn-soft text-warn' : undefined;
 
   return (
     <div className="px-4 py-4 space-y-4">
@@ -522,43 +379,22 @@ export function Settings() {
       </SettingsSection>
 
       <SettingsSection title="Backup and data">
-        <SettingsRow
-          icon={backupIcon}
-          discipline={isDriveReady ? 'eat' : 'neutral'}
-          tone={backupTone}
-          title="Auto Backup"
-          summary={backupSummary}
-          summaryClass={driveNeedsReconnect ? 'text-warn' : 'text-ink-2'}
-          isOpen={activeSection === 'backup'}
-          onToggle={() => toggle('backup')}
-        >
-          <BackupPanel
-            googleUser={googleUser}
-            needsReconnect={driveNeedsReconnect}
-            lastBackup={backupStatus.lastBackup}
-            isLoading={isBackupLoading}
-            onSignIn={handleGoogleSignIn}
-            onReconnect={handleReconnectGoogle}
-            onBackupNow={handleManualBackup}
-            onDisconnect={handleDisconnectGoogle}
-          />
-        </SettingsRow>
         <SettingsActionRow
           icon={<Download size={18} />}
-          label="Export Data (JSON)"
-          hint="Download a copy you can keep"
+          label="Export backup (.zip)"
+          hint="Choose what to include, then download"
           onClick={() => setShowExportModal(true)}
         />
         <SettingsFileRow
           icon={<Upload size={18} />}
-          label="Import Data"
-          hint="Restore from a JSON export"
-          accept=".json"
+          label="Import backup"
+          hint="Restore from a .zip or older .json backup"
+          accept=".zip,.json,application/zip,application/json"
           onFile={handleImport}
         />
         <p className="px-4 py-3 text-sm text-ink-2">
-          Lost your data? If you had Auto Backup enabled, sign in with Google in
-          Auto Backup above to restore from Google Drive.
+          Backups never leave this device unless you move the file yourself.
+          Importing replaces whatever data the backup includes.
         </p>
       </SettingsSection>
 
@@ -598,7 +434,6 @@ export function Settings() {
         onClose={() => setShowClearDataModal(false)}
         onConfirm={handleClearData}
         isLoading={isLoading}
-        hasDriveBackup={!!googleUser}
       />
     </div>
   );

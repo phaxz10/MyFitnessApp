@@ -1,5 +1,7 @@
 # Google Drive backup replaces GitHub Gist
 
+> **Status**: Superseded by [ADR-0008](0008-local-zip-backup-replaces-google-drive.md) (2026-10-21). Google Drive backup has been removed; backups are local `.zip` files.
+
 The auto-backup system moves from GitHub secret gists to the user's own Google Drive, authenticated via Google Identity Services (client-side implicit flow). The GitHub PAT + gist approach stored sensitive health data (body metrics, diet, progress photos) in unencrypted, URL-accessible gists — security through obscurity at best. Google Drive gives us encrypted-at-rest storage in the user's own account, OAuth scoped to `drive.file` (app-created files only), and no PAT friction.
 
 ## Considered options

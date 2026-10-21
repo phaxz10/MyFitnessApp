@@ -215,7 +215,7 @@ const migrations: Migration[] = [
     },
   },
   {
-    // Allow NULL photo_data for lazy-loading photos from Google Drive backup.
+    // Allow NULL photo_data: a restored backup row may carry no image.
     version: 2,
     up: async (db) => {
       await db.exec(

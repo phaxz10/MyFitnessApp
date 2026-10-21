@@ -54,10 +54,11 @@ export function ExportModal({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Export Data">
+    <Modal isOpen={isOpen} onClose={onClose} title="Export backup">
       <div className="space-y-4">
         <p className="text-ink-2 text-sm">
-          Select the data you want to include in the export:
+          Choose what to include. Your backup downloads as a .zip file with your
+          data and progress photos. API keys are never included.
         </p>
 
         <div className="flex gap-1 -mx-3">
@@ -120,7 +121,7 @@ export function ExportModal({
             disabled={selectedCount === 0}
           >
             <Download size={18} aria-hidden="true" />
-            Export
+            Download .zip
           </Button>
         </div>
       </div>

@@ -19,13 +19,11 @@ import { useAppStore } from '../hooks/useAppStore';
 import { useProfile } from '../hooks/useProfile';
 import { useWeight } from '../hooks/useWeight';
 import { type OnboardingFormData, onboardingSchema } from '../schemas/forms';
-import { restoreFromDrive } from '../services/autoBackup';
+import { importBackup, readBackupFile } from '../services/backup';
 import {
   calculateDeterministicTargets,
   calculateTargets,
 } from '../services/coaching/nutritionCoach';
-import { signIn } from '../services/googleAuth';
-import { hasRemoteBackup } from '../services/googleDrive';
 import { calculateAgeFromBirthdate, formatDate } from '../utils/date';
 
 type Step =
@@ -86,7 +84,7 @@ export function Onboarding() {
 
   const [step, setStep] = useState<Step>('welcome');
   const [error, setError] = useState<string | null>(null);
-  const [isSigningIn, setIsSigningIn] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
 
   // Use React Hook Form for form state management
   const {
@@ -279,31 +277,26 @@ export function Onboarding() {
     navigate('/');
   };
 
-  const handleGoogleSignIn = async () => {
-    setIsSigningIn(true);
+  const handleRestoreFile = async (file: File) => {
+    setIsRestoring(true);
     setError(null);
 
     try {
-      await signIn();
-
-      const backupExists = await hasRemoteBackup();
-      if (backupExists) {
-        const hasProfile = await restoreFromDrive();
-        if (hasProfile) {
-          setOnboardingComplete(true);
-          await queryClient.invalidateQueries({ queryKey: ['profile'] });
-          navigate('/');
-          return;
-        }
+      const { hasProfile } = await importBackup(await readBackupFile(file));
+      await queryClient.invalidateQueries();
+      if (hasProfile) {
+        setOnboardingComplete(true);
+        navigate('/');
+        return;
       }
-
+      // Restored data but no profile: finish setup by hand.
       setStep('basic');
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'Failed to sign in with Google',
+        err instanceof Error ? err.message : 'Failed to restore the backup',
       );
     } finally {
-      setIsSigningIn(false);
+      setIsRestoring(false);
     }
   };
 
@@ -312,8 +305,8 @@ export function Onboarding() {
     return (
       <WelcomeScreen
         onStart={handleNext}
-        onGoogleSignIn={handleGoogleSignIn}
-        isSigningIn={isSigningIn}
+        onRestoreFile={handleRestoreFile}
+        isRestoring={isRestoring}
         error={error}
       />
     );

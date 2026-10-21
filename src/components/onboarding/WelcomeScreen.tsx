@@ -1,4 +1,5 @@
-import { GoogleIcon } from '../settings/GoogleIcon';
+import { Upload } from 'lucide-react';
+import { useRef } from 'react';
 import { Button } from '../ui';
 
 // The three disciplines as a flat Munich '72 colour band.
@@ -10,17 +11,19 @@ const DISCIPLINES = [
 
 interface WelcomeScreenProps {
   onStart: () => void;
-  onGoogleSignIn: () => void;
-  isSigningIn: boolean;
+  onRestoreFile: (file: File) => void;
+  isRestoring: boolean;
   error: string | null;
 }
 
 export function WelcomeScreen({
   onStart,
-  onGoogleSignIn,
-  isSigningIn,
+  onRestoreFile,
+  isRestoring,
   error,
 }: WelcomeScreenProps) {
+  const fileInput = useRef<HTMLInputElement>(null);
+
   return (
     <div className="min-h-dvh bg-canvas flex flex-col">
       <div className="grid grid-cols-3" aria-hidden="true">
@@ -51,18 +54,31 @@ export function WelcomeScreen({
 
         <div className="border-t border-line pt-3 space-y-2">
           <p className="text-ink-2 text-sm text-center">
-            Sign in to sync your data
+            Used MyPersonalFitness before?
           </p>
           <Button
             variant="secondary"
-            onClick={onGoogleSignIn}
+            onClick={() => fileInput.current?.click()}
             size="lg"
             className="w-full"
-            isLoading={isSigningIn}
+            isLoading={isRestoring}
           >
-            <GoogleIcon />
-            Sign in with Google
+            <Upload size={18} aria-hidden="true" />
+            Restore from a backup file
           </Button>
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".zip,.json,application/zip,application/json"
+            className="sr-only"
+            tabIndex={-1}
+            aria-hidden="true"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) onRestoreFile(file);
+            }}
+          />
           {error && (
             <p role="alert" className="text-danger text-sm text-center">
               {error}

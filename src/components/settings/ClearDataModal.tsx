@@ -7,8 +7,6 @@ interface ClearDataModalProps {
   onClose: () => void;
   onConfirm: () => void;
   isLoading: boolean;
-  /** Whether a Google Drive backup will be removed too. */
-  hasDriveBackup: boolean;
 }
 
 const CONFIRM_WORD = 'DELETE';
@@ -19,7 +17,6 @@ export function ClearDataModal({
   onClose,
   onConfirm,
   isLoading,
-  hasDriveBackup,
 }: ClearDataModalProps) {
   const [confirmText, setConfirmText] = useState('');
 
@@ -44,9 +41,8 @@ export function ClearDataModal({
             <p className="text-ink-2 text-sm mt-1">
               All your data including profile, weight logs, food entries,
               exercises, workout programs, and workout history will be
-              permanently deleted.
-              {hasDriveBackup &&
-                ' Your Google Drive backup will also be removed and your account will be disconnected.'}
+              permanently deleted. Export a backup first if you want to keep a
+              copy.
             </p>
           </div>
         </div>

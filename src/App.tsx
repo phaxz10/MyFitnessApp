@@ -28,12 +28,7 @@ import { WeightTracker } from './pages/WeightTracker';
 import { Workout } from './pages/Workout';
 import { WorkoutDetail } from './pages/WorkoutDetail';
 import { WorkoutSession } from './pages/WorkoutSession';
-import {
-  isAutoBackupEnabled,
-  restoreIfRemoteNewer,
-} from './services/autoBackup';
 import { getDB, isOnboardingComplete } from './services/db';
-import { attemptSilentTokenRefresh, isSignedIn } from './services/googleAuth';
 
 // Each route starts at the top instead of inheriting the previous scroll.
 function useScrollToTopOnNavigate() {
@@ -93,26 +88,6 @@ function AppRoutes() {
         if (complete) {
           // Process any stale in_progress workouts from previous days
           await processStaleWorkouts();
-
-          // Refresh the Google access token silently if the user's session is
-          // still valid — keeps auto-backup alive across page reloads without
-          // forcing the user back through a Reconnect prompt.
-          if (isSignedIn()) {
-            await attemptSilentTokenRefresh();
-          }
-
-          if (isAutoBackupEnabled()) {
-            restoreIfRemoteNewer()
-              .then((restored) => {
-                if (restored) {
-                  console.log('Restored newer backup from Google Drive');
-                  queryClient.invalidateQueries({ queryKey: ['profile'] });
-                }
-              })
-              .catch((err) => {
-                console.warn('Restore-on-load failed:', err);
-              });
-          }
         }
       } catch (err) {
         console.error('Failed to initialize app:', err);

@@ -19,7 +19,7 @@
 
 import type { WorkoutStatus } from '../../types';
 import { pgDate, pgTimestamp } from '../../utils/pgValues';
-import type { DB } from '../db';
+import type { Queryable as DB } from '../db';
 import type { WorkoutLogWithSets } from './types';
 
 // ---------------------------------------------------------------------------

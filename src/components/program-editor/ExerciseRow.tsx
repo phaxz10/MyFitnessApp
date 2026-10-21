@@ -16,6 +16,8 @@ interface ExerciseRowProps {
   muscleGroups?: string;
   register: UseFormRegister<ProgramFormData>;
   isInSuperset: boolean;
+  /** A superset member that the selected exercise can be linked into. */
+  canJoinSuperset?: boolean;
   isSelectedForSuperset: boolean;
   onSupersetTap: () => void;
   onDelete: () => void;
@@ -28,6 +30,7 @@ export function ExerciseRow({
   muscleGroups,
   register,
   isInSuperset,
+  canJoinSuperset = false,
   isSelectedForSuperset,
   onSupersetTap,
   onDelete,
@@ -58,8 +61,9 @@ export function ExerciseRow({
           </p>
         </div>
 
-        {/* Superset toggle: only when NOT already in a superset */}
-        {!isInSuperset && (
+        {/* Superset toggle: on loose exercises, and on superset members
+            while another exercise is waiting to be linked (it joins). */}
+        {(!isInSuperset || canJoinSuperset) && (
           <button
             type="button"
             onClick={onSupersetTap}
@@ -67,12 +71,16 @@ export function ExerciseRow({
             aria-label={
               isSelectedForSuperset
                 ? 'Click another exercise to link'
-                : 'Create superset'
+                : canJoinSuperset
+                  ? 'Add to this superset'
+                  : 'Create superset'
             }
             title={
               isSelectedForSuperset
                 ? 'Click another exercise to link'
-                : 'Create superset'
+                : canJoinSuperset
+                  ? 'Add to this superset'
+                  : 'Create superset'
             }
             className={`grid place-items-center size-11 rounded-lg transition-colors ${
               isSelectedForSuperset

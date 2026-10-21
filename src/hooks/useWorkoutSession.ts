@@ -7,76 +7,76 @@ import type {
   WorkoutLogExerciseWithDetails,
   WorkoutSet,
 } from '../types';
-import {
-  parseWeightInput,
-  toDisplayWeight,
-  type WeightUnit,
-} from '../utils/units';
+import { keyedDebounce } from '../utils/debounce';
+import { resolveSetValues } from '../utils/setValues';
+import { toDisplayWeight, type WeightUnit } from '../utils/units';
 import { useExercises } from './useExercises';
 import { useWeightUnit } from './useWeightUnit';
 import { useWorkoutLogs } from './useWorkoutLogs';
+import {
+  appendSet,
+  type ExerciseWithSets,
+  patchExercise,
+  patchSet,
+  removeExercises,
+  removeSets,
+  type SetData,
+  setSupersetGroup,
+} from './workoutSessionState';
 
-export interface SetData {
-  id: number; // Database ID - always present since sets are pre-created
-  set_number: number;
-  reps: string;
-  /** In the user's display unit (see useWeightUnit); stored as kg. */
-  weight: string;
-  /** The kg value last loaded/saved for this set; keeps unedited saves exact. */
-  weightKg?: number | null;
-  durationSeconds: string;
-  completed: boolean; // Based on completed_at IS NOT NULL
-  // Placeholder values for new sets (from last performance or targets)
-  placeholderReps?: string;
-  placeholderWeight?: string;
-  placeholderDuration?: string;
-}
+export type { ExerciseWithSets, SetData } from './workoutSessionState';
 
-export interface ExerciseWithSets {
-  workoutLogExercise: WorkoutLogExerciseWithDetails; // Source of truth from DB
-  exercise: Exercise; // Master exercise data
-  exerciseType: ExerciseType;
-  sets: SetData[];
-  lastPerformance: WorkoutSet[] | null;
-  isExpanded: boolean;
-  notes: string;
-}
-
-// Debounce helper for auto-saving field changes
-function debounce<T extends (...args: Parameters<T>) => void>(
-  fn: T,
-  delay: number,
-): (...args: Parameters<T>) => void {
-  let timeoutId: ReturnType<typeof setTimeout>;
-  return (...args: Parameters<T>) => {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => fn(...args), delay);
-  };
-}
-
-// A set cell's weight text (display unit) as kg - always a number, never null
-function parseWeight(set: SetData | undefined, unit: WeightUnit): number {
-  return parseWeightInput(set?.weight, unit, set?.weightKg);
-}
+const SAVE_DEBOUNCE_MS = 500;
 
 // A stored kg value as the string shown in a set cell
 function weightText(kg: number, unit: WeightUnit): string {
   return toDisplayWeight(kg, unit, 'lift').toString();
 }
 
-// Helper to parse reps - can be null for duration exercises
-function parseReps(value: string | undefined | null): number | null {
-  if (!value || value === '') return null;
-  const parsed = parseInt(value, 10);
-  return Number.isNaN(parsed) ? null : parsed;
+// Last session's weight as a placeholder; none when it logged no weight, so
+// tapping Done stores NULL rather than an invented 0.
+function placeholderWeightText(
+  lastSet: WorkoutSet | undefined,
+  unit: WeightUnit,
+): string | undefined {
+  return lastSet?.weight_kg != null
+    ? weightText(lastSet.weight_kg, unit)
+    : undefined;
 }
 
-// Helper to parse duration - can be null for non-duration exercises
-function parseDuration(value: string | undefined | null): number | null {
-  if (!value || value === '') return null;
-  const parsed = parseInt(value, 10);
-  return Number.isNaN(parsed) ? null : parsed;
+// Placeholders for a set appended after `lastSet`: what it shows, real values
+// first.
+function placeholdersAfter(
+  lastSet: SetData | undefined,
+  isDuration: boolean,
+): Pick<
+  SetData,
+  'placeholderReps' | 'placeholderWeight' | 'placeholderDuration'
+> {
+  return {
+    placeholderReps: isDuration
+      ? undefined
+      : lastSet?.reps || lastSet?.placeholderReps,
+    placeholderWeight: lastSet?.weight || lastSet?.placeholderWeight,
+    placeholderDuration: isDuration
+      ? lastSet?.durationSeconds || lastSet?.placeholderDuration || '30'
+      : undefined,
+  };
 }
+
+function emptySet(dbSet: WorkoutSet): SetData {
+  return {
+    id: dbSet.id,
+    set_number: dbSet.set_number,
+    reps: '',
+    weight: '',
+    durationSeconds: '',
+    completed: false,
+  };
+}
+
+const isDurationType = (type: ExerciseType) =>
+  type === 'duration' || type === 'duration_weight';
 
 // Manages the full lifecycle of an active workout session.
 //
@@ -84,15 +84,20 @@ function parseDuration(value: string | undefined | null): number | null {
 //   Mounting -> Loading -> (InitFromTemplate | InitFromLegacy | Empty) -> Active -> (Completed | Cancelled)
 //
 // KEY PATTERNS:
-//   - exercisesRef: a ref mirror of exercisesWithSets state. Callbacks passed to child
-//     components capture stale closures; the ref always holds the latest snapshot.
+//   - exercisesRef: a ref mirror of exercisesWithSets state, kept current
+//     eagerly, so handlers read the latest snapshot without stale closures.
+//   - Handlers take (exerciseIndex, setIndex) from the UI but resolve them to
+//     a Workout Log Exercise id / Set id BEFORE awaiting; every state update
+//     after an await is keyed by id (workoutSessionState.ts), never by index.
 //   - hasInitializedExercises: one-time gate. After the first DB load, local React state
 //     becomes the source of truth — we never re-read from DB mid-session.
-//   - pendingSaves: Map<string, Promise> that serializes concurrent saves to the same set,
-//     preventing race conditions when the user types fast and the debounce fires.
+//   - Field edits auto-save through a keyed debouncer: one timer per Set id,
+//     so editing set 1 then set 2 saves both. Pending saves flush on
+//     pagehide, tab hidden, unmount and before finishing the workout.
 //   - Sets are PRE-CREATED in the DB (via generate_series) when a workout starts.
 //     All set operations are UPDATEs, never INSERTs. This simplifies the save logic:
 //     every set already has a DB ID.
+//   - Tapping Done fills empty fields from their placeholders (resolveSetValues).
 //
 // SUPERSET MODEL:
 //   Exercises sharing a superset_group_id are rendered together. "Rounds" map to set
@@ -106,18 +111,23 @@ export function useWorkoutSession(dateOverride?: string) {
     updateSet,
     completeSet,
     uncompleteSet,
-    deleteSet,
+    deleteSets,
     addSetToExercise,
-    removeSetFromExercise,
     addRoundToSuperset,
     getWorkoutSets,
     getWorkoutLogExercises,
     addWorkoutLogExercise,
-    deleteWorkoutLogExercise,
+    deleteWorkoutLogExercises,
     updateWorkoutLogExercise,
   } = useWorkoutLogs();
 
-  const { exercises: allExercises, fetchExercises } = useExercises();
+  // Lookups include archived exercises (a workout can hold one that was
+  // removed from the library since); pickers get live ones only.
+  const {
+    exercises: libraryExercises,
+    exercisesIncludingArchived,
+    fetchExercises,
+  } = useExercises();
 
   // SetData.weight strings are in the display unit; convert at the DB edge.
   // A ref so callbacks read the current unit without re-creating.
@@ -159,11 +169,18 @@ export function useWorkoutSession(dateOverride?: string) {
     exercisesRef.current = exercisesWithSets;
   }, [exercisesWithSets]);
 
+  // Apply a pure, id-keyed update to state and to the ref at once, so a
+  // second event in the same tick already sees the first.
+  const commit = useCallback(
+    (update: (state: ExerciseWithSets[]) => ExerciseWithSets[]) => {
+      exercisesRef.current = update(exercisesRef.current);
+      setExercisesWithSets(update);
+    },
+    [],
+  );
+
   // Track whether exercises have been initialized from DB (only do this once!)
   const hasInitializedExercises = useRef(false);
-
-  // Track pending saves to prevent race conditions
-  const pendingSaves = useRef<Map<string, Promise<void>>>(new Map());
 
   // Initialize session on mount
   useEffect(() => {
@@ -179,7 +196,7 @@ export function useWorkoutSession(dateOverride?: string) {
   useEffect(() => {
     const initExercises = async () => {
       if (!activeWorkout || !isInitialized) return;
-      if (!allExercises.length) return; // Wait for exercises to load
+      if (!exercisesIncludingArchived.length) return; // Wait for exercises to load
 
       // Only initialize once! After that, local state is the source of truth
       if (hasInitializedExercises.current) return;
@@ -210,7 +227,7 @@ export function useWorkoutSession(dateOverride?: string) {
       if (workoutLogExercises.length > 0) {
         const exercisesDataRaw = await Promise.all(
           workoutLogExercises.map(async (wle) => {
-            const masterExercise = allExercises.find(
+            const masterExercise = exercisesIncludingArchived.find(
               (e) => e.id === wle.exercise_id,
             );
             if (!masterExercise) {
@@ -250,8 +267,8 @@ export function useWorkoutSession(dateOverride?: string) {
                   : lastSet?.reps?.toString() ||
                     wle.target_rep_min?.toString() ||
                     '8';
-                const placeholderWeight = weightText(
-                  lastSet?.weight_kg ?? 0,
+                const placeholderWeight = placeholderWeightText(
+                  lastSet,
                   unitRef.current,
                 );
                 const placeholderDuration = isDuration
@@ -307,7 +324,9 @@ export function useWorkoutSession(dateOverride?: string) {
 
         const exercisesDataRaw = await Promise.all(
           exerciseIds.map(async (exerciseId) => {
-            const exercise = allExercises.find((e) => e.id === exerciseId);
+            const exercise = exercisesIncludingArchived.find(
+              (e) => e.id === exerciseId,
+            );
             if (!exercise) return null;
 
             const dbSets =
@@ -365,8 +384,8 @@ export function useWorkoutSession(dateOverride?: string) {
                   placeholderReps: isDur
                     ? undefined
                     : lastSet?.reps?.toString() || '8',
-                  placeholderWeight: weightText(
-                    lastSet?.weight_kg ?? 0,
+                  placeholderWeight: placeholderWeightText(
+                    lastSet,
                     unitRef.current,
                   ),
                   placeholderDuration: isDur ? '30' : undefined,
@@ -394,70 +413,61 @@ export function useWorkoutSession(dateOverride?: string) {
     initExercises();
   }, [
     activeWorkout,
-    allExercises,
+    exercisesIncludingArchived,
     getWorkoutLogExercises,
     getWorkoutSets,
     isInitialized,
   ]);
 
-  // UPDATES an existing set row in the DB. Sets are pre-created when a workout starts
-  // (via generate_series), so this is always an UPDATE, never an INSERT.
-  // Uses a pendingSaves map to serialize concurrent writes to the same set ID,
-  // preventing a fast typer's debounced saves from racing each other.
-  const saveSetToDb = useCallback(
+  // Writes the TYPED values of a set (auto-save). Sets are pre-created when a
+  // workout starts, so this is always an UPDATE, never an INSERT. A ref keeps
+  // the debouncer (created once) calling the current function.
+  const saveTypedValues = useCallback(
     async (setId: number, exerciseType: ExerciseType, setData: SetData) => {
-      if (!activeWorkout) return;
-
-      const isDuration =
-        exerciseType === 'duration' || exerciseType === 'duration_weight';
-
-      // Parse values
-      const reps = isDuration ? null : parseReps(setData.reps);
-      const weight = parseWeight(setData, unitRef.current);
-      const duration = isDuration
-        ? parseDuration(setData.durationSeconds)
-        : null;
-
-      const saveKey = `set-${setId}`;
-
-      // Wait for any pending save for this set
-      const pending = pendingSaves.current.get(saveKey);
-      if (pending) {
-        await pending;
+      const { values } = resolveSetValues(
+        setData,
+        exerciseType,
+        unitRef.current,
+        { fillPlaceholders: false },
+      );
+      try {
+        await updateSet(setId, values);
+      } catch (err) {
+        console.error('Failed to save set:', err);
       }
-
-      const savePromise = (async () => {
-        try {
-          await updateSet(setId, {
-            reps,
-            weight_kg: weight,
-            duration_seconds: duration,
-          });
-        } catch (err) {
-          console.error('Failed to save set:', err);
-        } finally {
-          pendingSaves.current.delete(saveKey);
-        }
-      })();
-
-      pendingSaves.current.set(saveKey, savePromise);
-      return savePromise;
     },
-    [activeWorkout, updateSet],
+    [updateSet],
+  );
+  const saveRef = useRef(saveTypedValues);
+  saveRef.current = saveTypedValues;
+
+  const [saveDebouncer] = useState(() =>
+    keyedDebounce<number, [ExerciseType, SetData]>(
+      (setId, type, setData) => saveRef.current(setId, type, setData),
+      SAVE_DEBOUNCE_MS,
+    ),
   );
 
-  // Debounced save function for auto-save on field change
-  const debouncedSaveRef = useRef<ReturnType<
-    typeof debounce<typeof saveSetToDb>
-  > | null>(null);
-
+  // Never lose a pending edit: flush when the page is hidden or unloaded
+  // (a phone locking, the app being swiped away) and on unmount.
   useEffect(() => {
-    debouncedSaveRef.current = debounce(saveSetToDb, 500);
-  }, [saveSetToDb]);
+    const flush = () => {
+      saveDebouncer.flush();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onVisibility);
+      flush();
+    };
+  }, [saveDebouncer]);
 
   // Optimistic update: writes to local state immediately for responsive UI,
-  // then triggers a debounced (500ms) save to DB. The debounce batches rapid
-  // keystrokes into a single DB write.
+  // then schedules that set's debounced (500ms) save.
   const handleSetChange = useCallback(
     (
       exerciseIndex: number,
@@ -465,43 +475,54 @@ export function useWorkoutSession(dateOverride?: string) {
       field: 'reps' | 'weight' | 'durationSeconds',
       value: string,
     ) => {
-      // Update local state immediately for responsive UI
-      setExercisesWithSets((prev) => {
-        const updated = [...prev];
-        const exerciseData = updated[exerciseIndex];
-        if (!exerciseData) return prev;
+      const exerciseData = exercisesRef.current[exerciseIndex];
+      const set = exerciseData?.sets[setIndex];
+      if (!exerciseData || !set) return;
 
-        const newSets = exerciseData.sets.map((set, i) =>
-          i === setIndex ? { ...set, [field]: value } : set,
-        );
-
-        updated[exerciseIndex] = {
-          ...exerciseData,
-          sets: newSets,
-        };
-
-        // Trigger debounced save - sets are pre-created so we always have an ID
-        const updatedSet = newSets[setIndex];
-        if (debouncedSaveRef.current && updatedSet) {
-          debouncedSaveRef.current(
-            updatedSet.id,
-            exerciseData.exerciseType,
-            updatedSet,
-          );
-        }
-
-        return updated;
+      commit((prev) => patchSet(prev, set.id, { [field]: value }));
+      saveDebouncer.schedule(set.id, exerciseData.exerciseType, {
+        ...set,
+        [field]: value,
       });
     },
-    [],
+    [commit, saveDebouncer],
+  );
+
+  // Tapping Done: fill empty fields from their placeholders, store, mark
+  // completed, and show the filled values as real ones.
+  const completeOne = useCallback(
+    async (exerciseType: ExerciseType, setData: SetData, seconds?: number) => {
+      saveDebouncer.cancel(setData.id); // superseded by the full write below
+      const source =
+        seconds === undefined
+          ? setData
+          : { ...setData, durationSeconds: String(seconds) };
+      const { values, cells } = resolveSetValues(
+        source,
+        exerciseType,
+        unitRef.current,
+        { fillPlaceholders: true },
+      );
+      await updateSet(setData.id, values);
+      await completeSet(setData.id);
+      commit((prev) =>
+        patchSet(prev, setData.id, {
+          reps: cells.reps,
+          weight: cells.weight,
+          durationSeconds: cells.durationSeconds,
+          weightKg: values.weight_kg,
+          completed: true,
+        }),
+      );
+    },
+    [saveDebouncer, updateSet, completeSet, commit],
   );
 
   // Mark a single set as completed (sets completed_at in DB)
   const handleCompleteSet = useCallback(
     async (exerciseIndex: number, setIndex: number): Promise<boolean> => {
       const loadingKey = `completeSet:${exerciseIndex}:${setIndex}`;
-      const currentExercises = exercisesRef.current;
-      const exerciseData = currentExercises[exerciseIndex];
+      const exerciseData = exercisesRef.current[exerciseIndex];
       if (!exerciseData || !activeWorkout) return false;
 
       const setData = exerciseData.sets[setIndex];
@@ -509,40 +530,7 @@ export function useWorkoutSession(dateOverride?: string) {
 
       setLoading(loadingKey, true);
       try {
-        // First, ensure we save any pending field values
-        const isDuration =
-          exerciseData.exerciseType === 'duration' ||
-          exerciseData.exerciseType === 'duration_weight';
-
-        const reps = isDuration ? null : parseReps(setData.reps);
-        const weight = parseWeight(setData, unitRef.current);
-        const duration = isDuration
-          ? parseDuration(setData.durationSeconds)
-          : null;
-
-        // Update values first
-        await updateSet(setData.id, {
-          reps,
-          weight_kg: weight,
-          duration_seconds: duration,
-        });
-
-        // Then mark as completed
-        await completeSet(setData.id);
-
-        // Update local state
-        setExercisesWithSets((prev) => {
-          const updated = [...prev];
-          if (updated[exerciseIndex]?.sets[setIndex]) {
-            updated[exerciseIndex] = {
-              ...updated[exerciseIndex],
-              sets: updated[exerciseIndex].sets.map((s, i) =>
-                i === setIndex ? { ...s, completed: true } : s,
-              ),
-            };
-          }
-          return updated;
-        });
+        await completeOne(exerciseData.exerciseType, setData);
         return true;
       } catch (err) {
         console.error('Failed to complete set:', err);
@@ -551,14 +539,13 @@ export function useWorkoutSession(dateOverride?: string) {
         setLoading(loadingKey, false);
       }
     },
-    [activeWorkout, updateSet, completeSet, setLoading],
+    [activeWorkout, completeOne, setLoading],
   );
 
   // Uncomplete a set (user wants to edit it again)
   const handleUncompleteSet = useCallback(
     async (exerciseIndex: number, setIndex: number): Promise<boolean> => {
-      const currentExercises = exercisesRef.current;
-      const exerciseData = currentExercises[exerciseIndex];
+      const exerciseData = exercisesRef.current[exerciseIndex];
       if (!exerciseData || !activeWorkout) return false;
 
       const setData = exerciseData.sets[setIndex];
@@ -566,26 +553,14 @@ export function useWorkoutSession(dateOverride?: string) {
 
       try {
         await uncompleteSet(setData.id);
-
-        setExercisesWithSets((prev) => {
-          const updated = [...prev];
-          if (updated[exerciseIndex]?.sets[setIndex]) {
-            updated[exerciseIndex] = {
-              ...updated[exerciseIndex],
-              sets: updated[exerciseIndex].sets.map((s, i) =>
-                i === setIndex ? { ...s, completed: false } : s,
-              ),
-            };
-          }
-          return updated;
-        });
+        commit((prev) => patchSet(prev, setData.id, { completed: false }));
         return true;
       } catch (err) {
         console.error('Failed to uncomplete set:', err);
         return false;
       }
     },
-    [activeWorkout, uncompleteSet],
+    [activeWorkout, uncompleteSet, commit],
   );
 
   // Complete all sets in a superset round
@@ -598,55 +573,19 @@ export function useWorkoutSession(dateOverride?: string) {
 
       // Use first exercise index as the key for superset round loading
       const loadingKey = `completeRound:${exerciseIndices[0]}:${roundNumber}`;
-      const currentExercises = exercisesRef.current;
+      const targets = exerciseIndices.flatMap((exerciseIndex) => {
+        const exerciseData = exercisesRef.current[exerciseIndex];
+        const setData = exerciseData?.sets[roundNumber];
+        return exerciseData && setData && !setData.completed
+          ? [{ type: exerciseData.exerciseType, setData }]
+          : [];
+      });
 
       setLoading(loadingKey, true);
       try {
-        // Save and complete all sets in the round
-        for (const exerciseIndex of exerciseIndices) {
-          const exerciseData = currentExercises[exerciseIndex];
-          if (!exerciseData) continue;
-
-          const setData = exerciseData.sets[roundNumber];
-          if (!setData || setData.completed) continue;
-
-          const isDuration =
-            exerciseData.exerciseType === 'duration' ||
-            exerciseData.exerciseType === 'duration_weight';
-
-          const reps = isDuration ? null : parseReps(setData.reps);
-          const weight = parseWeight(setData, unitRef.current);
-          const duration = isDuration
-            ? parseDuration(setData.durationSeconds)
-            : null;
-
-          // Update values
-          await updateSet(setData.id, {
-            reps,
-            weight_kg: weight,
-            duration_seconds: duration,
-          });
-
-          // Mark completed
-          await completeSet(setData.id);
+        for (const { type, setData } of targets) {
+          await completeOne(type, setData);
         }
-
-        // Update local state
-        setExercisesWithSets((prev) => {
-          const updated = [...prev];
-          for (const exerciseIndex of exerciseIndices) {
-            if (updated[exerciseIndex]?.sets[roundNumber]) {
-              updated[exerciseIndex] = {
-                ...updated[exerciseIndex],
-                sets: updated[exerciseIndex].sets.map((s, i) =>
-                  i === roundNumber ? { ...s, completed: true } : s,
-                ),
-              };
-            }
-          }
-          return updated;
-        });
-
         return true;
       } catch (err) {
         console.error('Failed to complete round:', err);
@@ -655,59 +594,32 @@ export function useWorkoutSession(dateOverride?: string) {
         setLoading(loadingKey, false);
       }
     },
-    [activeWorkout, updateSet, completeSet, setLoading],
+    [activeWorkout, completeOne, setLoading],
   );
 
   // Add a new set to an exercise (inserts to DB and updates local state)
   const handleAddSet = useCallback(
     async (exerciseIndex: number) => {
       const loadingKey = `addSet:${exerciseIndex}`;
-      const currentExercises = exercisesRef.current;
-      const exerciseData = currentExercises[exerciseIndex];
+      const exerciseData = exercisesRef.current[exerciseIndex];
       if (!exerciseData) return;
-      if (exerciseData.workoutLogExercise.id <= 0) return; // Can't add to legacy exercise
+      const wleId = exerciseData.workoutLogExercise.id;
+      if (wleId <= 0) return; // Can't add to legacy exercise
 
       setLoading(loadingKey, true);
       try {
-        const newSet = await addSetToExercise(
-          exerciseData.workoutLogExercise.id,
-        );
-
-        const lastSet = exerciseData.sets[exerciseData.sets.length - 1];
-        const isDuration =
-          exerciseData.exerciseType === 'duration' ||
-          exerciseData.exerciseType === 'duration_weight';
-
-        // Add to local state - use empty values with placeholders from last set
-        setExercisesWithSets((prev) => {
-          const updated = [...prev];
-          if (!updated[exerciseIndex]) return prev;
-
-          updated[exerciseIndex] = {
-            ...updated[exerciseIndex],
-            sets: [
-              ...updated[exerciseIndex].sets,
-              {
-                id: newSet.id,
-                set_number: newSet.set_number,
-                reps: '',
-                weight: '',
-                durationSeconds: '',
-                completed: false,
-                placeholderReps: isDuration
-                  ? undefined
-                  : lastSet?.placeholderReps || lastSet?.reps || '0',
-                placeholderWeight:
-                  lastSet?.placeholderWeight || lastSet?.weight || '0',
-                placeholderDuration: isDuration
-                  ? lastSet?.placeholderDuration ||
-                    lastSet?.durationSeconds ||
-                    '30'
-                  : undefined,
-              },
-            ],
-          };
-          return updated;
+        const newSet = await addSetToExercise(wleId);
+        // Placeholders from the exercise's last set as it is NOW.
+        commit((prev) => {
+          const current = prev.find((e) => e.workoutLogExercise.id === wleId);
+          if (!current) return prev;
+          return appendSet(prev, wleId, {
+            ...emptySet(newSet),
+            ...placeholdersAfter(
+              current.sets[current.sets.length - 1],
+              isDurationType(current.exerciseType),
+            ),
+          });
         });
       } catch (err) {
         console.error('Failed to add set:', err);
@@ -715,22 +627,18 @@ export function useWorkoutSession(dateOverride?: string) {
         setLoading(loadingKey, false);
       }
     },
-    [addSetToExercise, setLoading],
+    [addSetToExercise, commit, setLoading],
   );
 
-  // Add set to all exercises in a superset (inserts to DB for each)
+  // Add a round to a superset (one set per member, one statement)
   const handleAddSetToSuperset = useCallback(
     async (exerciseIndices: number[]) => {
       const loadingKey = `addRound:${exerciseIndices[0]}`;
-      const currentExercises = exercisesRef.current;
       if (!activeWorkout) return;
 
-      // Get the superset group ID from the first exercise
-      const firstExercise = currentExercises[exerciseIndices[0]];
-      if (!firstExercise) return;
-
+      const firstExercise = exercisesRef.current[exerciseIndices[0]];
       const supersetGroupId =
-        firstExercise.workoutLogExercise.superset_group_id;
+        firstExercise?.workoutLogExercise.superset_group_id;
       if (!supersetGroupId) return;
 
       setLoading(loadingKey, true);
@@ -739,100 +647,55 @@ export function useWorkoutSession(dateOverride?: string) {
           activeWorkout.id,
           supersetGroupId,
         );
-
-        // Update local state for each exercise - use empty values with placeholders
-        setExercisesWithSets((prev) => {
-          const updated = [...prev];
-
-          for (let i = 0; i < exerciseIndices.length; i++) {
-            const exerciseIndex = exerciseIndices[i];
-            const exerciseData = currentExercises[exerciseIndex];
-            if (!exerciseData) continue;
-
-            const newSet = newSets.find(
-              (s) =>
-                s.workout_log_exercise_id ===
-                exerciseData.workoutLogExercise.id,
+        commit((prev) =>
+          newSets.reduce((state, newSet) => {
+            const owner = state.find(
+              (e) => e.workoutLogExercise.id === newSet.workout_log_exercise_id,
             );
-            if (!newSet) continue;
-
-            const lastSet = exerciseData.sets[exerciseData.sets.length - 1];
-            const isDuration =
-              exerciseData.exerciseType === 'duration' ||
-              exerciseData.exerciseType === 'duration_weight';
-
-            updated[exerciseIndex] = {
-              ...updated[exerciseIndex],
-              sets: [
-                ...updated[exerciseIndex].sets,
-                {
-                  id: newSet.id,
-                  set_number: newSet.set_number,
-                  reps: '',
-                  weight: '',
-                  durationSeconds: '',
-                  completed: false,
-                  placeholderReps: isDuration
-                    ? undefined
-                    : lastSet?.placeholderReps || lastSet?.reps || '0',
-                  placeholderWeight:
-                    lastSet?.placeholderWeight || lastSet?.weight || '0',
-                  placeholderDuration: isDuration
-                    ? lastSet?.placeholderDuration ||
-                      lastSet?.durationSeconds ||
-                      '30'
-                    : undefined,
-                },
-              ],
-            };
-          }
-
-          return updated;
-        });
+            if (!owner) return state;
+            return appendSet(state, owner.workoutLogExercise.id, {
+              ...emptySet(newSet),
+              ...placeholdersAfter(
+                owner.sets[owner.sets.length - 1],
+                isDurationType(owner.exerciseType),
+              ),
+            });
+          }, prev),
+        );
       } catch (err) {
         console.error('Failed to add superset round:', err);
       } finally {
         setLoading(loadingKey, false);
       }
     },
-    [activeWorkout, addRoundToSuperset, setLoading],
+    [activeWorkout, addRoundToSuperset, commit, setLoading],
   );
 
-  // Delete a set (removes from DB and local state)
+  // Delete the tapped set (by id) from DB and local state
   const handleDeleteSet = useCallback(
-    async (exerciseIndex: number, _setIndex: number) => {
+    async (exerciseIndex: number, setIndex: number) => {
       const loadingKey = `deleteSet:${exerciseIndex}`;
-      const currentExercises = exercisesRef.current;
-      const exerciseData = currentExercises[exerciseIndex];
+      const exerciseData = exercisesRef.current[exerciseIndex];
       if (!exerciseData) return;
       if (exerciseData.workoutLogExercise.id <= 0) return; // Can't remove from legacy
 
       // Don't allow removing if only 1 set left
       if (exerciseData.sets.length <= 1) return;
+      const setId = exerciseData.sets[setIndex]?.id;
+      if (setId === undefined) return;
 
       setLoading(loadingKey, true);
       try {
-        await removeSetFromExercise(exerciseData.workoutLogExercise.id);
-
-        // Update local state - remove the last set
-        setExercisesWithSets((prev) => {
-          const updated = [...prev];
-          if (!updated[exerciseIndex]) return prev;
-
-          const newSets = updated[exerciseIndex].sets.slice(0, -1);
-          updated[exerciseIndex] = {
-            ...updated[exerciseIndex],
-            sets: newSets,
-          };
-          return updated;
-        });
+        saveDebouncer.cancel(setId);
+        await deleteSets([setId]);
+        commit((prev) => removeSets(prev, [setId]));
       } catch (err) {
         console.error('Failed to delete set:', err);
       } finally {
         setLoading(loadingKey, false);
       }
     },
-    [removeSetFromExercise, setLoading],
+    [deleteSets, saveDebouncer, commit, setLoading],
   );
 
   // Delete a specific round from all exercises in a superset
@@ -840,105 +703,69 @@ export function useWorkoutSession(dateOverride?: string) {
   const handleDeleteRound = useCallback(
     async (supersetExerciseIndices: number[], roundNumber: number) => {
       const loadingKey = `deleteRound:${supersetExerciseIndices[0]}`;
-      const currentExercises = exercisesRef.current;
       if (!activeWorkout) return;
 
-      // Get the superset group ID
-      const firstExercise = currentExercises[supersetExerciseIndices[0]];
-      if (!firstExercise) return;
-
-      const supersetGroupId =
-        firstExercise.workoutLogExercise.superset_group_id;
-      if (!supersetGroupId) return;
+      const members = supersetExerciseIndices
+        .map((i) => exercisesRef.current[i])
+        .filter((e): e is ExerciseWithSets => !!e);
+      const firstExercise = members[0];
+      if (!firstExercise?.workoutLogExercise.superset_group_id) return;
 
       setLoading(loadingKey, true);
       try {
         // If only 1 round left, delete all exercises in the superset
         if (firstExercise.sets.length <= 1) {
-          // Delete all exercises in the superset from DB
-          for (const exerciseIndex of supersetExerciseIndices) {
-            const exerciseData = currentExercises[exerciseIndex];
-            if (exerciseData && exerciseData.workoutLogExercise.id > 0) {
-              await deleteWorkoutLogExercise(
-                exerciseData.workoutLogExercise.id,
-              );
-            }
-          }
-
-          // Remove all superset exercises from local state
-          setExercisesWithSets((prev) =>
-            prev.filter((_, i) => !supersetExerciseIndices.includes(i)),
-          );
+          const wleIds = members.map((e) => e.workoutLogExercise.id);
+          await deleteWorkoutLogExercises(wleIds.filter((id) => id > 0));
+          commit((prev) => removeExercises(prev, wleIds));
           return;
         }
 
-        // Collect set IDs to delete from local state
-        const setIdsToDelete: number[] = [];
-        for (const exerciseIndex of supersetExerciseIndices) {
-          const exerciseData = currentExercises[exerciseIndex];
-          if (exerciseData?.sets[roundNumber]) {
-            setIdsToDelete.push(exerciseData.sets[roundNumber].id);
-          }
-        }
-
-        // Delete each set by ID
-        for (const setId of setIdsToDelete) {
-          await deleteSet(setId);
-        }
-
-        // Update local state - remove the specific round and renumber remaining sets
-        setExercisesWithSets((prev) => {
-          const updated = [...prev];
-
-          supersetExerciseIndices.forEach((exerciseIndex) => {
-            const exerciseData = updated[exerciseIndex];
-            if (exerciseData && exerciseData.sets.length > 1) {
-              // Remove the specific round and renumber remaining sets
-              const newSets = exerciseData.sets
-                .filter((_, idx) => idx !== roundNumber)
-                .map((set, idx) => ({
-                  ...set,
-                  set_number: idx + 1,
-                }));
-
-              updated[exerciseIndex] = {
-                ...exerciseData,
-                sets: newSets,
-              };
-            }
-          });
-
-          return updated;
+        const setIds = members.flatMap((e) => {
+          const set = e.sets[roundNumber];
+          return set ? [set.id] : [];
         });
+        for (const id of setIds) saveDebouncer.cancel(id);
+        await deleteSets(setIds); // one transaction, renumbers in DB
+        commit((prev) => removeSets(prev, setIds));
       } catch (err) {
         console.error('Failed to delete round:', err);
       } finally {
         setLoading(loadingKey, false);
       }
     },
-    [activeWorkout, deleteSet, deleteWorkoutLogExercise, setLoading],
+    [
+      activeWorkout,
+      deleteSets,
+      deleteWorkoutLogExercises,
+      saveDebouncer,
+      commit,
+      setLoading,
+    ],
   );
 
-  // Remove an exercise entirely (from workout_log_exercises and all its sets)
+  // Remove an exercise entirely (from workout_log_exercises and all its sets).
+  // The card stays when the DB delete fails, so the UI never claims a removal
+  // that did not happen.
   const handleRemoveExercise = useCallback(
-    async (exerciseIndex: number) => {
-      const currentExercises = exercisesRef.current;
-      const exerciseData = currentExercises[exerciseIndex];
+    async (exerciseIndex: number): Promise<boolean> => {
+      const exerciseData = exercisesRef.current[exerciseIndex];
+      if (!exerciseData) return false;
+      const wleId = exerciseData.workoutLogExercise.id;
 
-      if (exerciseData && exerciseData.workoutLogExercise.id > 0) {
+      if (wleId > 0) {
         try {
-          await deleteWorkoutLogExercise(exerciseData.workoutLogExercise.id);
+          await deleteWorkoutLogExercises([wleId]);
         } catch (err) {
           console.error('Failed to delete workout log exercise:', err);
+          return false;
         }
       }
-
-      // Remove from local state
-      setExercisesWithSets((prev) =>
-        prev.filter((_, i) => i !== exerciseIndex),
-      );
+      for (const set of exerciseData.sets) saveDebouncer.cancel(set.id);
+      commit((prev) => removeExercises(prev, [wleId]));
+      return true;
     },
-    [deleteWorkoutLogExercise],
+    [deleteWorkoutLogExercises, saveDebouncer, commit],
   );
 
   // Link two or more existing exercises into a superset
@@ -946,78 +773,44 @@ export function useWorkoutSession(dateOverride?: string) {
     async (exerciseIndices: number[]) => {
       if (exerciseIndices.length < 2) return;
 
-      const currentExercises = exercisesRef.current;
+      const wleIds = exerciseIndices
+        .map((i) => exercisesRef.current[i]?.workoutLogExercise.id)
+        .filter((id): id is number => id !== undefined);
       const supersetGroupId = `ss-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
       try {
-        // Update all exercises with the new superset group ID
-        for (const exerciseIndex of exerciseIndices) {
-          const exerciseData = currentExercises[exerciseIndex];
-          if (exerciseData && exerciseData.workoutLogExercise.id > 0) {
-            await updateWorkoutLogExercise(exerciseData.workoutLogExercise.id, {
-              supersetGroupId,
-            });
-          }
+        for (const id of wleIds) {
+          if (id > 0) await updateWorkoutLogExercise(id, { supersetGroupId });
         }
-
-        // Update local state
-        setExercisesWithSets((prev) =>
-          prev.map((ex, idx) =>
-            exerciseIndices.includes(idx)
-              ? {
-                  ...ex,
-                  workoutLogExercise: {
-                    ...ex.workoutLogExercise,
-                    superset_group_id: supersetGroupId,
-                  },
-                }
-              : ex,
-          ),
-        );
+        commit((prev) => setSupersetGroup(prev, wleIds, supersetGroupId));
       } catch (err) {
         console.error('Failed to link exercises as superset:', err);
       }
     },
-    [updateWorkoutLogExercise],
+    [updateWorkoutLogExercise, commit],
   );
 
   // Break a superset (remove superset_group_id from exercises)
   const handleBreakSuperset = useCallback(
     async (supersetGroupId: string) => {
-      const currentExercises = exercisesRef.current;
-      const affectedExercises = currentExercises.filter(
-        (ex) => ex.workoutLogExercise.superset_group_id === supersetGroupId,
-      );
+      const wleIds = exercisesRef.current
+        .filter(
+          (ex) => ex.workoutLogExercise.superset_group_id === supersetGroupId,
+        )
+        .map((ex) => ex.workoutLogExercise.id);
 
       try {
-        // Update all affected exercises in DB
-        for (const exerciseData of affectedExercises) {
-          if (exerciseData.workoutLogExercise.id > 0) {
-            await updateWorkoutLogExercise(exerciseData.workoutLogExercise.id, {
-              supersetGroupId: null,
-            });
+        for (const id of wleIds) {
+          if (id > 0) {
+            await updateWorkoutLogExercise(id, { supersetGroupId: null });
           }
         }
-
-        // Update local state
-        setExercisesWithSets((prev) =>
-          prev.map((ex) =>
-            ex.workoutLogExercise.superset_group_id === supersetGroupId
-              ? {
-                  ...ex,
-                  workoutLogExercise: {
-                    ...ex.workoutLogExercise,
-                    superset_group_id: null,
-                  },
-                }
-              : ex,
-          ),
-        );
+        commit((prev) => setSupersetGroup(prev, wleIds, null));
       } catch (err) {
         console.error('Failed to break superset:', err);
       }
     },
-    [updateWorkoutLogExercise],
+    [updateWorkoutLogExercise, commit],
   );
 
   // Add a new exercise to the workout (with pre-created sets)
@@ -1033,14 +826,12 @@ export function useWorkoutSession(dateOverride?: string) {
       });
       const lastPerf = lastPerfSessions[0]?.sets ?? null;
       const exerciseType = exercise.exercise_type || 'reps_weight';
-      const isDuration =
-        exerciseType === 'duration' || exerciseType === 'duration_weight';
+      const isDuration = isDurationType(exerciseType);
 
       // Get current max order_index
-      const currentExercises = exercisesRef.current;
       const maxOrderIndex = Math.max(
         0,
-        ...currentExercises.map((e) => e.workoutLogExercise.order_index),
+        ...exercisesRef.current.map((e) => e.workoutLogExercise.order_index),
       );
 
       try {
@@ -1067,67 +858,55 @@ export function useWorkoutSession(dateOverride?: string) {
         const sets: SetData[] = exerciseSets.map((dbSet, i) => {
           const lastSet = lastPerf?.[i];
           return {
-            id: dbSet.id,
-            set_number: dbSet.set_number,
-            reps: '',
-            weight: '',
-            durationSeconds: '',
-            completed: false,
+            ...emptySet(dbSet),
             placeholderReps: isDuration
               ? undefined
               : lastSet?.reps?.toString() || '10',
-            placeholderWeight: weightText(
-              lastSet?.weight_kg ?? 0,
-              unitRef.current,
-            ),
+            placeholderWeight: placeholderWeightText(lastSet, unitRef.current),
             placeholderDuration: isDuration ? '30' : undefined,
           };
         });
 
-        // Add to local state
-        setExercisesWithSets((prev) => [
-          ...prev,
-          {
-            workoutLogExercise: workoutLogExerciseWithDetails,
-            exercise,
-            exerciseType,
-            sets,
-            lastPerformance: lastPerf,
-            isExpanded: true,
-            notes: '',
-          },
-        ]);
+        const added: ExerciseWithSets = {
+          workoutLogExercise: workoutLogExerciseWithDetails,
+          exercise,
+          exerciseType,
+          sets,
+          lastPerformance: lastPerf,
+          isExpanded: true,
+          notes: '',
+        };
+        commit((prev) => [...prev, added]);
       } catch (err) {
         console.error('Failed to add exercise:', err);
       }
     },
-    [activeWorkout, addWorkoutLogExercise],
+    [activeWorkout, addWorkoutLogExercise, commit],
   );
 
-  // Toggle exercise expansion
-  const toggleExerciseExpand = useCallback((index: number) => {
-    setExercisesWithSets((prev) =>
-      prev.map((ex, i) =>
-        i === index ? { ...ex, isExpanded: !ex.isExpanded } : ex,
-      ),
-    );
-  }, []);
+  // Toggle exercise expansion (synchronous, so the index is current)
+  const toggleExerciseExpand = useCallback(
+    (index: number) => {
+      const id = exercisesRef.current[index]?.workoutLogExercise.id;
+      if (id === undefined) return;
+      commit((prev) =>
+        patchExercise(prev, id, (ex) => ({
+          ...ex,
+          isExpanded: !ex.isExpanded,
+        })),
+      );
+    },
+    [commit],
+  );
 
   // Update exercise notes
   const updateExerciseNotes = useCallback(
     (exerciseIndex: number, notes: string) => {
-      setExercisesWithSets((prev) => {
-        const updated = [...prev];
-        if (updated[exerciseIndex]) {
-          updated[exerciseIndex] = {
-            ...updated[exerciseIndex],
-            notes,
-          };
-        }
-        return updated;
-      });
+      const id = exercisesRef.current[exerciseIndex]?.workoutLogExercise.id;
+      if (id === undefined) return;
+      commit((prev) => patchExercise(prev, id, (ex) => ({ ...ex, notes })));
     },
-    [],
+    [commit],
   );
 
   // Save duration set (called when duration timer completes)
@@ -1135,59 +914,35 @@ export function useWorkoutSession(dateOverride?: string) {
     async (exerciseIndex: number, setIndex: number, actualSeconds: number) => {
       if (!activeWorkout) return;
 
-      const currentExercises = exercisesRef.current;
-      const exerciseData = currentExercises[exerciseIndex];
-      if (!exerciseData) return;
-
-      const setData = exerciseData.sets[setIndex];
-      const weight = parseWeight(setData, unitRef.current);
+      const exerciseData = exercisesRef.current[exerciseIndex];
+      const setData = exerciseData?.sets[setIndex];
+      if (!exerciseData || !setData) return;
 
       try {
-        // Update the set with actual duration and mark as completed
-        await updateSet(setData.id, {
-          duration_seconds: actualSeconds,
-          weight_kg: weight,
-        });
-        await completeSet(setData.id);
-
-        setExercisesWithSets((prev) => {
-          const updated = [...prev];
-          if (!updated[exerciseIndex]) return prev;
-          updated[exerciseIndex] = {
-            ...updated[exerciseIndex],
-            sets: updated[exerciseIndex].sets.map((s, i) =>
-              i === setIndex
-                ? {
-                    ...s,
-                    durationSeconds: actualSeconds.toString(),
-                    completed: true,
-                  }
-                : s,
-            ),
-          };
-          return updated;
-        });
+        await completeOne(exerciseData.exerciseType, setData, actualSeconds);
       } catch (err) {
         console.error('Failed to save duration set:', err);
       }
     },
-    [activeWorkout, updateSet, completeSet],
+    [activeWorkout, completeOne],
   );
 
-  // End the workout
+  // End the workout, after every pending edit has been written
   const handleEndWorkout = useCallback(
     async (notes?: string) => {
       if (!activeWorkout) return;
+      await saveDebouncer.flush();
       await endWorkout(activeWorkout.id, notes);
     },
-    [activeWorkout, endWorkout],
+    [activeWorkout, endWorkout, saveDebouncer],
   );
 
-  // Cancel the workout
+  // Cancel the workout (pending edits are moot: the log is deleted)
   const handleCancelWorkout = useCallback(async () => {
     if (!activeWorkout) return;
+    saveDebouncer.cancel();
     await cancelWorkout(activeWorkout.id);
-  }, [activeWorkout, cancelWorkout]);
+  }, [activeWorkout, cancelWorkout, saveDebouncer]);
 
   // Groups exercises for rendering: standalone exercises stay as-is, superset
   // exercises are collected into arrays. Uses a processedIndices set to avoid
@@ -1249,7 +1004,10 @@ export function useWorkoutSession(dateOverride?: string) {
     activeWorkout,
     exercisesWithSets,
     groupedExercises,
-    allExercises,
+    /** Every exercise, archived included: for looking one up by id. */
+    allExercises: exercisesIncludingArchived,
+    /** Live library exercises: for pickers. */
+    libraryExercises,
     totalCompletedSets,
     isInitialized,
 

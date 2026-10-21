@@ -1,87 +1,24 @@
-import { PGlite } from '@electric-sql/pglite';
+import type { PGlite } from '@electric-sql/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { addExercise, instantiateSession } from './workoutWriter';
+import { createTestDb } from '../../test/testDb';
+import type { DB } from '../db';
+import {
+  addExercise,
+  addSupersetRound,
+  deleteSets,
+  instantiateSession,
+} from './workoutWriter';
 
-const SCHEMA = `
-  CREATE TABLE workout_programs (
-    id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL,
-    sessions_per_week INTEGER NOT NULL
-  );
-
-  CREATE TABLE program_sessions (
-    id SERIAL PRIMARY KEY,
-    program_id INTEGER NOT NULL REFERENCES workout_programs(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    order_index INTEGER NOT NULL
-  );
-
-  CREATE TABLE exercises (
-    id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL,
-    exercise_type TEXT NOT NULL DEFAULT 'reps_weight'
-  );
-
-  CREATE TABLE program_exercises (
-    id SERIAL PRIMARY KEY,
-    session_id INTEGER NOT NULL REFERENCES program_sessions(id) ON DELETE CASCADE,
-    exercise_id INTEGER NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
-    target_sets INTEGER NOT NULL,
-    target_rep_min INTEGER,
-    target_rep_max INTEGER,
-    target_duration_seconds INTEGER,
-    order_index INTEGER NOT NULL,
-    superset_group_id TEXT,
-    notes TEXT
-  );
-
-  CREATE TABLE workout_logs (
-    id SERIAL PRIMARY KEY,
-    program_id INTEGER REFERENCES workout_programs(id) ON DELETE SET NULL,
-    session_id INTEGER REFERENCES program_sessions(id) ON DELETE SET NULL,
-    date DATE NOT NULL,
-    started_at TIMESTAMP NOT NULL,
-    status TEXT NOT NULL DEFAULT 'in_progress'
-  );
-
-  CREATE TABLE workout_log_exercises (
-    id SERIAL PRIMARY KEY,
-    workout_log_id INTEGER NOT NULL REFERENCES workout_logs(id) ON DELETE CASCADE,
-    exercise_id INTEGER NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
-    order_index INTEGER NOT NULL,
-    superset_group_id TEXT,
-    target_sets INTEGER,
-    target_rep_min INTEGER,
-    target_rep_max INTEGER,
-    target_duration_seconds INTEGER,
-    notes TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE workout_sets (
-    id SERIAL PRIMARY KEY,
-    workout_log_id INTEGER NOT NULL REFERENCES workout_logs(id) ON DELETE CASCADE,
-    exercise_id INTEGER NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
-    workout_log_exercise_id INTEGER REFERENCES workout_log_exercises(id) ON DELETE CASCADE,
-    set_number INTEGER NOT NULL,
-    reps INTEGER,
-    weight_kg REAL,
-    duration_seconds INTEGER,
-    notes TEXT,
-    completed_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  );
-`;
-
-let db: PGlite;
+// Real schema via the Migrations (see src/test/testDb.ts).
+let pg: PGlite;
+let db: DB;
 
 beforeEach(async () => {
-  db = new PGlite();
-  await db.exec(SCHEMA);
+  ({ pg, db } = await createTestDb());
 });
 
 afterEach(async () => {
-  await db.close();
+  await pg.close();
 });
 
 async function seedProgram(): Promise<void> {
@@ -280,5 +217,43 @@ describe('addExercise', () => {
       expect(set.weight_kg).toBeNull();
       expect(set.completed_at).toBeNull();
     }
+  });
+});
+
+describe('deleteSets', () => {
+  it('deletes the tapped set by id, not the highest, and renumbers', async () => {
+    await seedProgram();
+    const workoutLogId = await seedWorkoutLog();
+    const { exercises, sets } = await instantiateSession(db, workoutLogId, 1);
+    const bench = sets
+      .filter((s) => s.workout_log_exercise_id === exercises[0].id)
+      .sort((a, b) => a.set_number - b.set_number);
+
+    await deleteSets(db, [bench[1].id]);
+
+    const left = await db.query<{ id: number; set_number: number }>(
+      `SELECT id, set_number FROM workout_sets
+       WHERE workout_log_exercise_id = $1 ORDER BY set_number`,
+      [exercises[0].id],
+    );
+    expect(left.rows.map((r) => r.id)).toEqual([
+      bench[0].id,
+      bench[2].id,
+      bench[3].id,
+    ]);
+    expect(left.rows.map((r) => r.set_number)).toEqual([1, 2, 3]);
+  });
+});
+
+describe('addSupersetRound', () => {
+  it('adds one set per member with a shared round number', async () => {
+    await seedProgram();
+    const workoutLogId = await seedWorkoutLog();
+    await instantiateSession(db, workoutLogId, 1);
+
+    const added = await addSupersetRound(db, workoutLogId, 'ss-1');
+
+    expect(added.map((s) => s.exercise_id)).toEqual([2, 3]);
+    expect(added.map((s) => s.set_number)).toEqual([4, 4]);
   });
 });

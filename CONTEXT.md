@@ -47,7 +47,7 @@ A module under `src/services/queries/` that owns the read SQL for one read shape
 _Avoid_: repository, selector, getter
 
 **Write Bus**:
-The lightweight pub/sub in `src/services/db.ts`: every mutating query emits a `WriteEvent` (`{ table, op }`) to `onDbWrite` listeners, so dependent views refresh without manual wiring.
+The lightweight pub/sub in `src/services/db.ts`: every mutating query emits a `WriteEvent` (`{ table, op }`) to `onDbWrite` listeners, so dependent views refresh without manual wiring. Writes inside `db.transaction(fn)` are buffered and published only after COMMIT (nothing on rollback).
 _Avoid_: event emitter, signal
 
 **Migration**:
@@ -78,7 +78,7 @@ One performed set within a Workout Log (`workout_sets`): reps, weight, and/or du
 A group of exercises performed back-to-back, linked by a shared `superset_group_id`.
 
 **Exercise**:
-A library entry (`exercises`) — name, muscle groups, equipment, and Exercise Type. May be AI-generated.
+A library entry (`exercises`) — name, muscle groups, equipment, and Exercise Type. May be AI-generated. Removing one that has history **archives** it (`archived_at`): it leaves the library, pickers and Programs, but history and progress keep showing it. One with no history is deleted.
 
 **Exercise Type**:
 What a Set measures: `reps_weight`, `reps_only`, `duration`, or `duration_weight`. Drives which inputs the logger shows.

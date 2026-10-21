@@ -29,6 +29,7 @@ import { WeightTracker } from './pages/WeightTracker';
 import { Workout } from './pages/Workout';
 import { WorkoutDetail } from './pages/WorkoutDetail';
 import { WorkoutSession } from './pages/WorkoutSession';
+import { fetchOpenRouterModels } from './services/ai/openrouterModels';
 import { getDB, isOnboardingComplete } from './services/db';
 
 // Each route starts at the top instead of inheriting the previous scroll.
@@ -107,6 +108,13 @@ function AppRoutes() {
       setUserProfile(profile);
     }
   }, [profile, setUserProfile]);
+
+  // Keep the model catalog warm (24h cache) so per-model capabilities such as
+  // reasoning support stay known without visiting Settings. Free, no key.
+  const hasAIKey = !!profile?.ai_api_key;
+  useEffect(() => {
+    if (hasAIKey && navigator.onLine) fetchOpenRouterModels().catch(() => {});
+  }, [hasAIKey]);
 
   // Track online status
   useEffect(() => {

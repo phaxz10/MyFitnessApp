@@ -1,33 +1,19 @@
-import { PGlite } from '@electric-sql/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { PGlite } from '@electric-sql/pglite';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createTestDb } from '../../test/testDb';
+import type { DB } from '../db';
 import { addMany, copyFromDate } from './foodEntryWriter';
 
-const SCHEMA = `
-  CREATE TABLE food_entries (
-    id SERIAL PRIMARY KEY,
-    date DATE NOT NULL,
-    meal_type TEXT NOT NULL CHECK (meal_type IN ('breakfast', 'lunch', 'dinner', 'snack')),
-    food_description TEXT NOT NULL,
-    portion_grams REAL NOT NULL,
-    calories INTEGER NOT NULL,
-    protein_g REAL NOT NULL,
-    carbs_g REAL NOT NULL,
-    fat_g REAL NOT NULL,
-    is_ai_generated BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  );
-`;
-
-let db: PGlite;
+// Real schema via the Migrations (see src/test/testDb.ts).
+let pg: PGlite;
+let db: DB;
 
 beforeEach(async () => {
-  db = new PGlite();
-  await db.exec(SCHEMA);
+  ({ pg, db } = await createTestDb());
 });
 
 afterEach(async () => {
-  await db.close();
+  await pg.close();
 });
 
 function makeEntry(overrides: Record<string, unknown> = {}) {
@@ -151,4 +137,22 @@ describe('copyFromDate', () => {
     const total = await db.query('SELECT COUNT(*) as n FROM food_entries');
     expect((total.rows as { n: number }[])[0].n).toBe(2);
   });
+});
+
+describe('date normalisation across time zones', () => {
+  // Audit claim: east of UTC the DATE comes back a day off. PGlite parses
+  // DATE as UTC midnight in every zone, so it must read back unchanged.
+  for (const tz of ['Australia/Sydney', 'America/New_York']) {
+    it(`returns the stored calendar day under TZ=${tz}`, async () => {
+      vi.stubEnv('TZ', tz);
+      try {
+        const [row] = await addMany(db, [makeEntry({ date: '2025-06-01' })]);
+        expect(row.date).toBe('2025-06-01');
+        const [copied] = await copyFromDate(db, '2025-06-01', '2025-12-31');
+        expect(copied.date).toBe('2025-12-31');
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+  }
 });

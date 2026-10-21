@@ -50,6 +50,7 @@ export function WorkoutSession() {
     activeWorkout,
     exercisesWithSets,
     allExercises,
+    libraryExercises,
     totalCompletedSets,
     isInitialized,
     handleCompleteSet,
@@ -553,7 +554,7 @@ export function WorkoutSession() {
       <AddExerciseModal
         isOpen={showAddExercise}
         onClose={() => setShowAddExercise(false)}
-        exercises={allExercises}
+        exercises={libraryExercises}
         onAddExercise={handleAddExercise}
       />
 

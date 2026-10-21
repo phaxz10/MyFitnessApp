@@ -58,6 +58,11 @@ export function SessionCard({
       muscleGroups={muscleGroupsById.get(exercise.exerciseId)}
       register={register}
       isInSuperset={isInSuperset}
+      canJoinSuperset={
+        isInSuperset &&
+        selectedForSuperset?.sessionIndex === sessionIndex &&
+        selectedForSuperset.exerciseIndex !== index
+      }
       isSelectedForSuperset={
         selectedForSuperset?.sessionIndex === sessionIndex &&
         selectedForSuperset?.exerciseIndex === index

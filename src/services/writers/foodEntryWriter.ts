@@ -1,15 +1,11 @@
 import type { FoodEntry } from '../../types';
+import { pgDate } from '../../utils/pgValues';
 import type { DB } from '../db';
 
 type NewFoodEntry = Omit<FoodEntry, 'id' | 'created_at' | 'updated_at'>;
 
 function normalizeRow(row: Record<string, unknown>): FoodEntry {
-  const date = row.date;
-  return {
-    ...row,
-    date:
-      date instanceof Date ? date.toISOString().split('T')[0] : String(date),
-  } as FoodEntry;
+  return { ...row, date: pgDate(row.date) } as FoodEntry;
 }
 
 const COLUMNS = [

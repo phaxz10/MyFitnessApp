@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { getDB } from '../services/db';
+import * as ProgramWriter from '../services/writers/programWriter';
 import type {
   ProgramExercise,
   ProgramExerciseWithDetails,
@@ -271,13 +272,7 @@ export function useWorkoutPrograms() {
       setError(null);
       try {
         const db = await getDB();
-        // Deactivate all programs
-        await db.query('UPDATE workout_programs SET is_active = false');
-        // Activate the selected one
-        await db.query(
-          'UPDATE workout_programs SET is_active = true WHERE id = $1',
-          [id],
-        );
+        await ProgramWriter.setActiveProgram(db, id);
         await fetchPrograms();
         await fetchActiveProgram();
       } catch (err) {
@@ -403,11 +398,9 @@ export function useWorkoutPrograms() {
   }, []);
 
   /**
-   * Sync changes from a completed workout session back to the program template.
-   * This updates the program to match the structure of the completed workout.
+   * Sync changes from a completed workout session back to the program template
+   * (see programWriter.syncSessionFromWorkout).
    *
-   * @param sessionId - The program session ID to update
-   * @param workoutLogExercises - The exercises from the completed workout
    * @param exerciseSetCounts - Map of workout_log_exercise_id to actual set count
    */
   const syncSessionToProgram = useCallback(
@@ -417,110 +410,12 @@ export function useWorkoutPrograms() {
       exerciseSetCounts: Map<number, number>,
     ): Promise<void> => {
       const db = await getDB();
-
-      // Get current program exercises for this session
-      const currentResult = await db.query(
-        `SELECT pe.*, e.name as exercise_name, e.description as exercise_description,
-                e.muscle_groups, e.equipment, e.exercise_type
-         FROM program_exercises pe
-         JOIN exercises e ON pe.exercise_id = e.id
-         WHERE pe.session_id = $1
-         ORDER BY pe.order_index`,
-        [sessionId],
+      await ProgramWriter.syncSessionFromWorkout(
+        db,
+        sessionId,
+        workoutLogExercises,
+        exerciseSetCounts,
       );
-      const currentProgramExercises =
-        currentResult.rows as ProgramExerciseWithDetails[];
-
-      // Create a map of current program exercises by exercise_id
-      const programExerciseMap = new Map<number, ProgramExerciseWithDetails>();
-      currentProgramExercises.forEach((pe) => {
-        programExerciseMap.set(pe.exercise_id, pe);
-      });
-
-      // Create a set of exercise IDs in the workout
-      const workoutExerciseIds = new Set(
-        workoutLogExercises.map((wle) => wle.exercise_id),
-      );
-
-      // 1. Delete exercises that were removed from the workout
-      for (const pe of currentProgramExercises) {
-        if (!workoutExerciseIds.has(pe.exercise_id)) {
-          await db.query('DELETE FROM program_exercises WHERE id = $1', [
-            pe.id,
-          ]);
-        }
-      }
-
-      // 2. Add/Update exercises from the workout
-      // We need to map superset_group_ids from workout to new consistent IDs for the program
-      const supersetGroupMapping = new Map<string, string>();
-      let supersetCounter = 1;
-
-      for (let i = 0; i < workoutLogExercises.length; i++) {
-        const wle = workoutLogExercises[i];
-        const actualSetCount =
-          exerciseSetCounts.get(wle.id) || wle.target_sets || 3;
-
-        // Handle superset group ID mapping
-        let newSupersetGroupId: string | null = null;
-        if (wle.superset_group_id) {
-          if (supersetGroupMapping.has(wle.superset_group_id)) {
-            newSupersetGroupId = supersetGroupMapping.get(
-              wle.superset_group_id,
-            )!;
-          } else {
-            // Generate a new consistent superset group ID
-            newSupersetGroupId = `ss-prog-${sessionId}-${supersetCounter++}`;
-            supersetGroupMapping.set(wle.superset_group_id, newSupersetGroupId);
-          }
-        }
-
-        const existingProgramExercise = programExerciseMap.get(wle.exercise_id);
-
-        if (existingProgramExercise) {
-          // Update existing program exercise
-          await db.query(
-            `UPDATE program_exercises
-             SET target_sets = $1,
-                 target_rep_min = $2,
-                 target_rep_max = $3,
-                 target_duration_seconds = $4,
-                 order_index = $5,
-                 superset_group_id = $6
-             WHERE id = $7`,
-            [
-              actualSetCount,
-              wle.target_rep_min,
-              wle.target_rep_max,
-              wle.target_duration_seconds,
-              i, // New order index
-              newSupersetGroupId,
-              existingProgramExercise.id,
-            ],
-          );
-        } else {
-          // Add new exercise to program
-          await db.query(
-            `INSERT INTO program_exercises
-             (session_id, exercise_id, target_sets, target_rep_min, target_rep_max,
-              target_duration_seconds, order_index, superset_group_id, notes)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-            [
-              sessionId,
-              wle.exercise_id,
-              actualSetCount,
-              wle.target_rep_min,
-              wle.target_rep_max,
-              wle.target_duration_seconds,
-              i, // Order index
-              newSupersetGroupId,
-              wle.notes,
-            ],
-          );
-        }
-      }
-
-      // Refresh the active program data if needed
       await fetchActiveProgram();
     },
     [fetchActiveProgram],

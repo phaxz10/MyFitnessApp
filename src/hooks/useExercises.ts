@@ -1,9 +1,20 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { getDB } from '../services/db';
+import {
+  type RemoveOutcome,
+  removeExercise,
+} from '../services/writers/exerciseWriter';
 import type { Exercise } from '../types';
 
 export function useExercises() {
-  const [exercises, setExercises] = useState<Exercise[]>([]);
+  // Every row, archived included: an in-progress or past workout must still
+  // resolve an exercise that was removed from the library.
+  const [exercisesIncludingArchived, setExercises] = useState<Exercise[]>([]);
+  // The library and every picker show live exercises only.
+  const exercises = useMemo(
+    () => exercisesIncludingArchived.filter((e) => !e.archived_at),
+    [exercisesIncludingArchived],
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -112,14 +123,16 @@ export function useExercises() {
     [fetchExercises],
   );
 
+  // Archives an exercise that has history, deletes one that has none.
   const deleteExercise = useCallback(
-    async (id: number) => {
+    async (id: number): Promise<RemoveOutcome> => {
       setLoading(true);
       setError(null);
       try {
         const db = await getDB();
-        await db.query('DELETE FROM exercises WHERE id = $1', [id]);
+        const outcome = await removeExercise(db, id);
         await fetchExercises();
+        return outcome;
       } catch (err) {
         setError(
           err instanceof Error ? err.message : 'Failed to delete exercise',
@@ -137,9 +150,9 @@ export function useExercises() {
       try {
         const db = await getDB();
         const result = await db.query(
-          `SELECT * FROM exercises 
-         WHERE LOWER(name) LIKE LOWER($1) 
-         OR LOWER(muscle_groups) LIKE LOWER($1)
+          `SELECT * FROM exercises
+         WHERE archived_at IS NULL
+         AND (LOWER(name) LIKE LOWER($1) OR LOWER(muscle_groups) LIKE LOWER($1))
          ORDER BY name`,
           [`%${query}%`],
         );
@@ -194,6 +207,7 @@ export function useExercises() {
 
   return {
     exercises,
+    exercisesIncludingArchived,
     loading,
     error,
     fetchExercises,

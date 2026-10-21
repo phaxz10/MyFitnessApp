@@ -1,5 +1,11 @@
 import { Dumbbell, Plus, Sparkles, TrendingUp } from 'lucide-react';
-import { type ReactNode, useCallback, useEffect, useState } from 'react';
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ProgramGeneratorWizard } from '../components/program-generator';
 import {
@@ -18,6 +24,8 @@ import type {
   WorkoutProgram,
   WorkoutStatus,
 } from '../types';
+import { getLocalDateString } from '../utils/date';
+import { pgDate } from '../utils/pgValues';
 
 function SectionHeader({
   title,
@@ -128,21 +136,38 @@ export function Workout() {
     checkSessionStatus();
   }, [checkSessionStatus]);
 
+  // The session route for a workout: past-day logs keep their ?date.
+  const sessionPath = (date: unknown) => {
+    const day = date ? pgDate(date) : '';
+    return `/workout/session${day && day !== getLocalDateString() ? `?date=${day}` : ''}`;
+  };
+
+  // Busy guard: a double tap on Start must not start twice (the writer also
+  // returns the in-progress workout instead of creating a second).
+  const startingRef = useRef(false);
+
   const handleStartWorkout = async (session?: ProgramSessionWithExercises) => {
     if (activeWorkout) {
-      // Resume existing workout
-      navigate('/workout/session');
-    } else if (session && activeProgram) {
-      // Start scheduled workout (with optional date override for missed sessions)
-      await startWorkout(activeProgram.id, session.id, dateParam || undefined);
-      // Clear the date param and navigate to session
+      navigate(sessionPath(activeWorkout.date));
+      return;
+    }
+    if (startingRef.current) return;
+    startingRef.current = true;
+    try {
+      // Scheduled session (with optional date override for missed sessions),
+      // or an empty workout.
+      const workout =
+        session && activeProgram
+          ? await startWorkout(
+              activeProgram.id,
+              session.id,
+              dateParam || undefined,
+            )
+          : await startWorkout(null, null, dateParam || undefined);
       setSearchParams({});
-      navigate(`/workout/session${dateParam ? `?date=${dateParam}` : ''}`);
-    } else {
-      // Start empty workout
-      await startWorkout(null, null, dateParam || undefined);
-      setSearchParams({});
-      navigate(`/workout/session${dateParam ? `?date=${dateParam}` : ''}`);
+      navigate(sessionPath(workout.date));
+    } finally {
+      startingRef.current = false;
     }
   };
 
@@ -183,7 +208,7 @@ export function Workout() {
             <Button
               size="lg"
               className="w-full"
-              onClick={() => navigate('/workout/session')}
+              onClick={() => navigate(sessionPath(activeWorkout.date))}
             >
               Resume
             </Button>

@@ -20,7 +20,7 @@
 
 import type { WorkoutSet } from '../../types';
 import { pgDate } from '../../utils/pgValues';
-import type { DB } from '../db';
+import type { Queryable as DB } from '../db';
 
 // ---------------------------------------------------------------------------
 // Public types

@@ -21,6 +21,10 @@ import {
   programFormSchema,
   type SupersetSelection,
 } from '../components/program-editor/schema';
+import {
+  deleteExercise,
+  linkExercises,
+} from '../components/program-editor/supersets';
 import { SubpageHeader } from '../components/training/SubpageHeader';
 import {
   Button,
@@ -35,6 +39,7 @@ import { useProfile } from '../hooks/useProfile';
 import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
 import { getAICapability } from '../services/ai/useAICapability';
 import { optimizeWorkoutProgram } from '../services/coaching/programCoach';
+import { getDB } from '../services/db';
 import type { Exercise } from '../types';
 
 export function ProgramEditor() {
@@ -55,6 +60,7 @@ export function ProgramEditor() {
   const [showOptimizeModal, setShowOptimizeModal] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [optimizeError, setOptimizeError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const {
     register,
@@ -189,8 +195,10 @@ export function ProgramEditor() {
   ) => {
     const currentSession = watchedSessions[sessionIndex];
     if (currentSession) {
-      const updatedExercises = currentSession.exercises.filter(
-        (_, i) => i !== exerciseIndex,
+      // A superset left with one member dissolves.
+      const updatedExercises = deleteExercise(
+        currentSession.exercises,
+        exerciseIndex,
       );
 
       // Properly update the form field to unregister deleted exercise
@@ -199,12 +207,17 @@ export function ProgramEditor() {
         shouldDirty: true,
       });
     }
-    // Clear superset selection if deleted exercise was selected
-    if (
-      selectedForSuperset?.sessionIndex === sessionIndex &&
-      selectedForSuperset?.exerciseIndex === exerciseIndex
-    ) {
-      setSelectedForSuperset(null);
+    // Keep the superset selection pointing at the same exercise: clear it if
+    // that one was deleted, shift it if an earlier one was.
+    if (selectedForSuperset?.sessionIndex === sessionIndex) {
+      if (selectedForSuperset.exerciseIndex === exerciseIndex) {
+        setSelectedForSuperset(null);
+      } else if (selectedForSuperset.exerciseIndex > exerciseIndex) {
+        setSelectedForSuperset({
+          sessionIndex,
+          exerciseIndex: selectedForSuperset.exerciseIndex - 1,
+        });
+      }
     }
   };
 
@@ -219,28 +232,18 @@ export function ProgramEditor() {
       selectedForSuperset.sessionIndex === sessionIndex &&
       selectedForSuperset.exerciseIndex !== exerciseIndex
     ) {
-      // Second exercise selected in same session (and NOT the same exercise) - create superset
+      // Second exercise selected in same session (and NOT the same exercise):
+      // link them, joining an existing superset if either is in one.
       const currentSession = watchedSessions[sessionIndex];
       if (currentSession) {
-        const supersetId = generateSupersetId();
-        const updatedExercises = [...currentSession.exercises];
-
-        // Use the first exercise's targetSets for both exercises in the superset
-        const sharedTargetSets =
-          updatedExercises[selectedForSuperset.exerciseIndex].targetSets;
-
-        updatedExercises[selectedForSuperset.exerciseIndex] = {
-          ...updatedExercises[selectedForSuperset.exerciseIndex],
-          supersetGroupId: supersetId,
-        };
-        updatedExercises[exerciseIndex] = {
-          ...updatedExercises[exerciseIndex],
-          supersetGroupId: supersetId,
-          targetSets: sharedTargetSets, // Sync target sets
-        };
         updateSessionField(sessionIndex, {
           ...currentSession,
-          exercises: updatedExercises,
+          exercises: linkExercises(
+            currentSession.exercises,
+            selectedForSuperset.exerciseIndex,
+            exerciseIndex,
+            generateSupersetId,
+          ),
         });
       }
       setSelectedForSuperset(null);
@@ -303,8 +306,14 @@ export function ProgramEditor() {
       return;
     }
 
+    if (isSaving) return;
+    setIsSaving(true);
     try {
-      await saveProgram(programsApi, data, isEditing ? parseInt(id, 10) : null);
+      await saveProgram(
+        await getDB(),
+        data,
+        isEditing ? parseInt(id, 10) : null,
+      );
       navigate('/workout');
     } catch (err) {
       console.error('Failed to save program:', err);
@@ -324,6 +333,8 @@ export function ProgramEditor() {
       } else {
         alert(`Failed to save program: ${errorMessage}`);
       }
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -536,7 +547,7 @@ export function ProgramEditor() {
               type="submit"
               size="lg"
               className="w-full"
-              disabled={loading}
+              disabled={loading || isSaving}
             >
               <Save size={20} aria-hidden="true" />
               {isEditing ? 'Save Changes' : 'Create Program'}

@@ -95,8 +95,12 @@ export function calculateAgeFromBirthdate(birthdate: string): number {
  * @returns ISO timestamp string in local time (e.g., "2026-01-08T15:30:00.000")
  */
 export function getLocalTimestamp(): string {
-  const now = new Date();
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+  return toLocalTimestamp(new Date());
+}
+
+/** `date` as a local-time timestamp string, like getLocalTimestamp. */
+export function toLocalTimestamp(date: Date): string {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
     .toISOString()
     .slice(0, -1); // Remove the 'Z' suffix
 }

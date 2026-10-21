@@ -82,6 +82,8 @@ export interface Exercise {
   exercise_type: ExerciseType;
   is_ai_generated: boolean;
   created_at: string;
+  /** Set when removed from the library but kept for history (migration v7). */
+  archived_at?: string | null;
 }
 
 // Workout Program Types
@@ -163,6 +165,9 @@ export interface WorkoutLogExercise {
   target_duration_seconds: number | null;
   notes: string | null;
   created_at: string;
+  /** The Program Exercise this row was copied from (migration v8); NULL for
+   * exercises added mid-workout and rows logged before v8. */
+  program_exercise_id?: number | null;
 }
 
 // Workout Log Exercise with exercise details (joined)

@@ -564,8 +564,8 @@ async function importDataInner(db: any, backup: BackupData): Promise<void> {
   if (hasData(data.exercises)) {
     for (const row of data.exercises as Record<string, unknown>[]) {
       await db.query(
-        `INSERT INTO exercises (id, name, description, muscle_groups, equipment, video_url, exercise_type, is_ai_generated, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        `INSERT INTO exercises (id, name, description, muscle_groups, equipment, video_url, exercise_type, is_ai_generated, created_at, archived_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
           row.id,
           row.name,
@@ -576,6 +576,7 @@ async function importDataInner(db: any, backup: BackupData): Promise<void> {
           row.exercise_type ?? 'reps_weight',
           row.is_ai_generated,
           row.created_at,
+          row.archived_at ?? null,
         ],
       );
     }
@@ -668,8 +669,11 @@ async function importDataInner(db: any, backup: BackupData): Promise<void> {
   if (hasData(data.workout_log_exercises)) {
     for (const row of data.workout_log_exercises as Record<string, unknown>[]) {
       await db.query(
-        `INSERT INTO workout_log_exercises (id, workout_log_id, exercise_id, order_index, superset_group_id, target_sets, target_rep_min, target_rep_max, target_duration_seconds, notes, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        // program_exercise_id only when that Program Exercise exists: a
+        // partial restore may bring logs without the programs they came from.
+        `INSERT INTO workout_log_exercises (id, workout_log_id, exercise_id, order_index, superset_group_id, target_sets, target_rep_min, target_rep_max, target_duration_seconds, notes, created_at, program_exercise_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                 (SELECT id FROM program_exercises WHERE id = $12::int))`,
         [
           row.id,
           row.workout_log_id,
@@ -682,6 +686,7 @@ async function importDataInner(db: any, backup: BackupData): Promise<void> {
           row.target_duration_seconds ?? null,
           row.notes ?? null,
           row.created_at,
+          row.program_exercise_id ?? null,
         ],
       );
     }

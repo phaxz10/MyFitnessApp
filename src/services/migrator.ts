@@ -318,6 +318,74 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    // Deleting a library Exercise used to cascade through every logged set,
+    // Workout Log Exercise and note for it, wiping its history. History FKs
+    // become RESTRICT, and an Exercise that has history is archived instead
+    // (archived_at set: hidden from the library and pickers, still joined by
+    // history and progress queries). See exerciseWriter.removeExercise.
+    // program_exercises keeps CASCADE: a Program is a plan, not history.
+    version: 7,
+    up: async (db) => {
+      await db.exec(`
+        ALTER TABLE exercises ADD COLUMN archived_at TIMESTAMP;
+
+        ALTER TABLE workout_log_exercises
+          DROP CONSTRAINT workout_log_exercises_exercise_id_fkey,
+          ADD CONSTRAINT workout_log_exercises_exercise_id_fkey
+            FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE RESTRICT;
+
+        ALTER TABLE workout_sets
+          DROP CONSTRAINT workout_sets_exercise_id_fkey,
+          ADD CONSTRAINT workout_sets_exercise_id_fkey
+            FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE RESTRICT;
+
+        ALTER TABLE exercise_notes
+          DROP CONSTRAINT exercise_notes_exercise_id_fkey,
+          ADD CONSTRAINT exercise_notes_exercise_id_fkey
+            FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE RESTRICT;
+      `);
+    },
+  },
+  {
+    // A Workout Log Exercise remembers the Program Exercise it was copied
+    // from, so syncing a workout back to its Session matches row-for-row even
+    // when the same Exercise appears twice. Older rows stay NULL and fall back
+    // to matching by exercise_id.
+    version: 8,
+    up: async (db) => {
+      await db.exec(`
+        ALTER TABLE workout_log_exercises ADD COLUMN program_exercise_id INTEGER
+          REFERENCES program_exercises(id) ON DELETE SET NULL;
+      `);
+    },
+  },
+  {
+    // At most one Workout Log is in_progress (a double tap on Start used to
+    // create two). Existing extras keep the newest; the rest close out the way
+    // stale workouts do: 'incomplete' with a completed set, else 'missed'.
+    version: 9,
+    up: async (db) => {
+      await db.exec(`
+        WITH ranked AS (
+          SELECT id, ROW_NUMBER() OVER (ORDER BY started_at DESC, id DESC) AS rn
+          FROM workout_logs WHERE status = 'in_progress'
+        )
+        UPDATE workout_logs wl SET status = CASE
+            WHEN EXISTS (
+              SELECT 1 FROM workout_sets ws
+              WHERE ws.workout_log_id = wl.id AND ws.completed_at IS NOT NULL
+            ) THEN 'incomplete'
+            ELSE 'missed'
+          END
+        FROM ranked
+        WHERE ranked.id = wl.id AND ranked.rn > 1;
+
+        CREATE UNIQUE INDEX one_in_progress_workout ON workout_logs (status)
+          WHERE status = 'in_progress';
+      `);
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------

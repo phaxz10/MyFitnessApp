@@ -1,7 +1,17 @@
 import { PGlite } from '@electric-sql/pglite';
 import { runPendingMigrations } from './migrator';
 
-export type DB = Pick<PGlite, 'query' | 'exec'>;
+/** Anything that can run SQL: the wrapper, a transaction, or a raw PGlite. */
+export type Queryable = Pick<PGlite, 'query' | 'exec'>;
+
+/**
+ * The app's DB handle. `transaction(fn)` runs fn atomically on a handle that
+ * is itself a DB (a nested call joins the outer transaction). Inside fn use
+ * only the handle fn receives: the outer one waits for the transaction lock.
+ */
+export type DB = Queryable & {
+  transaction<T>(fn: (tx: DB) => Promise<T>): Promise<T>;
+};
 
 export type WriteEvent = { table: string; op: 'insert' | 'update' | 'delete' };
 
@@ -13,13 +23,72 @@ export function onDbWrite(fn: (event: WriteEvent) => void): void {
 
 const MUTATION_RE = /^\s*(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(\w+)/i;
 
-function emitIfMutation(sql: string): void {
-  const match = sql.match(MUTATION_RE);
-  if (!match) return;
-  const op = match[1].split(/\s/)[0].toLowerCase() as WriteEvent['op'];
-  const table = match[2];
-  const event: WriteEvent = { table, op };
-  for (const fn of writeListeners) fn(event);
+/** One write event per mutating statement in `sql` (exec may hold many). */
+function mutationEvents(sql: string): WriteEvent[] {
+  const events: WriteEvent[] = [];
+  for (const statement of sql.split(';')) {
+    const match = statement.match(MUTATION_RE);
+    if (!match) continue;
+    const op = match[1].split(/\s/)[0].toLowerCase() as WriteEvent['op'];
+    events.push({ table: match[2], op });
+  }
+  return events;
+}
+
+function emit(events: WriteEvent[]): void {
+  for (const event of events) {
+    for (const fn of writeListeners) fn(event);
+  }
+}
+
+// The DB facade over a runner (the PGlite, or an open transaction). `record`
+// receives write events: published at once outside a transaction, buffered
+// until COMMIT inside one.
+function facade(
+  runner: Queryable,
+  record: (events: WriteEvent[]) => void,
+  transaction: DB['transaction'],
+): DB {
+  return {
+    query: ((...args: [string, ...unknown[]]) => {
+      const promise = runner.query(...(args as Parameters<PGlite['query']>));
+      // The caller owns the rejection (it gets `promise`); the derived chain
+      // must not surface it a second time as an unhandled rejection.
+      promise.then(
+        () => record(mutationEvents(args[0])),
+        () => {},
+      );
+      return promise;
+    }) as PGlite['query'],
+    exec: (async (sql: string, options?: Parameters<PGlite['exec']>[1]) => {
+      const result = await runner.exec(sql, options);
+      record(mutationEvents(sql));
+      return result;
+    }) as PGlite['exec'],
+    transaction,
+  };
+}
+
+/**
+ * Wrap a raw PGlite: every mutating query publishes on the Write Bus, and
+ * `transaction` runs multi-statement writes atomically. Exported so tests wrap
+ * an in-memory PGlite exactly like production.
+ */
+export function createDB(raw: PGlite): DB {
+  const transaction: DB['transaction'] = async (fn) => {
+    const pending: WriteEvent[] = [];
+    const result = await raw.transaction(async (rawTx) => {
+      const tx: DB = facade(
+        rawTx,
+        (events) => pending.push(...events),
+        (inner) => inner(tx),
+      );
+      return fn(tx);
+    });
+    emit(pending); // after COMMIT only; a rollback throws past this line
+    return result;
+  };
+  return facade(raw, emit, transaction);
 }
 
 let pglite: PGlite | null = null;
@@ -29,15 +98,7 @@ export async function getDB(): Promise<DB> {
   if (!db) {
     pglite = new PGlite('idb://mypersonalfitness');
     await runPendingMigrations(pglite);
-    const raw = pglite;
-    db = {
-      query: ((...args: [string, ...unknown[]]) => {
-        const promise = raw.query(...(args as Parameters<PGlite['query']>));
-        promise.then(() => emitIfMutation(args[0]));
-        return promise;
-      }) as PGlite['query'],
-      exec: raw.exec.bind(raw),
-    };
+    db = createDB(pglite);
   }
   return db;
 }

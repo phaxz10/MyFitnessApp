@@ -91,7 +91,7 @@ describe('runPendingMigrations', () => {
   });
 
   // Bump LATEST_MIGRATION when a new migration is added to migrator.ts.
-  const LATEST_MIGRATION = 6;
+  const LATEST_MIGRATION = 9;
 
   it(`records version ${LATEST_MIGRATION} in schema_migrations`, async () => {
     await runPendingMigrations(db);
@@ -234,6 +234,64 @@ describe('runPendingMigrations', () => {
       'SELECT weight_kg FROM weight_logs',
     );
     expect(body.rows[0].weight_kg).toBe(82.5);
+  });
+
+  it('keeps logged history when an exercise is deleted after upgrading (migration 7)', async () => {
+    await runPendingMigrations(db, 6);
+    await db.exec(`
+      INSERT INTO exercises (name) VALUES ('Bench Press');
+      INSERT INTO workout_logs (date, started_at, status) VALUES ('2026-01-01', '2026-01-01T09:00:00', 'completed');
+      INSERT INTO workout_log_exercises (workout_log_id, exercise_id, order_index) VALUES (1, 1, 0);
+      INSERT INTO workout_sets (workout_log_id, exercise_id, workout_log_exercise_id, set_number, reps)
+        VALUES (1, 1, 1, 1, 8);
+      INSERT INTO exercise_notes (exercise_id, content) VALUES (1, 'grip');
+    `);
+
+    await runPendingMigrations(db);
+
+    expect(await columnExists(db, 'exercises', 'archived_at')).toBe(true);
+    await expect(db.exec('DELETE FROM exercises WHERE id = 1')).rejects.toThrow(
+      /foreign key/,
+    );
+    const sets = await db.query('SELECT id FROM workout_sets');
+    expect(sets.rows).toHaveLength(1);
+  });
+
+  it('adds workout_log_exercises.program_exercise_id (migration 8)', async () => {
+    await runPendingMigrations(db);
+    expect(
+      await columnExists(db, 'workout_log_exercises', 'program_exercise_id'),
+    ).toBe(true);
+  });
+
+  it('keeps the newest of several in-progress workouts and closes the rest (migration 9)', async () => {
+    await runPendingMigrations(db, 8);
+    await db.exec(`
+      INSERT INTO exercises (name) VALUES ('Squat');
+      INSERT INTO workout_logs (date, started_at, status) VALUES
+        ('2026-01-01', '2026-01-01T09:00:00', 'in_progress'),
+        ('2026-01-02', '2026-01-02T09:00:00', 'in_progress'),
+        ('2026-01-03', '2026-01-03T09:00:00', 'in_progress');
+      INSERT INTO workout_sets (workout_log_id, exercise_id, set_number, reps, completed_at) VALUES
+        (1, 1, 1, 5, '2026-01-01T09:10:00'),
+        (2, 1, 1, NULL, NULL);
+    `);
+
+    await runPendingMigrations(db);
+
+    const logs = await db.query<{ status: string }>(
+      'SELECT status FROM workout_logs ORDER BY id',
+    );
+    expect(logs.rows.map((r) => r.status)).toEqual([
+      'incomplete',
+      'missed',
+      'in_progress',
+    ]);
+    await expect(
+      db.exec(
+        "INSERT INTO workout_logs (date, started_at, status) VALUES ('2026-01-04', '2026-01-04T09:00:00', 'in_progress')",
+      ),
+    ).rejects.toThrow(/unique/i);
   });
 
   it('defaults weight_unit to kg for new profiles and rejects other values', async () => {

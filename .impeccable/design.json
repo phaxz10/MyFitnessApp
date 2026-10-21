@@ -1,0 +1,391 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-21T13:13:08+00:00",
+  "title": "Design System: MyPersonalFitness",
+  "extensions": {
+    "colorMeta": {
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Daylight Silver",
+        "canonical": "#f3f5f7",
+        "dark": "#0e151c",
+        "tonalRamp": [
+          "#616263",
+          "#929394",
+          "#c2c4c6",
+          "#f3f5f7",
+          "#f5f7f9",
+          "#f8fafb",
+          "#fbfcfd",
+          "#fefefe"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Module White",
+        "canonical": "#ffffff",
+        "dark": "#16202a",
+        "tonalRamp": [
+          "#666666",
+          "#999999",
+          "#cccccc",
+          "#ffffff",
+          "#ffffff",
+          "#ffffff",
+          "#ffffff",
+          "#ffffff"
+        ]
+      },
+      "sunken": {
+        "role": "neutral",
+        "displayName": "Sunken Well",
+        "canonical": "#eef1f4",
+        "dark": "#1e2a36",
+        "tonalRamp": [
+          "#5f6062",
+          "#8f9192",
+          "#bec1c3",
+          "#eef1f4",
+          "#f1f4f6",
+          "#f6f7f9",
+          "#fafbfc",
+          "#fdfdfe"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Silver Hairline",
+        "canonical": "#d8dee4",
+        "dark": "#2a3846",
+        "tonalRamp": [
+          "#56595b",
+          "#828589",
+          "#adb2b6",
+          "#d8dee4",
+          "#e0e5e9",
+          "#eaedf0",
+          "#f3f5f7",
+          "#fafbfc"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Blue-Black Ink",
+        "canonical": "#17212b",
+        "dark": "#edf1f4",
+        "tonalRamp": [
+          "#090d11",
+          "#0e141a",
+          "#121a22",
+          "#17212b",
+          "#454d55",
+          "#7f858a",
+          "#b9bcbf",
+          "#e3e4e6"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Secondary Ink",
+        "canonical": "#4b5865",
+        "dark": "#a9b6c2",
+        "tonalRamp": [
+          "#1e2328",
+          "#2d353d",
+          "#3c4651",
+          "#4b5865",
+          "#6f7984",
+          "#9ca3aa",
+          "#c9cdd1",
+          "#e9ebed"
+        ]
+      },
+      "train": {
+        "role": "primary",
+        "displayName": "Training Blue",
+        "canonical": "#1572ae",
+        "dark": "#4aa8e3",
+        "tonalRamp": [
+          "#082e46",
+          "#0d4468",
+          "#115b8b",
+          "#1572ae",
+          "#448ebe",
+          "#7eb1d2",
+          "#b9d5e7",
+          "#e3eef5"
+        ]
+      },
+      "eat": {
+        "role": "secondary",
+        "displayName": "Nutrition Green",
+        "canonical": "#2a7f47",
+        "dark": "#48b56b",
+        "tonalRamp": [
+          "#11331c",
+          "#194c2b",
+          "#226639",
+          "#2a7f47",
+          "#55996c",
+          "#8ab99a",
+          "#bfd9c8",
+          "#e5f0e9"
+        ]
+      },
+      "body": {
+        "role": "tertiary",
+        "displayName": "Body Orange",
+        "canonical": "#b3570a",
+        "dark": "#ec9448",
+        "tonalRamp": [
+          "#482304",
+          "#6b3406",
+          "#8f4608",
+          "#b3570a",
+          "#c2793b",
+          "#d5a378",
+          "#e8cdb6",
+          "#f6ebe2"
+        ]
+      },
+      "danger": {
+        "role": "status",
+        "displayName": "Alarm Red",
+        "canonical": "#b42318",
+        "dark": "#f0705f",
+        "tonalRamp": [
+          "#480e0a",
+          "#6c150e",
+          "#901c13",
+          "#b42318",
+          "#c34f46",
+          "#d68680",
+          "#e8bdba",
+          "#f6e5e3"
+        ]
+      },
+      "warn": {
+        "role": "status",
+        "displayName": "Caution Amber",
+        "canonical": "#9a6700",
+        "dark": "#e0b44a",
+        "tonalRamp": [
+          "#3e2900",
+          "#5c3e00",
+          "#7b5200",
+          "#9a6700",
+          "#ae8533",
+          "#c7ab73",
+          "#e1d1b2",
+          "#f3ede0"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "page-title": {
+        "displayName": "Page title",
+        "purpose": "Header band section name."
+      },
+      "modal-title": {
+        "displayName": "Modal title",
+        "purpose": "Sheet titles and page sub-headings."
+      },
+      "card-title": {
+        "displayName": "Card title",
+        "purpose": "CardTitle."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Default text; 16px inputs."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Field and section labels, sentence case."
+      },
+      "nav-label": {
+        "displayName": "Nav label",
+        "purpose": "Bottom tab labels."
+      },
+      "numeral": {
+        "displayName": "Numeral (num)",
+        "purpose": "Weights, reps, kcal, macros, timers: condensed tabular."
+      }
+    },
+    "shadows": [
+      {
+        "name": "modal-sheet",
+        "value": "0 -8px 32px rgb(0 0 0 / 0.18)",
+        "purpose": "Only shadow in the system; the bottom sheet over its ink/50 scrim."
+      },
+      {
+        "name": "field-focus",
+        "value": "0 0 0 3px color-mix(in srgb, var(--train) 25%, transparent)",
+        "purpose": "Focus glow on input, textarea, select."
+      }
+    ],
+    "motion": [
+      {
+        "name": "reduced-motion",
+        "value": "0.01ms",
+        "purpose": "Animation and transition duration collapse under prefers-reduced-motion."
+      },
+      {
+        "name": "press",
+        "value": "scale(0.98)",
+        "purpose": "Button active state."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "content-max",
+        "value": "32rem (max-w-lg)"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button (train)",
+      "kind": "button",
+      "refersTo": "button-primary-train",
+      "description": "Primary action, train tone, 44px.",
+      "html": "<button class=\"ds-btn ds-btn-train\">Start workout</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;height:44px;padding:0 16px;border-radius:12px;border:0;font:600 16px Archivo,system-ui,sans-serif;cursor:pointer;transition:filter .15s,transform .15s} .ds-btn-train{background:#1572ae;color:#fff} .ds-btn-train:hover{filter:brightness(1.1)} .ds-btn-train:active{transform:scale(.98)} .ds-btn-train:focus-visible{outline:2px solid #1572ae;outline-offset:2px}"
+    },
+    {
+      "name": "Primary Button (eat)",
+      "kind": "button",
+      "refersTo": "button-primary-eat",
+      "description": "Primary action, eat tone, 44px.",
+      "html": "<button class=\"ds-btn ds-btn-eat\">Start workout</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;height:44px;padding:0 16px;border-radius:12px;border:0;font:600 16px Archivo,system-ui,sans-serif;cursor:pointer;transition:filter .15s,transform .15s} .ds-btn-eat{background:#2a7f47;color:#fff} .ds-btn-eat:hover{filter:brightness(1.1)} .ds-btn-eat:active{transform:scale(.98)} .ds-btn-eat:focus-visible{outline:2px solid #1572ae;outline-offset:2px}"
+    },
+    {
+      "name": "Primary Button (body)",
+      "kind": "button",
+      "refersTo": "button-primary-body",
+      "description": "Primary action, body tone, 44px.",
+      "html": "<button class=\"ds-btn ds-btn-body\">Start workout</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;height:44px;padding:0 16px;border-radius:12px;border:0;font:600 16px Archivo,system-ui,sans-serif;cursor:pointer;transition:filter .15s,transform .15s} .ds-btn-body{background:#b3570a;color:#fff} .ds-btn-body:hover{filter:brightness(1.1)} .ds-btn-body:active{transform:scale(.98)} .ds-btn-body:focus-visible{outline:2px solid #1572ae;outline-offset:2px}"
+    },
+    {
+      "name": "Primary Button (ink)",
+      "kind": "button",
+      "refersTo": "button-primary-ink",
+      "description": "Primary action, ink tone, 44px.",
+      "html": "<button class=\"ds-btn ds-btn-ink\">Start workout</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;height:44px;padding:0 16px;border-radius:12px;border:0;font:600 16px Archivo,system-ui,sans-serif;cursor:pointer;transition:filter .15s,transform .15s} .ds-btn-ink{background:#17212b;color:#f3f5f7} .ds-btn-ink:hover{filter:brightness(1.1)} .ds-btn-ink:active{transform:scale(.98)} .ds-btn-ink:focus-visible{outline:2px solid #1572ae;outline-offset:2px}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Secondary action on surface with strong hairline.",
+      "html": "<button class=\"ds-btn-sec\">Cancel</button>",
+      "css": ".ds-btn-sec{height:44px;padding:0 16px;border-radius:12px;background:#fff;color:#17212b;border:1px solid #b9c3cc;font:600 16px Archivo,system-ui,sans-serif;cursor:pointer} .ds-btn-sec:hover{background:#eef1f4} .ds-btn-sec:focus-visible{outline:2px solid #1572ae;outline-offset:2px}"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "44px field, 16px text, train focus glow.",
+      "html": "<label class=\"ds-in-l\">Weight (kg)<input class=\"ds-in\" value=\"82.5\"></label>",
+      "css": ".ds-in-l{display:block;font:600 14px Archivo,system-ui,sans-serif;color:#4b5865} .ds-in{display:block;box-sizing:border-box;width:100%;height:44px;margin-top:6px;padding:0 12px;border-radius:12px;background:#fff;border:1px solid #b9c3cc;color:#17212b;font:16px Archivo,system-ui,sans-serif} .ds-in:focus{outline:none;border-color:#1572ae;box-shadow:0 0 0 3px rgba(21,114,174,.25)}"
+    },
+    {
+      "name": "Card Module",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Hairline module, no shadow.",
+      "html": "<div class=\"ds-card\"><h3 class=\"ds-card-t\">Today</h3><p class=\"ds-card-n\"><span class=\"ds-num\">2140</span> kcal</p></div>",
+      "css": ".ds-card{background:#fff;border:1px solid #d8dee4;border-radius:12px;padding:16px;font-family:Archivo,system-ui,sans-serif;color:#17212b} .ds-card-t{margin:0 0 8px;font-size:16px;font-weight:700} .ds-card-n{margin:0;color:#5f6b77} .ds-num{font-size:36px;font-weight:700;font-stretch:75%;font-variant-numeric:tabular-nums;letter-spacing:-.01em;color:#17212b}"
+    },
+    {
+      "name": "Bottom Navigation Tab",
+      "kind": "nav",
+      "refersTo": "header-band",
+      "description": "Active Train tab with 3px discipline bar.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-tab ds-on\"><i></i>Train</a><a class=\"ds-tab\">Eat</a></nav>",
+      "css": ".ds-nav{display:grid;grid-template-columns:1fr 1fr;background:#fff;border-top:1px solid #d8dee4;font-family:Archivo,system-ui,sans-serif} .ds-tab{position:relative;display:flex;align-items:center;justify-content:center;height:64px;font-size:12px;font-weight:600;color:#5f6b77} .ds-on{color:#0e5a8c} .ds-on i{position:absolute;top:0;left:16px;right:16px;height:3px;border-radius:0 0 4px 4px;background:#1572ae}"
+    },
+    {
+      "name": "Exercise Mark",
+      "kind": "custom",
+      "refersTo": "exercise-mark",
+      "description": "Signature: movement pictogram (squat) on a soft training tile.",
+      "html": "<span class=\"ds-mark\"><svg viewBox=\"0 0 24 24\" width=\"26\" height=\"26\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 8.5H17 M10 8 L8 14 L14.5 14.5 L13 21\"/><circle cx=\"11\" cy=\"4.5\" r=\"2.1\" fill=\"currentColor\" stroke=\"none\"/></svg></span>",
+      "css": ".ds-mark{display:grid;place-items:center;width:40px;height:40px;border-radius:8px;background:#dceef9;color:#0e5a8c}"
+    },
+    {
+      "name": "Stamped Set Row",
+      "kind": "custom",
+      "refersTo": "exercise-mark",
+      "description": "Completed set: soft train row, fixed columns.",
+      "html": "<div class=\"ds-set\"><span>1</span><b class=\"ds-n\">60</b><b class=\"ds-n\">8</b><span>done</span></div>",
+      "css": ".ds-set{display:grid;grid-template-columns:2.5rem 1fr 1fr 5rem;gap:8px;align-items:center;padding:8px 12px;border-radius:12px;background:#dceef9;color:#0e5a8c;font-family:Archivo,system-ui,sans-serif} .ds-n{font-size:20px;font-weight:700;font-stretch:75%;font-variant-numeric:tabular-nums}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Munich '72 Program",
+    "overview": "Training, eating and body are three disciplines, each owning one flat colour (blue, green, orange) in the manner of Otl Aicher's 1972 Olympic identity. Every movement pattern has a geometric pictogram. Neutrals are cool silver and deep blue-black; no black UI, gradient, glass or card shadow. Hairline modules on a 4px grid, 12px working radius. Light by default, dark for night sessions.",
+    "keyCharacteristics": [
+      "Discipline colour is the only chroma",
+      "ExerciseMark pictogram beside every exercise name",
+      "Hairline modules, flat at rest",
+      "Condensed tabular numerals via num",
+      "Fixed chart scales, fixed set columns, stamped set states",
+      "AI is neutral ink"
+    ],
+    "rules": [
+      {
+        "name": "The Three Disciplines Rule",
+        "body": "A screen takes its chroma from its discipline and nothing else.",
+        "section": "colors"
+      },
+      {
+        "name": "The Ink-for-AI Rule",
+        "body": "AI actions are bg-ink text-canvas, AI panels bg-sunken, Sparkles icon. No purple.",
+        "section": "colors"
+      },
+      {
+        "name": "The Soft Pairing Rule",
+        "body": "-soft tints pair only with the matching -ink text; solid fills pair with text-on-accent.",
+        "section": "colors"
+      },
+      {
+        "name": "The Num Rule",
+        "body": "Every weight, rep count, kcal, macro, timer and date number uses num.",
+        "section": "typography"
+      },
+      {
+        "name": "The Sentence-Case Rule",
+        "body": "No small uppercase tracked eyebrows above headings.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-At-Rest Rule",
+        "body": "Hairline plus tone, not shadow. Cards are never nested.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do use semantic token utilities only.",
+      "Do keep touch targets at least 44px.",
+      "Do put ExerciseMark beside every exercise name.",
+      "Do use num on every number.",
+      "Do stamp completed sets and keep skipped sets visible.",
+      "Do keep chart y-axis scales fixed per metric."
+    ],
+    "donts": [
+      "Don't use raw palette classes, hex or dark: variants.",
+      "Don't use gradients, glass or backdrop-blur.",
+      "Don't nest cards.",
+      "Don't add uppercase tracked eyebrows.",
+      "Don't colour AI features purple or with a discipline colour.",
+      "Don't add your own backdrop to a Modal."
+    ]
+  }
+}

@@ -9,6 +9,7 @@ import {
 import { Card, ConfirmModal, SkeletonCard } from '../components/ui';
 import { useWorkoutLogs } from '../hooks/useWorkoutLogs';
 import { getDB } from '../services/db';
+import { setsForWorkout } from '../services/queries/workoutHistory';
 import type { WorkoutLog, WorkoutSetWithExercise } from '../types';
 import { parseLocalTimestamp } from '../utils/date';
 import { formatDurationFromMs } from '../utils/formatters';
@@ -69,18 +70,11 @@ export function WorkoutDetail() {
       )[0];
 
       // Fetch sets for this workout
-      const setsResult = await db.query(
-        `SELECT ws.*, e.name as exercise_name
-         FROM workout_sets ws
-         JOIN exercises e ON ws.exercise_id = e.id
-         WHERE ws.workout_log_id = $1
-         ORDER BY ws.created_at`,
-        [parseInt(id, 10)],
-      );
+      const sets = await setsForWorkout(db, parseInt(id, 10));
 
       const workoutWithSets: WorkoutLogWithDetails = {
         ...log,
-        sets: setsResult.rows as WorkoutSetWithExercise[],
+        sets,
       };
 
       setWorkout(workoutWithSets);

@@ -63,6 +63,12 @@ export function Settings() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // One banner at a time: starting an action clears both; failing clears success.
+  const clearBanners = () => {
+    setError(null);
+    setSuccess(null);
+  };
   const [showExportModal, setShowExportModal] = useState(false);
   const [showClearDataModal, setShowClearDataModal] = useState(false);
 
@@ -124,7 +130,7 @@ export function Settings() {
 
   const handleUpdateProfile = async (data: ProfileFormData) => {
     setIsLoading(true);
-    setError(null);
+    clearBanners();
     try {
       await updateProfile({
         birthdate: data.birthdate,
@@ -146,7 +152,7 @@ export function Settings() {
 
   const handleUpdateTargets = async (data: GoalsFormData) => {
     setIsLoading(true);
-    setError(null);
+    clearBanners();
     try {
       await updateProfile({
         goal: data.goal as 'bulk' | 'lean_bulk' | 'recomp' | 'cut' | 'maintain',
@@ -176,7 +182,7 @@ export function Settings() {
     }
 
     setIsLoading(true);
-    setError(null);
+    clearBanners();
     try {
       const values = goalsForm.getValues();
       const latestWeight = await getLatestLog();
@@ -222,7 +228,7 @@ export function Settings() {
 
   const handleUpdateApiKey = async (data: ApiKeyFormData) => {
     setIsLoading(true);
-    setError(null);
+    clearBanners();
     try {
       const provider: typeof AI_PROVIDER = AI_PROVIDER;
       const model = data.aiModel ?? FALLBACK_MODEL;
@@ -246,7 +252,7 @@ export function Settings() {
 
   const handleUnitChange = async (unit: WeightUnit) => {
     if (!profile || profile.weight_unit === unit) return;
-    setError(null);
+    clearBanners();
     try {
       // Storage stays kg; only the display/entry unit changes.
       await updateProfile({ weight_unit: unit });
@@ -257,6 +263,7 @@ export function Settings() {
 
   const handleExport = async (options: ExportOptions) => {
     setIsLoading(true);
+    clearBanners();
     try {
       downloadBackup(await exportBackup(options));
       setSuccess('Backup downloaded');
@@ -272,7 +279,7 @@ export function Settings() {
     if (!file) return;
 
     setIsLoading(true);
-    setError(null);
+    clearBanners();
     try {
       await importBackup(await readBackupFile(file));
       // Refetch everything the restore may have replaced
@@ -290,6 +297,7 @@ export function Settings() {
 
   const handleClearData = async () => {
     setIsLoading(true);
+    clearBanners();
     try {
       await resetDatabase();
       setOnboardingComplete(false);

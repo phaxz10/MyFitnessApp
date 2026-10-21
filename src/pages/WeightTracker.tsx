@@ -32,6 +32,7 @@ import {
   formatShortDate,
   getDaysAgo,
 } from '../utils/date';
+import { pgDate } from '../utils/pgValues';
 import { parseWeightInput, weightText } from '../utils/units';
 
 export function WeightTracker() {
@@ -71,9 +72,7 @@ export function WeightTracker() {
 
   // Selected date from URL param, defaulting to today
   const selectedDate = searchParams.get('date') || formatDate(new Date());
-  const selectedDateLog = logs.find(
-    (log) => formatDate(log.date) === selectedDate,
-  );
+  const selectedDateLog = logs.find((log) => pgDate(log.date) === selectedDate);
 
   // Pre-fill the form when the selected date already has an entry
   const handleOpenModal = useCallback(() => {
@@ -99,12 +98,12 @@ export function WeightTracker() {
       const startDate = formatDate(
         startOfWeek(new Date(), { weekStartsOn: 0 }),
       );
-      return logs.filter((log) => formatDate(log.date) >= startDate).reverse();
+      return logs.filter((log) => pgDate(log.date) >= startDate).reverse();
     }
 
     const daysMap = { '30d': 30, '90d': 90 };
     const cutoffDate = getDaysAgo(daysMap[timeRange]);
-    return logs.filter((log) => formatDate(log.date) >= cutoffDate).reverse();
+    return logs.filter((log) => pgDate(log.date) >= cutoffDate).reverse();
   }, [logs, timeRange]);
 
   const latestLog = logs.length > 0 ? logs[0] : null;
@@ -117,7 +116,7 @@ export function WeightTracker() {
   const chartData = useMemo(
     () =>
       filteredLogs.map((log) => ({
-        date: formatShortDate(log.date),
+        date: formatShortDate(pgDate(log.date)),
         weight: log.weight_kg,
       })),
     [filteredLogs],

@@ -17,7 +17,7 @@
  * zero sets return an empty array instead of SQL NULL.
  */
 
-import type { WorkoutStatus } from '../../types';
+import type { WorkoutSetWithExercise, WorkoutStatus } from '../../types';
 import { pgDate, pgTimestamp } from '../../utils/pgValues';
 import type { Queryable as DB } from '../db';
 import type { WorkoutLogWithSets } from './types';
@@ -48,7 +48,7 @@ const SELECT_AND_JOIN = `
           'created_at', ws.created_at,
           'exercise_name', e.name
         )
-        ORDER BY ws.created_at
+        ORDER BY wle.order_index NULLS LAST, ws.exercise_id, ws.set_number, ws.id
       ) FILTER (WHERE ws.id IS NOT NULL),
       '[]'::json
     ) AS sets
@@ -56,6 +56,7 @@ const SELECT_AND_JOIN = `
   LEFT JOIN program_sessions ps ON wl.session_id = ps.id
   LEFT JOIN workout_programs wp ON wl.program_id = wp.id
   LEFT JOIN workout_sets ws ON wl.id = ws.workout_log_id
+  LEFT JOIN workout_log_exercises wle ON ws.workout_log_exercise_id = wle.id
   LEFT JOIN exercises e ON ws.exercise_id = e.id`;
 
 const GROUP_AND_ORDER = `
@@ -103,6 +104,27 @@ export async function inRange(
     [since, until],
   );
   return (result.rows as Record<string, unknown>[]).map(parseLogRow);
+}
+
+/**
+ * One workout's sets with exercise names, in display order: exercise order,
+ * then set_number. Never created_at: pre-created sets share one timestamp, so
+ * it ties and the order it yields is arbitrary.
+ */
+export async function setsForWorkout(
+  db: DB,
+  workoutLogId: number,
+): Promise<WorkoutSetWithExercise[]> {
+  const result = await db.query(
+    `SELECT ws.*, e.name AS exercise_name
+     FROM workout_sets ws
+     JOIN exercises e ON ws.exercise_id = e.id
+     LEFT JOIN workout_log_exercises wle ON ws.workout_log_exercise_id = wle.id
+     WHERE ws.workout_log_id = $1
+     ORDER BY wle.order_index NULLS LAST, ws.exercise_id, ws.set_number, ws.id`,
+    [workoutLogId],
+  );
+  return result.rows as WorkoutSetWithExercise[];
 }
 
 // ---------------------------------------------------------------------------

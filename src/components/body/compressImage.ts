@@ -23,3 +23,23 @@ export function compressBase64Image(
     img.src = `data:${mimeType};base64,${base64}`;
   });
 }
+
+/** Downscale a data URL to a small JPEG thumbnail (max `maxDim` px). */
+export function makeThumbnail(dataUrl: string, maxDim = 200): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = document.createElement('img');
+    img.onload = () => {
+      let { width, height } = img;
+      const ratio = Math.min(1, maxDim / Math.max(width, height));
+      width = Math.max(1, Math.round(width * ratio));
+      height = Math.max(1, Math.round(height * ratio));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d')?.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', 0.7));
+    };
+    img.onerror = () => reject(new Error('Failed to create thumbnail'));
+    img.src = dataUrl;
+  });
+}

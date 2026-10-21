@@ -114,10 +114,14 @@ export function WeightTracker() {
     ? isOnTrackWithGoal(profile.goal, weeklyChange)
     : true;
 
-  const chartData = filteredLogs.map((log) => ({
-    date: formatShortDate(log.date),
-    weight: log.weight_kg,
-  }));
+  const chartData = useMemo(
+    () =>
+      filteredLogs.map((log) => ({
+        date: formatShortDate(log.date),
+        weight: log.weight_kg,
+      })),
+    [filteredLogs],
+  );
 
   const handleCloseModal = () => {
     setIsModalOpen(false);

@@ -91,7 +91,7 @@ describe('runPendingMigrations', () => {
   });
 
   // Bump LATEST_MIGRATION when a new migration is added to migrator.ts.
-  const LATEST_MIGRATION = 9;
+  const LATEST_MIGRATION = 11;
 
   it(`records version ${LATEST_MIGRATION} in schema_migrations`, async () => {
     await runPendingMigrations(db);

@@ -5,14 +5,17 @@ import { useAppStore } from '../../hooks/useAppStore';
 import { useProfile } from '../../hooks/useProfile';
 import { useWeight } from '../../hooks/useWeight';
 import { type WeightLogFormData, weightLogSchema } from '../../schemas/forms';
+import { getDB } from '../../services/db';
+import { weightLogForDate } from '../../services/queries/weightLogs';
+import type { WeightLog } from '../../types';
 import { calculateBodyFatPercentage } from '../../utils/calculations';
-import { formatDate, formatDisplayDate } from '../../utils/date';
+import { formatDisplayDate } from '../../utils/date';
 import { parseWeightInput, unitLabel, weightText } from '../../utils/units';
 import { Button, Input, Modal } from '../ui';
 
 export function WeightLogModal() {
   const { weightLogModal, closeWeightLogModal } = useAppStore();
-  const { logs, addLog, fetchLogs } = useWeight();
+  const { addLog } = useWeight();
   const { profile } = useProfile();
   const unit = profile?.weight_unit ?? 'kg';
 
@@ -36,17 +39,24 @@ export function WeightLogModal() {
   });
 
   // Check if there's already an entry for the selected date
-  const existingLog = logs.find(
-    (log) => formatDate(log.date) === weightLogModal.date,
-  );
+  const [existingLog, setExistingLog] = useState<WeightLog | null>(null);
 
-  // Populate form when modal opens
   useEffect(() => {
-    if (weightLogModal.isOpen) {
-      // Fetch logs to check for existing entry
-      fetchLogs();
-    }
-  }, [weightLogModal.isOpen, fetchLogs]);
+    if (!weightLogModal.isOpen) return;
+    setExistingLog(null);
+    let cancelled = false;
+    getDB()
+      .then((db) => weightLogForDate(db, weightLogModal.date))
+      .then((log) => {
+        if (!cancelled) setExistingLog(log);
+      })
+      .catch(() => {
+        if (!cancelled) setExistingLog(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [weightLogModal.isOpen, weightLogModal.date]);
 
   useEffect(() => {
     if (weightLogModal.isOpen && existingLog) {

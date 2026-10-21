@@ -1,9 +1,12 @@
 import { ChevronLeft, ChevronRight, Trash2, X } from 'lucide-react';
-import type { ProgressPhoto } from '../../types';
+import { useEffect, useState } from 'react';
+import { getDB } from '../../services/db';
+import { photoData } from '../../services/queries/progressPhotos';
+import type { ProgressPhotoSummary } from '../../types';
 import { formatDisplayDate } from '../../utils/date';
 
 interface PhotoViewerProps {
-  photo: ProgressPhoto;
+  photo: ProgressPhotoSummary;
   index: number;
   total: number;
   onClose: () => void;
@@ -22,6 +25,29 @@ export function PhotoViewer({
   onNavigate,
   onDelete,
 }: PhotoViewerProps) {
+  const [image, setImage] = useState<{ id: number; src: string | null } | null>(
+    null,
+  );
+  const photoId = photo.id;
+
+  // Load the full image only for the photo on screen; prev/next changes the id.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let src: string | null = null;
+      try {
+        src = await photoData(await getDB(), photoId);
+      } catch {
+        src = null;
+      }
+      if (!cancelled) setImage({ id: photoId, src });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [photoId]);
+
+  const loaded = image?.id === photoId;
   const alt = `${photo.photo_type} pose from ${formatDisplayDate(photo.date)}`;
 
   return (
@@ -51,11 +77,19 @@ export function PhotoViewer({
       </div>
 
       <div className="relative flex min-h-0 flex-1 items-center justify-center p-4">
-        <img
-          src={photo.photo_data}
-          alt={alt}
-          className="max-h-full max-w-full object-contain"
-        />
+        {loaded && image.src ? (
+          <img
+            src={image.src}
+            alt={alt}
+            className="max-h-full max-w-full object-contain"
+          />
+        ) : loaded ? (
+          <p className="text-ink-3">Could not load photo.</p>
+        ) : (
+          <p className="text-ink-3" role="status">
+            Loading photo...
+          </p>
+        )}
         {total > 1 && (
           <>
             <button

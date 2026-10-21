@@ -74,8 +74,16 @@ export async function recent(
   db: DB,
   limit: number,
 ): Promise<WorkoutLogWithSets[]> {
+  // Pick the N logs first, then join their sets: joining every set before the
+  // LIMIT aggregated the whole history to return five rows.
   const result = await db.query(
-    `${SELECT_AND_JOIN} ${GROUP_AND_ORDER} LIMIT $1`,
+    `${SELECT_AND_JOIN}
+     WHERE wl.id IN (
+       SELECT id FROM workout_logs
+       ORDER BY date DESC, started_at DESC, id DESC
+       LIMIT $1
+     )
+     ${GROUP_AND_ORDER}, wl.id DESC`,
     [limit],
   );
   return (result.rows as Record<string, unknown>[]).map(parseLogRow);

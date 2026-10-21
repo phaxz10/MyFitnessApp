@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { getDB } from '../services/db';
+import { activeProgram as queryActiveProgram } from '../services/queries/dashboard';
 import * as ProgramWriter from '../services/writers/programWriter';
 import type {
   ProgramExercise,
@@ -41,53 +42,7 @@ export function useWorkoutPrograms() {
       setLoading(true);
       setError(null);
       try {
-        const db = await getDB();
-
-        // Get active program
-        const programResult = await db.query(
-          'SELECT * FROM workout_programs WHERE is_active = true LIMIT 1',
-        );
-        const programs = programResult.rows as WorkoutProgram[];
-
-        if (programs.length === 0) {
-          setActiveProgram(null);
-          return null;
-        }
-
-        const program = programs[0];
-
-        // Get sessions for this program
-        const sessionsResult = await db.query(
-          'SELECT * FROM program_sessions WHERE program_id = $1 ORDER BY order_index',
-          [program.id],
-        );
-        const sessions = sessionsResult.rows as ProgramSession[];
-
-        // Get exercises for each session
-        const sessionsWithExercises: ProgramSessionWithExercises[] =
-          await Promise.all(
-            sessions.map(async (session) => {
-              const exercisesResult = await db.query(
-                `SELECT pe.*, e.name as exercise_name, e.description as exercise_description, 
-                    e.muscle_groups, e.equipment, e.exercise_type
-             FROM program_exercises pe
-             JOIN exercises e ON pe.exercise_id = e.id
-             WHERE pe.session_id = $1
-             ORDER BY pe.order_index`,
-                [session.id],
-              );
-              return {
-                ...session,
-                exercises: exercisesResult.rows as ProgramExerciseWithDetails[],
-              };
-            }),
-          );
-
-        const fullProgram: WorkoutProgramWithSessions = {
-          ...program,
-          sessions: sessionsWithExercises,
-        };
-
+        const fullProgram = await queryActiveProgram(await getDB());
         setActiveProgram(fullProgram);
         return fullProgram;
       } catch (err) {

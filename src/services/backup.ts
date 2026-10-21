@@ -1,4 +1,11 @@
-import { strFromU8, strToU8, unzipSync, type Zippable, zipSync } from 'fflate';
+import {
+  type AsyncZippable,
+  strFromU8,
+  strToU8,
+  type Unzipped,
+  unzip,
+  zip,
+} from 'fflate';
 import { toOpenRouterModelId } from '../constants/aiProviders';
 import { getLocalDateString } from '../utils/date';
 import { isWeightUnit, KG_PER_LB } from '../utils/units';
@@ -281,10 +288,15 @@ export async function exportBackup(
   options: ExportOptions = DEFAULT_EXPORT_OPTIONS,
 ): Promise<Uint8Array> {
   const backup = await collectBackupData(options);
-  const files: Zippable = {};
+  const files: AsyncZippable = {};
 
   backup.data.progress_photos = backup.data.progress_photos.map((raw) => {
-    const { photo_data, ...row } = raw as Record<string, unknown>;
+    // thumb_data is derived (regenerated lazily by the app): never exported.
+    const {
+      photo_data,
+      thumb_data: _thumb,
+      ...row
+    } = raw as Record<string, unknown>;
     const file =
       typeof photo_data === 'string' ? photoToFile(row.id, photo_data) : null;
     if (file) {
@@ -298,7 +310,10 @@ export async function exportBackup(
   });
 
   files[BACKUP_JSON] = strToU8(JSON.stringify(backup, null, 2));
-  return zipSync(files);
+  // Async zip keeps the main thread free (fflate compresses off-thread).
+  return new Promise((resolve, reject) => {
+    zip(files, (err, out) => (err ? reject(err) : resolve(out)));
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -328,10 +343,16 @@ function assertBackupShape(value: unknown): asserts value is BackupData {
   }
 }
 
-function parseZipBackup(bytes: Uint8Array): BackupData {
-  let entries: Record<string, Uint8Array>;
+function unzipAsync(bytes: Uint8Array): Promise<Unzipped> {
+  return new Promise((resolve, reject) => {
+    unzip(bytes, (err, out) => (err ? reject(err) : resolve(out)));
+  });
+}
+
+async function parseZipBackup(bytes: Uint8Array): Promise<BackupData> {
+  let entries: Unzipped;
   try {
-    entries = unzipSync(bytes);
+    entries = await unzipAsync(bytes);
   } catch {
     throw new Error(DAMAGED_FILE_ERROR);
   }
@@ -374,7 +395,7 @@ function parseJsonBackup(bytes: Uint8Array): BackupData {
 }
 
 /** Parse a backup file's bytes: the `.zip` format, or a legacy `.json`. */
-export function parseBackup(bytes: Uint8Array): BackupData {
+export async function parseBackup(bytes: Uint8Array): Promise<BackupData> {
   return isZip(bytes) ? parseZipBackup(bytes) : parseJsonBackup(bytes);
 }
 
@@ -388,7 +409,7 @@ export interface ImportResult {
  * backup are replaced; the whole restore runs in one transaction.
  */
 export async function importBackup(bytes: Uint8Array): Promise<ImportResult> {
-  const backup = parseBackup(bytes);
+  const backup = await parseBackup(bytes);
   const db = await getDB();
 
   // Wrap the entire import in a transaction. Without this, a single failing
@@ -411,7 +432,56 @@ export async function importBackup(bytes: Uint8Array): Promise<ImportResult> {
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: PGlite db type is wide; this stays internal.
-async function importDataInner(db: any, backup: BackupData): Promise<void> {
+type AnyDB = any;
+
+/** Max rows per batched INSERT. */
+export const INSERT_CHUNK_ROWS = 1000;
+/** Max approximate JSON bytes per batched INSERT (photo rows are large). */
+export const INSERT_CHUNK_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Insert already-converted rows in batches via json_populate_recordset. The
+ * columns are the keys of the first row (every row object of a table is built
+ * with the same keys). A missing/undefined key becomes NULL, as an undefined
+ * query parameter did. `exprs` overrides a column's SELECT expression (the
+ * recordset alias is `r`).
+ */
+async function insertRows(
+  db: AnyDB,
+  table: string,
+  rows: Record<string, unknown>[],
+  exprs: Record<string, string> = {},
+): Promise<void> {
+  if (rows.length === 0) return;
+  const columns = Object.keys(rows[0]);
+  const sql = `INSERT INTO ${table} (${columns.join(', ')})
+     SELECT ${columns.map((c) => exprs[c] ?? `r.${c}`).join(', ')}
+     FROM json_populate_recordset(NULL::${table}, $1::json) AS r`;
+
+  let chunk: string[] = [];
+  let bytes = 0;
+  const flush = async () => {
+    if (chunk.length === 0) return;
+    await db.query(sql, [`[${chunk.join(',')}]`]);
+    chunk = [];
+    bytes = 0;
+  };
+  for (const row of rows) {
+    const json = JSON.stringify(row);
+    if (
+      chunk.length > 0 &&
+      (chunk.length >= INSERT_CHUNK_ROWS ||
+        bytes + json.length > INSERT_CHUNK_BYTES)
+    ) {
+      await flush();
+    }
+    chunk.push(json);
+    bytes += json.length + 1;
+  }
+  await flush();
+}
+
+async function importDataInner(db: AnyDB, backup: BackupData): Promise<void> {
   const { data } = backup;
   const preUnits = isPreUnitsBackup(backup.version);
   const liftKg = (value: unknown): unknown =>
@@ -447,14 +517,18 @@ async function importDataInner(db: any, backup: BackupData): Promise<void> {
     await db.exec(`DELETE FROM ${table}`);
   }
 
-  // Import data in order of dependencies
+  // Import data in order of dependencies. Each table's rows are converted
+  // in JS exactly as before, then inserted in batches (see insertRows).
+  type Row = Record<string, unknown>;
+  const rowsOf = (arr: unknown[]) => arr as Row[];
+
   // User profile.
   //
   // Backwards compatibility: backups created before migration v3 carry
   // `openai_api_key` / `openai_proxy_url` and no `ai_provider` / `ai_model`.
   // Map them onto the new columns so old backups restore cleanly.
   if (hasData(data.user_profile)) {
-    for (const row of data.user_profile as Record<string, unknown>[]) {
+    const rows = rowsOf(data.user_profile).map((row) => {
       const aiApiKey = (row.ai_api_key ?? row.openai_api_key ?? null) as
         | string
         | null;
@@ -485,313 +559,251 @@ async function importDataInner(db: any, backup: BackupData): Promise<void> {
           ? row.weight_unit
           : 'kg';
 
-      await db.query(
-        `INSERT INTO user_profile (id, birthdate, gender, height_cm, activity_level, goal, diet_type, calorie_target, protein_target_g, carbs_target_g, fat_target_g, ai_provider, ai_model, ai_api_key, ai_proxy_url, created_at, updated_at, weight_unit)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
-        [
-          row.id,
-          row.birthdate ?? getLocalDateString(),
-          row.gender,
-          row.height_cm,
-          row.activity_level,
-          row.goal,
-          dietType,
-          row.calorie_target,
-          row.protein_target_g,
-          row.carbs_target_g,
-          row.fat_target_g,
-          aiProvider,
-          aiModel,
-          // Legacy vendor keys cannot authenticate against OpenRouter; for
-          // OpenRouter backups the stored key is already an sk-or- key.
-          hasLegacyVendorKey ? null : aiApiKey,
-          // The legacy OpenAI proxy is obsolete — OpenRouter is browser-direct.
-          hasLegacyVendorKey ? null : aiProxyUrl,
-          row.created_at,
-          row.updated_at,
-          weightUnit,
-        ],
-      );
-    }
+      return {
+        id: row.id,
+        birthdate: row.birthdate ?? getLocalDateString(),
+        gender: row.gender,
+        height_cm: row.height_cm,
+        activity_level: row.activity_level,
+        goal: row.goal,
+        diet_type: dietType,
+        calorie_target: row.calorie_target,
+        protein_target_g: row.protein_target_g,
+        carbs_target_g: row.carbs_target_g,
+        fat_target_g: row.fat_target_g,
+        ai_provider: aiProvider,
+        ai_model: aiModel,
+        // Legacy vendor keys cannot authenticate against OpenRouter; for
+        // OpenRouter backups the stored key is already an sk-or- key.
+        ai_api_key: hasLegacyVendorKey ? null : aiApiKey,
+        // The legacy OpenAI proxy is obsolete — OpenRouter is browser-direct.
+        ai_proxy_url: hasLegacyVendorKey ? null : aiProxyUrl,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        weight_unit: weightUnit,
+      };
+    });
+    await insertRows(db, 'user_profile', rows);
   }
 
   // Weight logs
   if (hasData(data.weight_logs)) {
-    for (const row of data.weight_logs as Record<string, unknown>[]) {
-      await db.query(
-        `INSERT INTO weight_logs (id, date, weight_kg, waist_cm, neck_cm, arm_cm, body_fat_pct, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [
-          row.id,
-          row.date,
-          row.weight_kg,
-          row.waist_cm,
-          row.neck_cm,
-          row.arm_cm,
-          row.body_fat_pct,
-          row.created_at,
-          row.updated_at,
-        ],
-      );
-    }
+    const rows = rowsOf(data.weight_logs).map((row) => ({
+      id: row.id,
+      date: row.date,
+      weight_kg: row.weight_kg,
+      waist_cm: row.waist_cm,
+      neck_cm: row.neck_cm,
+      arm_cm: row.arm_cm,
+      body_fat_pct: row.body_fat_pct,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    }));
+    await insertRows(db, 'weight_logs', rows);
   }
 
   // Food entries
   if (hasData(data.food_entries)) {
-    for (const row of data.food_entries as Record<string, unknown>[]) {
-      await db.query(
-        `INSERT INTO food_entries (id, date, meal_type, food_description, portion_grams, calories, protein_g, carbs_g, fat_g, is_ai_generated, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [
-          row.id,
-          row.date,
-          row.meal_type,
-          row.food_description,
-          row.portion_grams,
-          row.calories,
-          row.protein_g,
-          row.carbs_g,
-          row.fat_g,
-          row.is_ai_generated,
-          row.created_at,
-          row.updated_at,
-        ],
-      );
-    }
+    const rows = rowsOf(data.food_entries).map((row) => ({
+      id: row.id,
+      date: row.date,
+      meal_type: row.meal_type,
+      food_description: row.food_description,
+      portion_grams: row.portion_grams,
+      calories: row.calories,
+      protein_g: row.protein_g,
+      carbs_g: row.carbs_g,
+      fat_g: row.fat_g,
+      is_ai_generated: row.is_ai_generated,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    }));
+    await insertRows(db, 'food_entries', rows);
   }
 
   // Exercises (updated with video_url and exercise_type)
   if (hasData(data.exercises)) {
-    for (const row of data.exercises as Record<string, unknown>[]) {
-      await db.query(
-        `INSERT INTO exercises (id, name, description, muscle_groups, equipment, video_url, exercise_type, is_ai_generated, created_at, archived_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-        [
-          row.id,
-          row.name,
-          row.description,
-          row.muscle_groups,
-          row.equipment,
-          row.video_url ?? null,
-          row.exercise_type ?? 'reps_weight',
-          row.is_ai_generated,
-          row.created_at,
-          row.archived_at ?? null,
-        ],
-      );
-    }
+    const rows = rowsOf(data.exercises).map((row) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      muscle_groups: row.muscle_groups,
+      equipment: row.equipment,
+      video_url: row.video_url ?? null,
+      exercise_type: row.exercise_type ?? 'reps_weight',
+      is_ai_generated: row.is_ai_generated,
+      created_at: row.created_at,
+      archived_at: row.archived_at ?? null,
+    }));
+    await insertRows(db, 'exercises', rows);
   }
 
   // Workout programs
   if (hasData(data.workout_programs)) {
-    for (const row of data.workout_programs as Record<string, unknown>[]) {
-      await db.query(
-        `INSERT INTO workout_programs (id, name, description, sessions_per_week, is_active, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [
-          row.id,
-          row.name,
-          row.description,
-          row.sessions_per_week,
-          row.is_active,
-          row.created_at,
-          row.updated_at,
-        ],
-      );
-    }
+    const rows = rowsOf(data.workout_programs).map((row) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      sessions_per_week: row.sessions_per_week,
+      is_active: row.is_active,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    }));
+    await insertRows(db, 'workout_programs', rows);
   }
 
   // Program sessions
   if (hasData(data.program_sessions)) {
-    for (const row of data.program_sessions as Record<string, unknown>[]) {
-      await db.query(
-        `INSERT INTO program_sessions (id, program_id, name, day_of_week, order_index, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [
-          row.id,
-          row.program_id,
-          row.name,
-          row.day_of_week,
-          row.order_index,
-          row.created_at,
-        ],
-      );
-    }
+    const rows = rowsOf(data.program_sessions).map((row) => ({
+      id: row.id,
+      program_id: row.program_id,
+      name: row.name,
+      day_of_week: row.day_of_week,
+      order_index: row.order_index,
+      created_at: row.created_at,
+    }));
+    await insertRows(db, 'program_sessions', rows);
   }
 
   // Program exercises (updated with target_duration_seconds and superset_group_id)
   if (hasData(data.program_exercises)) {
-    for (const row of data.program_exercises as Record<string, unknown>[]) {
-      await db.query(
-        `INSERT INTO program_exercises (id, session_id, exercise_id, target_sets, target_rep_min, target_rep_max, target_duration_seconds, order_index, superset_group_id, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-        [
-          row.id,
-          row.session_id,
-          row.exercise_id,
-          row.target_sets,
-          row.target_rep_min,
-          row.target_rep_max,
-          row.target_duration_seconds ?? null,
-          row.order_index,
-          row.superset_group_id ?? null,
-          row.notes,
-        ],
-      );
-    }
+    const rows = rowsOf(data.program_exercises).map((row) => ({
+      id: row.id,
+      session_id: row.session_id,
+      exercise_id: row.exercise_id,
+      target_sets: row.target_sets,
+      target_rep_min: row.target_rep_min,
+      target_rep_max: row.target_rep_max,
+      target_duration_seconds: row.target_duration_seconds ?? null,
+      order_index: row.order_index,
+      superset_group_id: row.superset_group_id ?? null,
+      notes: row.notes,
+    }));
+    await insertRows(db, 'program_exercises', rows);
   }
 
   // Workout logs (updated with status field)
   if (hasData(data.workout_logs)) {
-    for (const row of data.workout_logs as Record<string, unknown>[]) {
+    const rows = rowsOf(data.workout_logs).map((row) => ({
+      id: row.id,
+      program_id: row.program_id,
+      session_id: row.session_id,
+      date: row.date,
+      started_at: row.started_at,
+      ended_at: row.ended_at,
       // Determine status: if status exists use it, otherwise infer from ended_at
-      const status = row.status ?? (row.ended_at ? 'completed' : 'in_progress');
-
-      await db.query(
-        `INSERT INTO workout_logs (id, program_id, session_id, date, started_at, ended_at, status, notes, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [
-          row.id,
-          row.program_id,
-          row.session_id,
-          row.date,
-          row.started_at,
-          row.ended_at,
-          status,
-          row.notes,
-          row.created_at,
-        ],
-      );
-    }
+      status: row.status ?? (row.ended_at ? 'completed' : 'in_progress'),
+      notes: row.notes,
+      created_at: row.created_at,
+    }));
+    await insertRows(db, 'workout_logs', rows);
   }
 
   // Workout log exercises (independent copy of exercises for a specific workout)
   if (hasData(data.workout_log_exercises)) {
-    for (const row of data.workout_log_exercises as Record<string, unknown>[]) {
-      await db.query(
-        // program_exercise_id only when that Program Exercise exists: a
-        // partial restore may bring logs without the programs they came from.
-        `INSERT INTO workout_log_exercises (id, workout_log_id, exercise_id, order_index, superset_group_id, target_sets, target_rep_min, target_rep_max, target_duration_seconds, notes, created_at, program_exercise_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-                 (SELECT id FROM program_exercises WHERE id = $12::int))`,
-        [
-          row.id,
-          row.workout_log_id,
-          row.exercise_id,
-          row.order_index,
-          row.superset_group_id ?? null,
-          row.target_sets ?? null,
-          row.target_rep_min ?? null,
-          row.target_rep_max ?? null,
-          row.target_duration_seconds ?? null,
-          row.notes ?? null,
-          row.created_at,
-          row.program_exercise_id ?? null,
-        ],
-      );
-    }
+    const rows = rowsOf(data.workout_log_exercises).map((row) => ({
+      id: row.id,
+      workout_log_id: row.workout_log_id,
+      exercise_id: row.exercise_id,
+      order_index: row.order_index,
+      superset_group_id: row.superset_group_id ?? null,
+      target_sets: row.target_sets ?? null,
+      target_rep_min: row.target_rep_min ?? null,
+      target_rep_max: row.target_rep_max ?? null,
+      target_duration_seconds: row.target_duration_seconds ?? null,
+      notes: row.notes ?? null,
+      created_at: row.created_at,
+      program_exercise_id: row.program_exercise_id ?? null,
+    }));
+    await insertRows(db, 'workout_log_exercises', rows, {
+      // program_exercise_id only when that Program Exercise exists: a
+      // partial restore may bring logs without the programs they came from.
+      program_exercise_id:
+        '(SELECT id FROM program_exercises WHERE id = r.program_exercise_id)',
+    });
   }
 
   // Workout sets (updated with duration_seconds, workout_log_exercise_id, and completed_at)
   if (hasData(data.workout_sets)) {
-    for (const row of data.workout_sets as Record<string, unknown>[]) {
-      await db.query(
-        `INSERT INTO workout_sets (id, workout_log_id, exercise_id, workout_log_exercise_id, set_number, reps, weight_kg, duration_seconds, notes, completed_at, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-        [
-          row.id,
-          row.workout_log_id,
-          row.exercise_id,
-          row.workout_log_exercise_id ?? null,
-          row.set_number,
-          row.reps ?? null,
-          liftKg(row.weight_kg ?? null),
-          row.duration_seconds ?? null,
-          row.notes ?? null,
-          row.completed_at ?? null,
-          row.created_at,
-        ],
-      );
-    }
+    const rows = rowsOf(data.workout_sets).map((row) => ({
+      id: row.id,
+      workout_log_id: row.workout_log_id,
+      exercise_id: row.exercise_id,
+      workout_log_exercise_id: row.workout_log_exercise_id ?? null,
+      set_number: row.set_number,
+      reps: row.reps ?? null,
+      weight_kg: liftKg(row.weight_kg ?? null),
+      duration_seconds: row.duration_seconds ?? null,
+      notes: row.notes ?? null,
+      completed_at: row.completed_at ?? null,
+      created_at: row.created_at,
+    }));
+    await insertRows(db, 'workout_sets', rows);
   }
 
   // Exercise notes (per-exercise notes tied to master exercise)
   if (hasData(data.exercise_notes)) {
-    for (const row of data.exercise_notes as Record<string, unknown>[]) {
-      await db.query(
-        `INSERT INTO exercise_notes (id, exercise_id, content, created_at)
-         VALUES ($1, $2, $3, $4)`,
-        [row.id, row.exercise_id, row.content, row.created_at],
-      );
-    }
+    const rows = rowsOf(data.exercise_notes).map((row) => ({
+      id: row.id,
+      exercise_id: row.exercise_id,
+      content: row.content,
+      created_at: row.created_at,
+    }));
+    await insertRows(db, 'exercise_notes', rows);
   }
 
   // AI goal reviews
   if (hasData(data.ai_goal_reviews)) {
-    for (const row of data.ai_goal_reviews as Record<string, unknown>[]) {
-      await db.query(
-        `INSERT INTO ai_goal_reviews (id, review_date, previous_calorie_target, new_calorie_target, previous_goal, new_goal_suggestion, ai_analysis, was_accepted, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [
-          row.id,
-          row.review_date,
-          row.previous_calorie_target,
-          row.new_calorie_target,
-          row.previous_goal,
-          row.new_goal_suggestion,
-          row.ai_analysis,
-          row.was_accepted,
-          row.created_at,
-        ],
-      );
-    }
+    const rows = rowsOf(data.ai_goal_reviews).map((row) => ({
+      id: row.id,
+      review_date: row.review_date,
+      previous_calorie_target: row.previous_calorie_target,
+      new_calorie_target: row.new_calorie_target,
+      previous_goal: row.previous_goal,
+      new_goal_suggestion: row.new_goal_suggestion,
+      ai_analysis: row.ai_analysis,
+      was_accepted: row.was_accepted,
+      created_at: row.created_at,
+    }));
+    await insertRows(db, 'ai_goal_reviews', rows);
   }
 
   // Weekly reviews (NEW)
   if (hasData(data.weekly_reviews)) {
-    for (const row of data.weekly_reviews as Record<string, unknown>[]) {
-      await db.query(
-        `INSERT INTO weekly_reviews (id, week_start, week_end, start_weight, end_weight, weight_change, avg_daily_calories, calorie_target, calorie_adherence, workouts_completed, previous_goal, new_goal, previous_calorie_target, new_calorie_target, ai_summary, recommendations_applied, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
-        [
-          row.id,
-          row.week_start,
-          row.week_end,
-          row.start_weight,
-          row.end_weight,
-          row.weight_change,
-          row.avg_daily_calories,
-          row.calorie_target,
-          row.calorie_adherence,
-          row.workouts_completed,
-          row.previous_goal,
-          row.new_goal,
-          row.previous_calorie_target,
-          row.new_calorie_target,
-          row.ai_summary,
-          row.recommendations_applied,
-          row.created_at,
-        ],
-      );
-    }
+    const rows = rowsOf(data.weekly_reviews).map((row) => ({
+      id: row.id,
+      week_start: row.week_start,
+      week_end: row.week_end,
+      start_weight: row.start_weight,
+      end_weight: row.end_weight,
+      weight_change: row.weight_change,
+      avg_daily_calories: row.avg_daily_calories,
+      calorie_target: row.calorie_target,
+      calorie_adherence: row.calorie_adherence,
+      workouts_completed: row.workouts_completed,
+      previous_goal: row.previous_goal,
+      new_goal: row.new_goal,
+      previous_calorie_target: row.previous_calorie_target,
+      new_calorie_target: row.new_calorie_target,
+      ai_summary: row.ai_summary,
+      recommendations_applied: row.recommendations_applied,
+      created_at: row.created_at,
+    }));
+    await insertRows(db, 'weekly_reviews', rows);
   }
 
-  // Progress photos (photo_data may be null: a backup row can carry no image)
+  // Progress photos (photo_data may be null: a backup row can carry no image).
+  // thumb_data is derived and never restored: the app regenerates it lazily.
   if (hasData(data.progress_photos)) {
-    for (const row of data.progress_photos as Record<string, unknown>[]) {
-      await db.query(
-        `INSERT INTO progress_photos (id, date, photo_data, photo_type, notes, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [
-          row.id,
-          row.date,
-          row.photo_data ?? null,
-          row.photo_type,
-          row.notes,
-          row.created_at,
-        ],
-      );
-    }
+    const rows = rowsOf(data.progress_photos).map((row) => ({
+      id: row.id,
+      date: row.date,
+      photo_data: row.photo_data ?? null,
+      photo_type: row.photo_type,
+      notes: row.notes,
+      created_at: row.created_at,
+    }));
+    await insertRows(db, 'progress_photos', rows);
   }
 
   // Reset sequences only for tables that were imported

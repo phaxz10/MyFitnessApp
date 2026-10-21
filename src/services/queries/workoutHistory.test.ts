@@ -193,6 +193,13 @@ describe('workoutHistory.recent', () => {
     expect(adHocLog.session_name).toBeFalsy();
   });
 
+  it('limits whole logs: each limit returns the head of the full list, sets included', async () => {
+    const all = await recent(db, 10);
+    for (const n of [1, 2, 3]) {
+      expect(await recent(db, n)).toEqual(all.slice(0, n));
+    }
+  });
+
   it('respects the limit parameter', async () => {
     const logs = await recent(db, 2);
     expect(logs).toHaveLength(2);

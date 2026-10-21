@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useSearchParams } from 'react-router-dom';
 import { BatchAddModal } from '../components/exercise-library/BatchAddModal';
@@ -205,17 +205,23 @@ export function ExerciseLibrary() {
   useEffect(() => {
     fetchExercises();
   }, [fetchExercises]);
-  const filteredExercises = exercises.filter((ex) => {
-    const q = searchQuery.toLowerCase();
-    const matchesSearch =
-      ex.name.toLowerCase().includes(q) ||
-      ex.muscle_groups?.toLowerCase().includes(q) ||
-      ex.equipment?.toLowerCase().includes(q);
-    const matchesMuscle =
-      selectedMuscle === 'All' ||
-      ex.muscle_groups?.toLowerCase().includes(selectedMuscle.toLowerCase());
-    return matchesSearch && matchesMuscle;
-  });
+  const filteredExercises = useMemo(
+    () =>
+      exercises.filter((ex) => {
+        const q = searchQuery.toLowerCase();
+        const matchesSearch =
+          ex.name.toLowerCase().includes(q) ||
+          ex.muscle_groups?.toLowerCase().includes(q) ||
+          ex.equipment?.toLowerCase().includes(q);
+        const matchesMuscle =
+          selectedMuscle === 'All' ||
+          ex.muscle_groups
+            ?.toLowerCase()
+            .includes(selectedMuscle.toLowerCase());
+        return matchesSearch && matchesMuscle;
+      }),
+    [exercises, searchQuery, selectedMuscle],
+  );
   const resetForm = () => {
     reset({
       name: '',

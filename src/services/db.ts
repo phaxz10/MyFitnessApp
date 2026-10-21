@@ -1,4 +1,6 @@
-import { PGlite } from '@electric-sql/pglite';
+import type { PGlite, PGliteInterface } from '@electric-sql/pglite';
+import { PGliteWorker } from '@electric-sql/pglite/worker';
+import DbWorker from './db.worker.ts?worker';
 import { runPendingMigrations } from './migrator';
 
 /** Anything that can run SQL: the wrapper, a transaction, or a raw PGlite. */
@@ -70,11 +72,12 @@ function facade(
 }
 
 /**
- * Wrap a raw PGlite: every mutating query publishes on the Write Bus, and
- * `transaction` runs multi-statement writes atomically. Exported so tests wrap
- * an in-memory PGlite exactly like production.
+ * Wrap a raw PGlite (tests: in-memory) or PGliteWorker (production): every
+ * mutating query publishes on the Write Bus, and `transaction` runs
+ * multi-statement writes atomically. Exported so tests wrap an in-memory
+ * PGlite exactly like production.
  */
-export function createDB(raw: PGlite): DB {
+export function createDB(raw: PGliteInterface): DB {
   const transaction: DB['transaction'] = async (fn) => {
     const pending: WriteEvent[] = [];
     const result = await raw.transaction(async (rawTx) => {
@@ -91,16 +94,55 @@ export function createDB(raw: PGlite): DB {
   return facade(raw, emit, transaction);
 }
 
-let pglite: PGlite | null = null;
-let db: DB | null = null;
+const DATA_DIR = 'idb://mypersonalfitness';
+// db.worker.ts broadcasts a failed open (Migration error) here.
+const DB_OPEN_ERROR_CHANNEL = 'mypersonalfitness-db-open-error';
 
-export async function getDB(): Promise<DB> {
-  if (!db) {
-    pglite = new PGlite('idb://mypersonalfitness');
-    await runPendingMigrations(pglite);
-    db = createDB(pglite);
+let pglite: PGliteWorker | null = null;
+let dbPromise: Promise<DB> | null = null;
+
+// PGlite runs in a Web Worker (db.worker.ts) so queries and IndexedDB flushes
+// stay off the UI thread. The worker runs the Migrations before it answers.
+// A fixed `id` keeps every tab, across app versions (the worker chunk URL
+// changes per build), in one leader election, so only one PGlite ever opens
+// the data dir.
+export function getDB(): Promise<DB> {
+  if (!dbPromise) {
+    const errors = new BroadcastChannel(DB_OPEN_ERROR_CHANNEL);
+    const openFailed = new Promise<never>((_, reject) => {
+      errors.onmessage = (event: MessageEvent<{ message: string }>) =>
+        reject(new Error(`Database failed to open: ${event.data.message}`));
+    });
+    openFailed.catch(() => {}); // observed via the race below
+    dbPromise = (async () => {
+      let handle: PGliteWorker | null = null;
+      try {
+        handle = await PGliteWorker.create(new DbWorker(), {
+          dataDir: DATA_DIR,
+          id: DATA_DIR,
+        });
+        // Ready = connected to the leader, whose Migrations have finished.
+        await Promise.race([handle.waitReady, openFailed]);
+        // The leader may be an older app version still open in another tab:
+        // bring the schema up to this tab's Migrations (a no-op SELECT when
+        // the leader already ran them).
+        await runPendingMigrations(handle);
+        pglite = handle;
+        return createDB(handle);
+      } catch (err) {
+        // Terminate the worker so it gives up the leader lock and a retry
+        // (or another tab) can elect a fresh leader.
+        await handle?.close();
+        throw err;
+      } finally {
+        errors.close();
+      }
+    })();
+    dbPromise.catch(() => {
+      dbPromise = null; // let the next caller retry a failed open
+    });
   }
-  return db;
+  return dbPromise;
 }
 
 export async function isOnboardingComplete(): Promise<boolean> {

@@ -1,23 +1,48 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { makeThumbnail } from '../components/body/compressImage';
 import { getDB } from '../services/db';
-import type { PhotoType, ProgressPhoto } from '../types';
+import {
+  listPhotos,
+  photoData,
+  photosByDate,
+  photosByDateRange,
+} from '../services/queries/progressPhotos';
+import {
+  deletePhoto as deletePhotoRow,
+  insertPhoto,
+  type NewProgressPhoto,
+  setThumb,
+} from '../services/writers/progressPhotoWriter';
+import type { ProgressPhotoSummary } from '../types';
+
+/**
+ * Photo ids whose thumbnail generation failed this session. Module-level so a
+ * bad image is not retried in a loop across re-renders or remounts.
+ */
+const failedThumbIds = new Set<number>();
 
 export function useProgressPhotos() {
-  const [photos, setPhotos] = useState<ProgressPhoto[]>([]);
+  const [photos, setPhotos] = useState<ProgressPhotoSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const backfilling = useRef(false);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const fetchPhotosByDate = useCallback(async (date: string) => {
     setLoading(true);
     setError(null);
     try {
       const db = await getDB();
-      const result = await db.query(
-        'SELECT * FROM progress_photos WHERE date = $1 ORDER BY created_at',
-        [date],
-      );
-      setPhotos(result.rows as ProgressPhoto[]);
-      return result.rows as ProgressPhoto[];
+      const rows = await photosByDate(db, date);
+      setPhotos(rows);
+      return rows;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch photos');
       return [];
@@ -31,11 +56,9 @@ export function useProgressPhotos() {
     setError(null);
     try {
       const db = await getDB();
-      const result = await db.query(
-        'SELECT * FROM progress_photos ORDER BY date DESC, created_at DESC',
-      );
-      setPhotos(result.rows as ProgressPhoto[]);
-      return result.rows as ProgressPhoto[];
+      const rows = await listPhotos(db);
+      setPhotos(rows);
+      return rows;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch photos');
       return [];
@@ -45,21 +68,12 @@ export function useProgressPhotos() {
   }, []);
 
   const addPhoto = useCallback(
-    async (data: {
-      date: string;
-      photo_data: string;
-      photo_type: PhotoType;
-      notes?: string;
-    }) => {
+    async (data: NewProgressPhoto) => {
       setLoading(true);
       setError(null);
       try {
         const db = await getDB();
-        await db.query(
-          `INSERT INTO progress_photos (date, photo_data, photo_type, notes)
-           VALUES ($1, $2, $3, $4)`,
-          [data.date, data.photo_data, data.photo_type, data.notes || null],
-        );
+        await insertPhoto(db, data);
         await fetchPhotosByDate(data.date);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to add photo');
@@ -77,7 +91,7 @@ export function useProgressPhotos() {
       setError(null);
       try {
         const db = await getDB();
-        await db.query('DELETE FROM progress_photos WHERE id = $1', [id]);
+        await deletePhotoRow(db, id);
         await fetchPhotosByDate(date);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to delete photo');
@@ -95,11 +109,7 @@ export function useProgressPhotos() {
       setError(null);
       try {
         const db = await getDB();
-        const result = await db.query(
-          'SELECT * FROM progress_photos WHERE date >= $1 AND date <= $2 ORDER BY date DESC, created_at',
-          [startDate, endDate],
-        );
-        return result.rows as ProgressPhoto[];
+        return await photosByDateRange(db, startDate, endDate);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to fetch photos');
         return [];
@@ -109,6 +119,39 @@ export function useProgressPhotos() {
     },
     [],
   );
+
+  // Lazy thumbnail backfill: old rows and restored backups have no thumb.
+  // Generate them one at a time, updating the list as each one lands.
+  const nextMissing = photos.find(
+    (p) => p.thumb_data === null && !failedThumbIds.has(p.id),
+  );
+  const nextMissingId = nextMissing?.id;
+  // Re-run whenever the pending set changes (a completed or failed id changes
+  // `nextMissingId`, so the chain continues).
+  useEffect(() => {
+    if (nextMissingId === undefined || backfilling.current) return;
+    backfilling.current = true;
+    const id = nextMissingId;
+    (async () => {
+      try {
+        const db = await getDB();
+        const full = await photoData(db, id);
+        if (!full) throw new Error('No image data');
+        const thumb = await makeThumbnail(full);
+        await setThumb(db, id, thumb);
+        if (mounted.current) {
+          setPhotos((prev) =>
+            prev.map((p) => (p.id === id ? { ...p, thumb_data: thumb } : p)),
+          );
+        }
+      } catch {
+        failedThumbIds.add(id);
+        if (mounted.current) setPhotos((prev) => [...prev]);
+      } finally {
+        backfilling.current = false;
+      }
+    })();
+  }, [nextMissingId]);
 
   return {
     photos,

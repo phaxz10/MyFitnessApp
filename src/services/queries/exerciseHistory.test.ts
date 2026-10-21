@@ -259,3 +259,25 @@ describe('exerciseHistory.sessions', () => {
     });
   });
 });
+
+describe('sessions() with a limit', () => {
+  it('returns the head of the unlimited list for every option combination', async () => {
+    const combos = [
+      {},
+      { completedSetsOnly: true },
+      { completedWorkoutsOnly: true },
+      { completedSetsOnly: true, excludeWorkoutLogId: 3 },
+      { completedSetsOnly: true, completedWorkoutsOnly: true },
+    ];
+    for (const exerciseId of [1, 2]) {
+      for (const opts of combos) {
+        const all = await sessions(db, exerciseId, opts);
+        for (const limit of [1, 2, 3, 10]) {
+          expect(await sessions(db, exerciseId, { ...opts, limit })).toEqual(
+            all.slice(0, limit),
+          );
+        }
+      }
+    }
+  });
+});

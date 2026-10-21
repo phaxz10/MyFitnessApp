@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BodyModule } from '../components/dashboard/BodyModule';
 import { DayDetailModal } from '../components/dashboard/DayDetailModal';
@@ -11,111 +11,71 @@ import {
   WeeklyReviewModal,
 } from '../components/weekly-review';
 import { useAppStore } from '../hooks/useAppStore';
-import { useCalories } from '../hooks/useCalories';
-import { useExerciseProgress } from '../hooks/useExerciseProgress';
+import { summarizeDay } from '../hooks/useCalories';
+import {
+  useActiveProgram,
+  useFirstWeight,
+  useFoodEntriesForDate,
+  useLatestWeightLog,
+  useRecentWorkoutLogs,
+  useResumableWorkout,
+  useSessionStatus,
+} from '../hooks/useDashboardData';
 import { useProfile } from '../hooks/useProfile';
+import { useOverallProgress } from '../hooks/useStrengthProgress';
 import {
   type DayConsistency,
-  useWeeklyConsistency,
+  useWeeklyConsistencyQuery,
 } from '../hooks/useWeeklyConsistency';
-import { useWeight } from '../hooks/useWeight';
 import { useWorkoutLogs } from '../hooks/useWorkoutLogs';
-import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
-import type {
-  ProgramSessionWithExercises,
-  WorkoutProgramWithSessions,
-} from '../types';
 import { formatDate } from '../utils/date';
 
 export function Dashboard() {
   const navigate = useNavigate();
   const { profile } = useProfile();
-  const { fetchEntriesByDate, getDailySummary } = useCalories();
-  const { getLatestLog, getFirstWeight } = useWeight();
-  const {
-    logs,
-    fetchLogs,
-    activeWorkout,
-    resumeWorkout,
-    startWorkout,
-    getSessionStatusForDate,
-  } = useWorkoutLogs();
-  const { fetchActiveProgram } = useWorkoutPrograms();
-  const { getOverallProgress } = useExerciseProgress();
-  const { getWeeklyConsistency } = useWeeklyConsistency();
+  const { startWorkout } = useWorkoutLogs();
   const { openFoodLogModal, openWeightLogModal } = useAppStore();
-
-  const [latestWeight, setLatestWeight] = useState<number | null>(null);
   const [showWeeklyReview, setShowWeeklyReview] = useState(false);
-  const [weeklyWorkouts, setWeeklyWorkouts] = useState(0);
-  const [recentPRsCount, setRecentPRsCount] = useState(0);
-  const [weeklyConsistency, setWeeklyConsistency] = useState<DayConsistency[]>(
-    [],
-  );
-  const [startWeight, setStartWeight] = useState<number | null>(null);
-  const [program, setProgram] = useState<WorkoutProgramWithSessions | null>(
-    null,
-  );
-  const [todaySession, setTodaySession] =
-    useState<ProgramSessionWithExercises | null>(null);
-  const [sessionCompleted, setSessionCompleted] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState<DayConsistency | null>(null);
   const today = formatDate(new Date());
 
-  const loadData = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      await Promise.all([
-        fetchEntriesByDate(today),
-        fetchLogs(5),
-        resumeWorkout(),
-      ]);
+  // Cached reads (React Query); writes refresh them through the Write Bus.
+  const food = useFoodEntriesForDate(today);
+  const recentLogs = useRecentWorkoutLogs(5);
+  const resumable = useResumableWorkout();
+  const latestWeightLog = useLatestWeightLog();
+  const firstWeight = useFirstWeight();
+  const overview = useOverallProgress('7d');
+  const consistency = useWeeklyConsistencyQuery();
+  const activeProgram = useActiveProgram();
 
-      const [weightLog, progressData, consistency, firstWeight, activeProgram] =
-        await Promise.all([
-          getLatestLog(),
-          getOverallProgress('7d'),
-          getWeeklyConsistency(),
-          getFirstWeight(),
-          fetchActiveProgram(),
-        ]);
+  const program = activeProgram.data ?? null;
+  const todaySession =
+    program?.sessions.find((s) => s.day_of_week === new Date().getDay()) ??
+    null;
+  const sessionStatus = useSessionStatus(todaySession?.id ?? null, today);
 
-      const session =
-        activeProgram?.sessions.find(
-          (s) => s.day_of_week === new Date().getDay(),
-        ) ?? null;
-      const status = session ? await getSessionStatusForDate(session.id) : null;
-      setProgram(activeProgram);
-      setTodaySession(session);
-      setSessionCompleted(status?.status === 'completed');
+  const isLoading =
+    food.isPending ||
+    recentLogs.isPending ||
+    resumable.isPending ||
+    latestWeightLog.isPending ||
+    firstWeight.isPending ||
+    overview.isPending ||
+    consistency.isPending ||
+    activeProgram.isPending ||
+    sessionStatus.isLoading;
 
-      if (weightLog) setLatestWeight(weightLog.weight_kg);
-      setWeeklyWorkouts(progressData.totalWorkouts);
-      setRecentPRsCount(progressData.recentPRs.length);
-      setWeeklyConsistency(consistency.days);
-      setStartWeight(firstWeight);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [
-    fetchEntriesByDate,
-    fetchLogs,
-    resumeWorkout,
-    getLatestLog,
-    getOverallProgress,
-    getWeeklyConsistency,
-    getFirstWeight,
-    fetchActiveProgram,
-    getSessionStatusForDate,
-    today,
-  ]);
+  const logs = recentLogs.data ?? [];
+  const activeWorkout = resumable.data ?? null;
+  const latestWeight = latestWeightLog.data?.weight_kg ?? null;
+  const startWeight = firstWeight.data ?? null;
+  const weeklyWorkouts = overview.data?.totalWorkouts ?? 0;
+  const recentPRsCount = overview.data?.recentPRs.length ?? 0;
+  const weeklyConsistency = consistency.data?.days ?? [];
+  const sessionCompleted = sessionStatus.data?.status === 'completed';
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  const summary = getDailySummary(today);
+  const summary = summarizeDay(today, food.data ?? []);
   const consumed = {
     calories: summary.total_calories,
     protein: summary.total_protein_g,
@@ -155,12 +115,12 @@ export function Dashboard() {
 
   const logWeightFor = (date: string) => {
     setSelectedDay(null);
-    openWeightLogModal({ date, onSuccess: loadData });
+    openWeightLogModal({ date });
   };
 
   const logFoodFor = (date: string) => {
     setSelectedDay(null);
-    openFoodLogModal({ date, onSuccess: loadData });
+    openFoodLogModal({ date });
   };
 
   if (isLoading) {

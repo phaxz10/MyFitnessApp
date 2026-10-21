@@ -70,8 +70,25 @@ export function DatabaseDebug() {
   const fetchTableData = async (tableName: string) => {
     try {
       const db = await getDB();
+      // Truncate long text columns (e.g. photo_data) so the browser stays light.
+      const cols = await db.query(
+        `SELECT column_name, data_type FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = $1
+         ORDER BY ordinal_position`,
+        [tableName],
+      );
+      const select =
+        cols.rows.length > 0
+          ? (cols.rows as { column_name: string; data_type: string }[])
+              .map(({ column_name: c, data_type: t }) =>
+                t === 'text' || t.startsWith('character')
+                  ? `left("${c}", 200) AS "${c}"`
+                  : `"${c}"`,
+              )
+              .join(', ')
+          : '*';
       const result = await db.query(
-        `SELECT * FROM ${tableName} ORDER BY id DESC LIMIT 50`,
+        `SELECT ${select} FROM ${tableName} ORDER BY id DESC LIMIT 50`,
       );
       setTableData(result.rows as Record<string, unknown>[]);
       setSelectedTable(tableName);

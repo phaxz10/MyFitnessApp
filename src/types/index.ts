@@ -577,13 +577,18 @@ export interface AppSettings {
 // Progress Photo Types
 export type PhotoType = 'front' | 'side' | 'back';
 
-export interface ProgressPhoto {
+/**
+ * A progress photo as listed: carries the small thumbnail, never the
+ * full-size image (load that on demand with `photoData(db, id)`).
+ */
+export interface ProgressPhotoSummary {
   id: number;
   date: string;
-  photo_data: string; // Base64 encoded image
   photo_type: PhotoType;
   notes: string | null;
   created_at: string;
+  /** Base64 JPEG data URL; null until the lazy backfill generates it. */
+  thumb_data: string | null;
 }
 
 // Strength Progress Types

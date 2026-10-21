@@ -1,15 +1,28 @@
 import { PGlite } from '@electric-sql/pglite';
-import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
+import {
+  strFromU8,
+  strToU8,
+  type Unzipped,
+  unzip,
+  unzipSync,
+  zipSync,
+} from 'fflate';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BACKUP_VERSION,
   exportBackup,
+  INSERT_CHUNK_ROWS,
   importBackup,
   UNSUPPORTED_FILE_ERROR,
 } from './backup';
 import { runPendingMigrations } from './migrator';
 
 let pg: PGlite;
+
+const unzipAsync = (bytes: Uint8Array) =>
+  new Promise<Unzipped>((resolve, reject) =>
+    unzip(bytes, (err, out) => (err ? reject(err) : resolve(out))),
+  );
 vi.mock('./db', () => ({ getDB: async () => pg }));
 
 // A real (tiny) PNG, so the bytes survive a decode/encode round trip.
@@ -327,5 +340,157 @@ describe('backup weight unit', () => {
       unit: 'kg',
       weights: [135, null],
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Batched restore (json_populate_recordset) and derived thumbnails.
+// ---------------------------------------------------------------------------
+
+async function seedHistory(db: PGlite, sets: number, foods: number) {
+  await db.exec(`
+    INSERT INTO exercises (name, description, muscle_groups, equipment, exercise_type, is_ai_generated)
+      VALUES ('Squat', NULL, '["legs"]', 'barbell', 'reps_weight', false);
+    INSERT INTO workout_logs (date, started_at, ended_at, status, notes)
+      VALUES ('2026-10-01', '2026-10-01 09:00:00.123456', NULL, 'in_progress', NULL);
+  `);
+  await db.exec(`
+    INSERT INTO workout_sets (workout_log_id, exercise_id, set_number, reps, weight_kg, duration_seconds, notes, completed_at, created_at)
+    SELECT 1, 1, g,
+      CASE WHEN g % 5 = 0 THEN NULL ELSE g % 12 END,
+      CASE WHEN g % 7 = 0 THEN NULL ELSE (g * 1.37)::real END,
+      CASE WHEN g % 3 = 0 THEN g ELSE NULL END,
+      CASE WHEN g % 4 = 0 THEN 'note ' || g || E' "quoted" \\\\ \n' ELSE NULL END,
+      CASE WHEN g % 2 = 0 THEN TIMESTAMP '2026-10-01 09:00:00.5' + g * INTERVAL '1 second' ELSE NULL END,
+      TIMESTAMP '2026-10-01 08:00:00.000001' + g * INTERVAL '1 minute'
+    FROM generate_series(1, ${sets}) AS g;
+    INSERT INTO food_entries (date, meal_type, food_description, portion_grams, calories, protein_g, carbs_g, fat_g, is_ai_generated, created_at, updated_at)
+    SELECT DATE '2026-01-01' + (g % 300), 'snack', 'food ' || g, (g * 0.1)::real, g, (g / 3.0)::real, 0.1, 33.333, g % 2 = 0,
+      TIMESTAMP '2026-01-01 12:34:56.789' + g * INTERVAL '1 hour',
+      CASE WHEN g % 9 = 0 THEN NULL ELSE TIMESTAMP '2026-01-02 00:00:00' END
+    FROM generate_series(1, ${foods}) AS g;
+  `);
+}
+
+const HISTORY_TABLES = [
+  'exercises',
+  'workout_logs',
+  'workout_sets',
+  'food_entries',
+] as const;
+
+async function historySnapshot(db: PGlite) {
+  const out: Record<string, unknown[]> = {};
+  for (const table of HISTORY_TABLES) {
+    out[table] = (await db.query(`SELECT * FROM ${table} ORDER BY id`)).rows;
+  }
+  return out;
+}
+
+describe('batched restore', () => {
+  it('round-trips a few hundred sets and food entries exactly into a fresh DB', async () => {
+    await seedHistory(pg, 300, 400);
+    const before = await historySnapshot(pg);
+    expect(before.workout_sets).toHaveLength(300);
+    expect(before.food_entries).toHaveLength(400);
+
+    const zip = await exportBackup();
+    pg = new PGlite();
+    await runPendingMigrations(pg);
+    await importBackup(zip);
+
+    expect(await historySnapshot(pg)).toEqual(before);
+  });
+
+  it('restores more rows than one insert chunk holds', async () => {
+    expect(INSERT_CHUNK_ROWS).toBeLessThan(2500);
+    await seedHistory(pg, 2500, 10);
+    const before = await historySnapshot(pg);
+
+    const zip = await exportBackup();
+    pg = new PGlite();
+    await runPendingMigrations(pg);
+    const query = vi.spyOn(pg, 'query');
+    await importBackup(zip);
+
+    const setInserts = query.mock.calls.filter(([sql]) =>
+      String(sql).startsWith('INSERT INTO workout_sets'),
+    );
+    expect(setInserts).toHaveLength(Math.ceil(2500 / INSERT_CHUNK_ROWS));
+    expect(await historySnapshot(pg)).toEqual(before);
+    const next = await pg.query<{ id: number }>(
+      `INSERT INTO workout_sets (workout_log_id, exercise_id, set_number) VALUES (1, 1, 1) RETURNING id`,
+    );
+    expect(next.rows[0].id).toBe(2501);
+  });
+
+  it('keeps program_exercise_id only when that Program Exercise is restored', async () => {
+    await importBackup(
+      backupJson(BACKUP_VERSION, {
+        exercises: [{ id: 1, name: 'Bench Press' }],
+        workout_logs: [
+          {
+            id: 1,
+            date: '2026-01-01',
+            started_at: '2026-01-01 09:00:00',
+            ended_at: null,
+          },
+        ],
+        workout_log_exercises: [
+          {
+            id: 1,
+            workout_log_id: 1,
+            exercise_id: 1,
+            order_index: 0,
+            program_exercise_id: 99,
+          },
+        ],
+      }),
+    );
+    const rows = await pg.query<{ program_exercise_id: number | null }>(
+      'SELECT program_exercise_id FROM workout_log_exercises',
+    );
+    expect(rows.rows).toEqual([{ program_exercise_id: null }]);
+    const logs = await pg.query<{ status: string }>(
+      'SELECT status FROM workout_logs',
+    );
+    expect(logs.rows).toEqual([{ status: 'in_progress' }]);
+  });
+});
+
+describe('progress photo thumbnails', () => {
+  it('never exports thumb_data', async () => {
+    await seed(pg);
+    await pg.exec(
+      `UPDATE progress_photos SET thumb_data = 'data:image/jpeg;base64,THUMB'`,
+    );
+
+    const json = strFromU8(
+      (await unzipAsync(await exportBackup()))['backup.json'],
+    );
+
+    expect(json).not.toContain('thumb_data');
+    expect(json).not.toContain('THUMB');
+  });
+
+  it('never imports thumb_data (left NULL for the app to backfill)', async () => {
+    await importBackup(
+      backupJson(BACKUP_VERSION, {
+        progress_photos: [
+          {
+            id: 1,
+            date: '2026-01-01',
+            photo_data: PNG_DATA_URL,
+            thumb_data: 'data:image/jpeg;base64,THUMB',
+            photo_type: 'front',
+          },
+        ],
+      }),
+    );
+    const rows = await pg.query<{
+      photo_data: string;
+      thumb_data: string | null;
+    }>('SELECT photo_data, thumb_data FROM progress_photos');
+    expect(rows.rows).toEqual([{ photo_data: PNG_DATA_URL, thumb_data: null }]);
   });
 });

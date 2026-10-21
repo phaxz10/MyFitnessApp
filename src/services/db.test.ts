@@ -1,8 +1,9 @@
 /// <reference types="node" />
-import type { PGlite } from '@electric-sql/pglite';
+import type { PGlite, PGliteInterface } from '@electric-sql/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '../test/testDb';
-import { type createDB, onDbWrite, type WriteEvent } from './db';
+import { createDB, onDbWrite, type WriteEvent } from './db';
+import { runPendingMigrations } from './migrator';
 
 let pg: PGlite;
 let db: ReturnType<typeof createDB>;
@@ -104,5 +105,32 @@ describe('transaction', () => {
       'SELECT COUNT(*)::int AS n FROM exercises',
     );
     expect(n.rows[0].n).toBe(0);
+  });
+});
+
+// Production wraps a PGliteWorker; only the shared PGliteInterface (query,
+// exec, transaction, all on BasePGlite) may be relied on, so tests type the
+// raw handle as that interface rather than the concrete PGlite.
+describe('createDB over the PGliteInterface (PGliteWorker shape)', () => {
+  it('wraps any PGliteInterface: Write Bus and transaction work', async () => {
+    const raw: PGliteInterface = pg;
+    const wrapped = createDB(raw);
+    await wrapped.transaction(async (tx) => {
+      await tx.query("INSERT INTO exercises (name) VALUES ('Squat')");
+    });
+    await flush();
+    expect(events).toEqual([{ table: 'exercises', op: 'insert' }]);
+  });
+
+  it('re-running migrations through the interface is a no-op (run once)', async () => {
+    const raw: PGliteInterface = pg;
+    const before = await pg.query<{ n: number }>(
+      'SELECT COUNT(*)::int AS n FROM schema_migrations',
+    );
+    await runPendingMigrations(raw);
+    const after = await pg.query<{ n: number }>(
+      'SELECT COUNT(*)::int AS n FROM schema_migrations',
+    );
+    expect(after.rows[0].n).toBe(before.rows[0].n);
   });
 });

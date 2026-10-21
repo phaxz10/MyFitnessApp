@@ -4,6 +4,43 @@ import * as FoodEntryWriter from '../services/writers/foodEntryWriter';
 import type { DailyCalorieSummary, FoodEntry, MealType } from '../types';
 import { formatDate, getPreviousDay } from '../utils/date';
 
+/** Totals and per-meal lists for `date` out of `entries`. */
+export function summarizeDay(
+  date: string,
+  entries: FoodEntry[],
+): DailyCalorieSummary {
+  const dayEntries = entries.filter((e) => formatDate(e.date) === date);
+
+  const meals: Record<MealType, FoodEntry[]> = {
+    breakfast: [],
+    lunch: [],
+    dinner: [],
+    snack: [],
+  };
+
+  let totalCalories = 0;
+  let totalProtein = 0;
+  let totalCarbs = 0;
+  let totalFat = 0;
+
+  dayEntries.forEach((entry) => {
+    meals[entry.meal_type].push(entry);
+    totalCalories += entry.calories;
+    totalProtein += entry.protein_g;
+    totalCarbs += entry.carbs_g;
+    totalFat += entry.fat_g;
+  });
+
+  return {
+    date,
+    total_calories: totalCalories,
+    total_protein_g: totalProtein,
+    total_carbs_g: totalCarbs,
+    total_fat_g: totalFat,
+    meals,
+  };
+}
+
 export function useCalories() {
   const [entries, setEntries] = useState<FoodEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -233,40 +270,8 @@ export function useCalories() {
   );
 
   const getDailySummary = useCallback(
-    (date: string, entriesList?: FoodEntry[]): DailyCalorieSummary => {
-      const dayEntries = (entriesList || entries).filter(
-        (e) => formatDate(e.date) === date,
-      );
-
-      const meals: Record<MealType, FoodEntry[]> = {
-        breakfast: [],
-        lunch: [],
-        dinner: [],
-        snack: [],
-      };
-
-      let totalCalories = 0;
-      let totalProtein = 0;
-      let totalCarbs = 0;
-      let totalFat = 0;
-
-      dayEntries.forEach((entry) => {
-        meals[entry.meal_type].push(entry);
-        totalCalories += entry.calories;
-        totalProtein += entry.protein_g;
-        totalCarbs += entry.carbs_g;
-        totalFat += entry.fat_g;
-      });
-
-      return {
-        date,
-        total_calories: totalCalories,
-        total_protein_g: totalProtein,
-        total_carbs_g: totalCarbs,
-        total_fat_g: totalFat,
-        meals,
-      };
-    },
+    (date: string, entriesList?: FoodEntry[]): DailyCalorieSummary =>
+      summarizeDay(date, entriesList || entries),
     [entries],
   );
 

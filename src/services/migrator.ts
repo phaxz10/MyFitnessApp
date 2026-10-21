@@ -1,4 +1,4 @@
-import type { PGlite } from '@electric-sql/pglite';
+import type { PGliteInterface } from '@electric-sql/pglite';
 
 // ---------------------------------------------------------------------------
 // Migration registry
@@ -9,7 +9,7 @@ import type { PGlite } from '@electric-sql/pglite';
 
 interface Migration {
   version: number;
-  up: (db: PGlite) => Promise<void>;
+  up: (db: PGliteInterface) => Promise<void>;
 }
 
 const migrations: Migration[] = [
@@ -386,13 +386,36 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    // Indexes for hot reads on a multi-year history: today's Session status
+    // (session_id + date), Exercise usage / archive checks (exercise_id on the
+    // history and plan tables) and recent foods (created_at window).
+    version: 10,
+    up: async (db) => {
+      await db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_workout_logs_session_date ON workout_logs(session_id, date);
+        CREATE INDEX IF NOT EXISTS idx_workout_log_exercises_exercise ON workout_log_exercises(exercise_id);
+        CREATE INDEX IF NOT EXISTS idx_program_exercises_exercise ON program_exercises(exercise_id);
+        CREATE INDEX IF NOT EXISTS idx_food_entries_created_at ON food_entries(created_at);
+      `);
+    },
+  },
+  {
+    // Progress photo thumbnails (~200px JPEG data URL) so lists never read
+    // the full photo_data. Derived data: written on save, backfilled lazily
+    // the first time a row without one is listed, never stored in backups.
+    version: 11,
+    up: async (db) => {
+      await db.exec(`ALTER TABLE progress_photos ADD COLUMN thumb_data TEXT`);
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
 // Engine
 // ---------------------------------------------------------------------------
 
-async function ensureMigrationsTable(db: PGlite): Promise<void> {
+async function ensureMigrationsTable(db: PGliteInterface): Promise<void> {
   await db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version INTEGER PRIMARY KEY,
@@ -401,7 +424,7 @@ async function ensureMigrationsTable(db: PGlite): Promise<void> {
   `);
 }
 
-async function getCurrentVersion(db: PGlite): Promise<number> {
+async function getCurrentVersion(db: PGliteInterface): Promise<number> {
   const result = await db.query<{ max: number | null }>(
     'SELECT MAX(version) as max FROM schema_migrations',
   );
@@ -420,7 +443,7 @@ async function getCurrentVersion(db: PGlite): Promise<number> {
  * mid-history schema state; production always passes nothing (full run).
  */
 export async function runPendingMigrations(
-  db: PGlite,
+  db: PGliteInterface,
   targetVersion?: number,
 ): Promise<void> {
   await ensureMigrationsTable(db);

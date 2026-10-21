@@ -1,34 +1,35 @@
 import { Camera } from 'lucide-react';
 import { useCallback, useState } from 'react';
-import type { PhotoType, ProgressPhoto } from '../../types';
+import type { PhotoType, ProgressPhotoSummary } from '../../types';
 import { formatDate, formatDisplayDate } from '../../utils/date';
 import { Button, Card, CardContent, CardHeader, CardTitle } from '../ui';
-import { compressBase64Image } from './compressImage';
+import { compressBase64Image, makeThumbnail } from './compressImage';
 import { PhotoCaptureModal } from './PhotoCaptureModal';
 import { PhotoViewer } from './PhotoViewer';
 
 interface NewPhoto {
   date: string;
   photo_data: string;
+  thumb_data: string | null;
   photo_type: PhotoType;
   notes?: string;
 }
 
 interface ProgressPhotosSectionProps {
-  photos: ProgressPhoto[];
+  photos: ProgressPhotoSummary[];
   addPhoto: (photo: NewPhoto) => Promise<unknown>;
   deletePhoto: (id: number, date: string) => Promise<unknown>;
   refreshPhotos: () => Promise<unknown>;
 }
 
-function groupByDate(photos: ProgressPhoto[]) {
+function groupByDate(photos: ProgressPhotoSummary[]) {
   return photos.reduce(
     (acc, photo) => {
       if (!acc[photo.date]) acc[photo.date] = [];
       acc[photo.date].push(photo);
       return acc;
     },
-    {} as Record<string, ProgressPhoto[]>,
+    {} as Record<string, ProgressPhotoSummary[]>,
   );
 }
 
@@ -39,9 +40,8 @@ export function ProgressPhotosSection({
   refreshPhotos,
 }: ProgressPhotosSectionProps) {
   const [isCaptureOpen, setIsCaptureOpen] = useState(false);
-  const [selectedPhoto, setSelectedPhoto] = useState<ProgressPhoto | null>(
-    null,
-  );
+  const [selectedPhoto, setSelectedPhoto] =
+    useState<ProgressPhotoSummary | null>(null);
   const [photoType, setPhotoType] = useState<PhotoType>('front');
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -69,9 +69,12 @@ export function ProgressPhotosSection({
           data.base64,
           data.mimeType,
         );
+        // A failed thumbnail must not block saving; the lazy backfill retries.
+        const thumb = await makeThumbnail(compressed).catch(() => null);
         await addPhoto({
           date: formatDate(new Date()),
           photo_data: compressed,
+          thumb_data: thumb,
           photo_type: photoType,
           notes: notes || undefined,
         });
@@ -145,11 +148,19 @@ export function ProgressPhotosSection({
                         onClick={() => setSelectedPhoto(photo)}
                         className="relative size-24 shrink-0 overflow-hidden rounded-lg border border-line transition-colors hover:border-body"
                       >
-                        <img
-                          src={photo.photo_data}
-                          alt={`${photo.photo_type} pose from ${formatDisplayDate(photo.date)}`}
-                          className="size-full object-cover"
-                        />
+                        {photo.thumb_data ? (
+                          <img
+                            src={photo.thumb_data}
+                            alt={`${photo.photo_type} pose from ${formatDisplayDate(photo.date)}`}
+                            className="size-full object-cover"
+                          />
+                        ) : (
+                          <span
+                            role="img"
+                            aria-label={`${photo.photo_type} pose from ${formatDisplayDate(photo.date)}`}
+                            className="block size-full bg-sunken"
+                          />
+                        )}
                         <span className="absolute inset-x-0 bottom-0 bg-ink py-0.5 text-center text-xs font-semibold capitalize text-canvas">
                           {photo.photo_type}
                         </span>

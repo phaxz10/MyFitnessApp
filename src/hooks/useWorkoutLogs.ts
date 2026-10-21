@@ -1,6 +1,9 @@
 import { useCallback, useState } from 'react';
 import { getDB } from '../services/db';
-import { findResumable } from '../services/queries/activeWorkout';
+import {
+  resumableWorkout,
+  sessionStatusForDate,
+} from '../services/queries/dashboard';
 // WorkoutLogWithSets now lives in the shared query types module.
 // Import for local use and re-export so existing consumers don't change imports.
 import type { WorkoutLogWithSets } from '../services/queries/types';
@@ -237,21 +240,12 @@ export function useWorkoutLogs() {
   const resumeWorkout = useCallback(
     async (dateOverride?: string): Promise<WorkoutLog | null> => {
       try {
-        const db = await getDB();
         // The in-progress workout whatever its date (one that crossed
         // midnight is still in progress); a ?date only breaks ties.
-        const workout = await findResumable(db, { preferDate: dateOverride });
+        const workout = await resumableWorkout(await getDB(), {
+          preferDate: dateOverride,
+        });
         if (!workout) return null;
-
-        // If status was NULL, update it to 'in_progress' for consistency
-        if (!workout.status) {
-          await db.query(
-            `UPDATE workout_logs SET status = 'in_progress' WHERE id = $1`,
-            [workout.id],
-          );
-          workout.status = 'in_progress';
-        }
-
         setActiveWorkout(workout);
         return workout;
       } catch {
@@ -493,37 +487,11 @@ export function useWorkoutLogs() {
       workoutId: number | null;
     }> => {
       try {
-        const db = await getDB();
-        const targetDate = date || getLocalDateString();
-
-        const result = await db.query(
-          `SELECT id, status, ended_at FROM workout_logs 
-           WHERE session_id = $1 AND date = $2
-           ORDER BY started_at DESC
-           LIMIT 1`,
-          [sessionId, targetDate],
+        return await sessionStatusForDate(
+          await getDB(),
+          sessionId,
+          date || getLocalDateString(),
         );
-
-        if ((result.rows as WorkoutLog[]).length === 0) {
-          return { hasWorkout: false, status: null, workoutId: null };
-        }
-
-        const log = (
-          result.rows as {
-            id: number;
-            status: WorkoutStatus | null;
-            ended_at: string | null;
-          }[]
-        )[0];
-
-        // Handle legacy records where status might be NULL
-        // Infer status from ended_at for backwards compatibility
-        let effectiveStatus: WorkoutStatus | null = log.status;
-        if (effectiveStatus === null) {
-          effectiveStatus = log.ended_at ? 'completed' : 'in_progress';
-        }
-
-        return { hasWorkout: true, status: effectiveStatus, workoutId: log.id };
       } catch {
         return { hasWorkout: false, status: null, workoutId: null };
       }

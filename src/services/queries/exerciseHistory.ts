@@ -85,10 +85,22 @@ export async function sessions(
     paramIdx++;
   }
 
-  let limitClause = '';
+  const where = conditions.join(' AND ');
+
+  // With a limit, pick the newest N logs first and build JSON for their sets
+  // only; aggregating every past session and then cutting to N was the cost.
+  let picked = '';
   if (limit != null) {
-    limitClause = `LIMIT $${paramIdx}`;
     params.push(limit);
+    picked = `AND wl.id IN (
+       SELECT wl.id
+       FROM workout_logs wl
+       JOIN workout_sets ws ON wl.id = ws.workout_log_id
+       WHERE ${where}
+       GROUP BY wl.id, wl.date
+       ORDER BY wl.date DESC, wl.id DESC
+       LIMIT $${paramIdx}
+     )`;
   }
 
   const result = await db.query(
@@ -116,10 +128,10 @@ export async function sessions(
        ) AS sets
      FROM workout_logs wl
      JOIN workout_sets ws ON wl.id = ws.workout_log_id
-     WHERE ${conditions.join(' AND ')}
+     WHERE ${where}
+     ${picked}
      GROUP BY wl.id, wl.date
-     ORDER BY wl.date DESC, wl.id DESC
-     ${limitClause}`,
+     ORDER BY wl.date DESC, wl.id DESC`,
     params,
   );
 

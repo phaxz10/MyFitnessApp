@@ -69,6 +69,12 @@ export default defineConfig({
       }
     })
   ],
+  // PGlite runs in a module worker (src/services/db.worker.ts). ES format so
+  // its code-split chunks and `new URL('pglite.wasm', import.meta.url)` asset
+  // references work inside the worker bundle (iife cannot code-split).
+  worker: {
+    format: 'es',
+  },
   optimizeDeps: {
     exclude: ['@electric-sql/pglite']
   }

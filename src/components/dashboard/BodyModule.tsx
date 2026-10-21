@@ -1,6 +1,7 @@
 import { Plus, TrendingDown, TrendingUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { UserProfile } from '../../types';
+import { formatWeight, unitLabel, weightText } from '../../utils/units';
 import { Button, Card } from '../ui';
 import { ModuleHeading } from './ModuleHeading';
 
@@ -23,6 +24,7 @@ export function BodyModule({
   startWeight,
   onLogWeight,
 }: BodyModuleProps) {
+  const unit = profile?.weight_unit ?? 'kg';
   const change =
     latestWeight !== null && startWeight !== null
       ? latestWeight - startWeight
@@ -57,9 +59,9 @@ export function BodyModule({
           <div className="flex items-end justify-between gap-3">
             <p className="num leading-none">
               <span className="text-5xl font-bold text-ink">
-                {latestWeight.toFixed(1)}
+                {weightText(latestWeight, unit, 'body')}
               </span>
-              <span className="text-ink-3 text-lg"> kg</span>
+              <span className="text-ink-3 text-lg"> {unitLabel(unit)}</span>
             </p>
             {change !== null && change !== 0 && startWeight !== null && (
               <p
@@ -75,14 +77,16 @@ export function BodyModule({
                   <TrendingUp size={14} aria-hidden="true" />
                 )}
                 {change > 0 ? '+' : ''}
-                {change.toFixed(1)} kg since start
+                {formatWeight(change, unit, 'body')} since start
               </p>
             )}
           </div>
         )}
         {profile && startWeight !== null && latestWeight !== null && (
           <p className="text-ink-3 text-sm mt-2">
-            <span className="num">Start {startWeight.toFixed(1)} kg</span>
+            <span className="num">
+              Start {formatWeight(startWeight, unit, 'body')}
+            </span>
             {' · Goal: '}
             <span className="capitalize">{profile.goal.replace('_', ' ')}</span>
           </p>

@@ -66,10 +66,6 @@ export function formatMacro(value: number): string {
   return value.toFixed(1);
 }
 
-export function formatWeight(kg: number): string {
-  return kg.toFixed(1);
-}
-
 // Calculate progress percentage
 export function calculateProgress(current: number, target: number): number {
   if (target === 0) return 0;

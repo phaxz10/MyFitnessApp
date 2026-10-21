@@ -8,6 +8,7 @@ import {
   Trash2,
   Upload,
   User,
+  Weight,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -19,11 +20,12 @@ import { GoalsForm } from '../components/settings/GoalsForm';
 import { ProfileForm } from '../components/settings/ProfileForm';
 import {
   SettingsActionRow,
+  SettingsControlRow,
   SettingsFileRow,
   SettingsRow,
   SettingsSection,
 } from '../components/settings/SettingsSection';
-import { Button } from '../components/ui';
+import { Button, UnitSelector } from '../components/ui';
 import { AI_PROVIDER, FALLBACK_MODEL } from '../constants/aiProviders';
 import { useAppStore } from '../hooks/useAppStore';
 import { useProfile } from '../hooks/useProfile';
@@ -46,6 +48,7 @@ import {
 import { calculateTargets } from '../services/coaching/nutritionCoach';
 import { resetDatabase } from '../services/db';
 import { calculateAgeFromBirthdate, formatDate } from '../utils/date';
+import type { WeightUnit } from '../utils/units';
 
 export function Settings() {
   const navigate = useNavigate();
@@ -241,6 +244,17 @@ export function Settings() {
     }
   };
 
+  const handleUnitChange = async (unit: WeightUnit) => {
+    if (!profile || profile.weight_unit === unit) return;
+    setError(null);
+    try {
+      // Storage stays kg; only the display/entry unit changes.
+      await updateProfile({ weight_unit: unit });
+    } catch (_err) {
+      setError('Failed to update units');
+    }
+  };
+
   const handleExport = async (options: ExportOptions) => {
     setIsLoading(true);
     try {
@@ -290,6 +304,7 @@ export function Settings() {
   type SectionId = 'profile' | 'goals' | 'api';
   const toggle = (id: SectionId) =>
     setActiveSection(activeSection === id ? null : id);
+  const weightUnit = profile?.weight_unit ?? 'kg';
 
   return (
     <div className="px-4 py-4 space-y-4">
@@ -341,6 +356,19 @@ export function Settings() {
             isLoading={isLoading}
           />
         </SettingsRow>
+        <SettingsControlRow
+          icon={<Weight size={18} />}
+          discipline="train"
+          label="Units"
+          hint="Lifts, body weight, charts"
+          control={
+            <UnitSelector
+              value={weightUnit}
+              onChange={handleUnitChange}
+              className="w-32"
+            />
+          }
+        />
       </SettingsSection>
 
       <SettingsSection title="AI coaching">

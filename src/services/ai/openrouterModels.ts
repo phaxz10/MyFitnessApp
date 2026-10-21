@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { OPENROUTER_MODELS_URL } from '../../constants/aiProviders';
 
 // OPENROUTER MODEL CATALOG — see ADR-0007.
@@ -9,7 +10,7 @@ import { OPENROUTER_MODELS_URL } from '../../constants/aiProviders';
 // 24h TTL, same pattern as the AI response cache in aiClient) keeps cold
 // starts cheap and offline starts usable.
 
-const CACHE_PREFIX = 'mypersonalfitness.openrouterModelCatalog.v1';
+const CACHE_PREFIX = 'mypersonalfitness.openrouterModelCatalog.v2';
 const DEFAULT_CATALOG_TTL_MS = 1000 * 60 * 60 * 24; // 24 hours
 
 export interface ModelCatalogEntry {
@@ -17,6 +18,8 @@ export interface ModelCatalogEntry {
   name: string;
   /** Can accept image inputs — matters for food-photo analysis. */
   vision: boolean;
+  /** Supports tool calling — program generation needs it. */
+  tools: boolean;
   /** Free models (pricing.prompt + completion === "0"), tagged in the UI. */
   free: boolean;
   /** Rough price bucket for UI sorting/tagging, in $ per 1M prompt tokens. */
@@ -43,6 +46,7 @@ function normalize(raw: OpenRouterModelsResponse): ModelCatalogEntry[] {
       name: model.name ?? model.id,
       // Vision matters for food-photo analysis; surfaced as a UI hint.
       vision: (model.architecture?.input_modalities ?? []).includes('image'),
+      tools: (model.supported_parameters ?? []).includes('tools'),
       free: model.id.endsWith(':free') || (input === 0 && output === 0),
       inputPricePerM: input * 1_000_000,
       outputPricePerM: output * 1_000_000,
@@ -145,10 +149,22 @@ function useOpenRouterModelsQuery() {
   });
 }
 
+/**
+ * Models the app can actually use end to end: image input (food photos) and
+ * tool calling (program generation). Product rule: the picker lists only these.
+ */
+export function usableModels(models: ModelCatalogEntry[]): ModelCatalogEntry[] {
+  return models.filter((m) => m.vision && m.tools);
+}
+
 export function useModelCatalog() {
   const query = useOpenRouterModelsQuery();
+  const models = useMemo(
+    () => (query.data ? usableModels(query.data) : emptyCatalog),
+    [query.data],
+  );
   return {
-    models: query.data ?? emptyCatalog,
+    models,
     isLoading: query.isLoading,
     error: query.error ? String((query.error as Error).message) : null,
     refetch: query.refetch,
@@ -178,6 +194,7 @@ interface RawOpenRouterModel {
   name?: string;
   context_length?: number;
   architecture?: { input_modalities?: string[] };
+  supported_parameters?: string[];
   pricing?: { prompt?: string; completion?: string };
 }
 

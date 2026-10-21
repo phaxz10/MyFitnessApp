@@ -9,8 +9,10 @@ import {
   Unlink,
 } from 'lucide-react';
 import { useState } from 'react';
+import { useWeightUnit } from '../../hooks/useWeightUnit';
 import type { ExerciseWithSets } from '../../hooks/useWorkoutSession';
 import type { AIExerciseCoachingResponse } from '../../types';
+import { unitLabel } from '../../utils/units';
 import { getProgressionArrow } from '../../utils/workoutHelpers';
 import { Button, ExerciseMark } from '../ui';
 import {
@@ -72,6 +74,7 @@ export function SupersetCard({
   getExerciseId,
 }: SupersetCardProps) {
   const [editing, setEditing] = useState(false);
+  const unit = unitLabel(useWeightUnit());
   const maxSets = Math.max(...supersetExercises.map((ex) => ex.sets.length));
   const allExpanded = supersetExercises.every((ex) => ex.isExpanded);
   const firstIndex = exerciseIndices[0];
@@ -178,7 +181,7 @@ export function SupersetCard({
           {/* Column heads */}
           <div className={`${ROUND_GRID} px-2 text-xs font-medium text-ink-3`}>
             <span>Exercise</span>
-            <span className="text-center">{anyWeight ? 'lbs' : ''}</span>
+            <span className="text-center">{anyWeight ? unit : ''}</span>
             <span className="text-center">
               {anyDuration ? 'Reps/sec' : 'Reps'}
             </span>
@@ -338,6 +341,7 @@ function RoundRow({
   onStartDurationTimer,
 }: RoundRowProps) {
   const set = ex.sets[roundNumber];
+  const unit = unitLabel(useWeightUnit());
   const { isDuration, hasWeight } = exerciseKind(ex.exerciseType);
   const isCompleted = set.completed;
   const setCoaching = coaching?.sets?.[roundNumber];
@@ -352,7 +356,7 @@ function RoundRow({
       {hasWeight ? (
         <NumberCell
           size="md"
-          label={`${name} weight, lbs`}
+          label={`${name} weight, ${unit}`}
           value={set.weight}
           placeholder={set.placeholderWeight || '0'}
           disabled={isCompleted}

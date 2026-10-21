@@ -1,6 +1,7 @@
 import { strFromU8, strToU8, unzipSync, type Zippable, zipSync } from 'fflate';
 import { toOpenRouterModelId } from '../constants/aiProviders';
 import { getLocalDateString } from '../utils/date';
+import { isWeightUnit, KG_PER_LB } from '../utils/units';
 import { getDB } from './db';
 
 // ---------------------------------------------------------------------------
@@ -14,7 +15,21 @@ import { getDB } from './db';
 // Legacy `.json` backups (version '0', photo_data inline) still import.
 // ---------------------------------------------------------------------------
 
-export const BACKUP_VERSION = '2.0';
+// 2.1: user_profile.weight_unit; lifting weights are kg (migration v6).
+export const BACKUP_VERSION = '2.1';
+
+/**
+ * Backups older than 2.1 predate the weight-unit setting: their lifting
+ * weights (workout_sets.weight_kg) were entered under a "lbs" label. Import
+ * treats them exactly like migration v6 treats existing rows: profile unit
+ * 'lbs', lifting weights converted lbs -> kg. Body weight is kg in every
+ * version.
+ */
+export function isPreUnitsBackup(version: string): boolean {
+  const [major = 0, minor = 0] = version.split('.').map(Number);
+  if (Number.isNaN(major) || Number.isNaN(minor)) return true;
+  return major < 2 || (major === 2 && minor < 1);
+}
 const BACKUP_JSON = 'backup.json';
 const PHOTOS_DIR = 'photos/';
 
@@ -398,6 +413,9 @@ export async function importBackup(bytes: Uint8Array): Promise<ImportResult> {
 // biome-ignore lint/suspicious/noExplicitAny: PGlite db type is wide; this stays internal.
 async function importDataInner(db: any, backup: BackupData): Promise<void> {
   const { data } = backup;
+  const preUnits = isPreUnitsBackup(backup.version);
+  const liftKg = (value: unknown): unknown =>
+    preUnits && typeof value === 'number' ? value * KG_PER_LB : value;
 
   // Helper to check if a table has data to import
   const hasData = (arr: unknown[] | undefined): arr is unknown[] =>
@@ -459,10 +477,17 @@ async function importDataInner(db: any, backup: BackupData): Promise<void> {
       // Backups predating the carb-strategy feature have no diet_type;
       // default to 'balanced' so they restore with unchanged macros.
       const dietType = (row.diet_type ?? 'balanced') as string;
+      // Pre-units backups were used under "lbs" lift labels (see
+      // isPreUnitsBackup); current backups always carry weight_unit.
+      const weightUnit = preUnits
+        ? 'lbs'
+        : isWeightUnit(row.weight_unit)
+          ? row.weight_unit
+          : 'kg';
 
       await db.query(
-        `INSERT INTO user_profile (id, birthdate, gender, height_cm, activity_level, goal, diet_type, calorie_target, protein_target_g, carbs_target_g, fat_target_g, ai_provider, ai_model, ai_api_key, ai_proxy_url, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+        `INSERT INTO user_profile (id, birthdate, gender, height_cm, activity_level, goal, diet_type, calorie_target, protein_target_g, carbs_target_g, fat_target_g, ai_provider, ai_model, ai_api_key, ai_proxy_url, created_at, updated_at, weight_unit)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
         [
           row.id,
           row.birthdate ?? getLocalDateString(),
@@ -484,6 +509,7 @@ async function importDataInner(db: any, backup: BackupData): Promise<void> {
           hasLegacyVendorKey ? null : aiProxyUrl,
           row.created_at,
           row.updated_at,
+          weightUnit,
         ],
       );
     }
@@ -674,7 +700,7 @@ async function importDataInner(db: any, backup: BackupData): Promise<void> {
           row.workout_log_exercise_id ?? null,
           row.set_number,
           row.reps ?? null,
-          row.weight_kg ?? null,
+          liftKg(row.weight_kg ?? null),
           row.duration_seconds ?? null,
           row.notes ?? null,
           row.completed_at ?? null,

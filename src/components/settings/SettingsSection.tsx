@@ -185,3 +185,31 @@ export function SettingsFileRow({
     </label>
   );
 }
+
+interface SettingsControlRowProps extends IconChipProps {
+  label: string;
+  hint?: string;
+  /** Inline control on the right, e.g. a segmented control. */
+  control: ReactNode;
+}
+
+// Row that carries its control inline (no expansion, no navigation).
+export function SettingsControlRow({
+  icon,
+  discipline,
+  tone,
+  label,
+  hint,
+  control,
+}: SettingsControlRowProps) {
+  return (
+    <div className="w-full min-h-14 px-4 py-2.5 flex items-center gap-3">
+      <IconChip icon={icon} discipline={discipline} tone={tone} />
+      <span className="flex-1 min-w-0">
+        <span className="block font-semibold text-ink">{label}</span>
+        {hint && <span className="block text-sm text-ink-2">{hint}</span>}
+      </span>
+      <div className="shrink-0">{control}</div>
+    </div>
+  );
+}

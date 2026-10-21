@@ -59,7 +59,8 @@ export function calculateEstimated1RM(
 ): number | null {
   if (weight <= 0 || reps <= 0) return null;
   if (reps === 1) return weight;
-  return Math.round(weight * (1 + reps / 30));
+  // kg, unrounded: the UI rounds after converting to the display unit.
+  return weight * (1 + reps / 30);
 }
 
 // Converts a UI time range filter into SQL-ready date strings.
@@ -304,7 +305,6 @@ async function fetchRecentPersonalRecords(
           type: 'weight',
           value: row.max_weight,
           date: startDateStr,
-          details: `${row.max_weight} lbs`,
         });
       }
       if (row.is_1rm_pr && !row.is_weight_pr) {
@@ -312,9 +312,8 @@ async function fetchRecentPersonalRecords(
           exerciseId: row.exercise_id,
           exerciseName: row.exercise_name,
           type: '1rm',
-          value: Math.round(row.max_1rm),
+          value: row.max_1rm,
           date: startDateStr,
-          details: `Est. ${Math.round(row.max_1rm)} lbs`,
         });
       }
     }

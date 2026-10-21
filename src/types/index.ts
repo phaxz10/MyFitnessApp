@@ -1,3 +1,5 @@
+import type { WeightUnit } from '../utils/units';
+
 // AI provider selection — OpenRouter is the single provider (ADR-0007).
 export type AIProvider = 'openrouter';
 
@@ -6,6 +8,8 @@ export type AIProvider = 'openrouter';
 // other tiers pin carbs and let fat absorb the remainder, enabling low-carb
 // and ketogenic splits.
 export type DietType = 'balanced' | 'moderate' | 'low_carb' | 'keto';
+
+export type { WeightUnit };
 
 // User Profile Types
 export interface UserProfile {
@@ -16,6 +20,8 @@ export interface UserProfile {
   activity_level: 'sedentary' | 'light' | 'moderate' | 'active';
   goal: 'bulk' | 'lean_bulk' | 'recomp' | 'cut' | 'maintain';
   diet_type: DietType;
+  /** Display/entry unit for every weight. Storage is always kg. */
+  weight_unit: WeightUnit;
   calorie_target: number;
   protein_target_g: number;
   carbs_target_g: number;
@@ -545,6 +551,7 @@ export interface SetProgression {
   setNumber: number;
   weight: ProgressionDirection;
   reps: ProgressionDirection;
+  /** kg (converted from the unit the prompt used). */
   suggestedWeight: number;
   suggestedReps: number;
 }
@@ -581,9 +588,9 @@ export interface PersonalRecord {
   exerciseId: number;
   exerciseName: string;
   type: 'weight' | 'reps' | 'volume' | '1rm';
+  /** kg for 'weight' / '1rm' / 'volume'; a count for 'reps'. */
   value: number;
   date: string;
-  details: string; // e.g., "225 lbs × 8 reps"
 }
 
 export interface ExercisePR {

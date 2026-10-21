@@ -4,6 +4,7 @@ import {
   filterModels,
   type ModelCatalogEntry,
   priceTag,
+  usableModels,
 } from './openrouterModels';
 
 // In-memory localStorage shim (node env lacks it).
@@ -35,6 +36,7 @@ const entry = (over: Partial<ModelCatalogEntry>): ModelCatalogEntry => ({
   id: 'vendor/model',
   name: 'Vendor Model',
   vision: false,
+  tools: true,
   free: false,
   inputPricePerM: 1,
   outputPricePerM: 2,
@@ -76,6 +78,17 @@ describe('openrouterModels', () => {
       expect(filterModels(catalog, 'GPT-4O')).toHaveLength(1);
       expect(filterModels(catalog, 'claude sonnet')).toHaveLength(1);
       expect(filterModels(catalog, 'nonexistent')).toHaveLength(0);
+    });
+  });
+
+  describe('usableModels', () => {
+    it('keeps only models with image input and tool calling', () => {
+      const list = [
+        entry({ id: 'a', vision: true, tools: true }),
+        entry({ id: 'b', vision: false, tools: true }),
+        entry({ id: 'c', vision: true, tools: false }),
+      ];
+      expect(usableModels(list).map((m) => m.id)).toEqual(['a']);
     });
   });
 

@@ -50,3 +50,4 @@ export {
   type TrendDirection,
   TrendIndicator,
 } from './TrendIndicator';
+export { UnitSelector } from './UnitSelector';

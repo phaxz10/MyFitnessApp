@@ -7,12 +7,14 @@ import { useWeight } from '../../hooks/useWeight';
 import { type WeightLogFormData, weightLogSchema } from '../../schemas/forms';
 import { calculateBodyFatPercentage } from '../../utils/calculations';
 import { formatDate, formatDisplayDate } from '../../utils/date';
+import { parseWeightInput, unitLabel, weightText } from '../../utils/units';
 import { Button, Input, Modal } from '../ui';
 
 export function WeightLogModal() {
   const { weightLogModal, closeWeightLogModal } = useAppStore();
   const { logs, addLog, fetchLogs } = useWeight();
   const { profile } = useProfile();
+  const unit = profile?.weight_unit ?? 'kg';
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +51,7 @@ export function WeightLogModal() {
   useEffect(() => {
     if (weightLogModal.isOpen && existingLog) {
       reset({
-        weight: existingLog.weight_kg.toString(),
+        weight: weightText(existingLog.weight_kg, unit, 'body'),
         waist: existingLog.waist_cm?.toString() || '',
         neck: existingLog.neck_cm?.toString() || '',
         arm: existingLog.arm_cm?.toString() || '',
@@ -64,7 +66,7 @@ export function WeightLogModal() {
       });
       setIsEditing(false);
     }
-  }, [weightLogModal.isOpen, existingLog, reset]);
+  }, [weightLogModal.isOpen, existingLog, reset, unit]);
 
   const handleClose = useCallback(() => {
     reset();
@@ -91,7 +93,12 @@ export function WeightLogModal() {
 
       await addLog({
         date: weightLogModal.date,
-        weight_kg: parseFloat(data.weight),
+        weight_kg: parseWeightInput(
+          data.weight,
+          unit,
+          existingLog?.weight_kg,
+          'body',
+        ),
         waist_cm: data.waist ? parseFloat(data.waist) : null,
         neck_cm: data.neck ? parseFloat(data.neck) : null,
         arm_cm: data.arm ? parseFloat(data.arm) : null,
@@ -126,7 +133,7 @@ export function WeightLogModal() {
         )}
 
         <Input
-          label="Weight (kg)"
+          label={`Weight (${unitLabel(unit)})`}
           type="number"
           step="0.1"
           {...register('weight')}

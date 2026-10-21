@@ -2,6 +2,7 @@ import { Dumbbell, Scale, Target } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { UserProfile, WeeklyReviewData } from '../../types';
 import { formatDisplayDate } from '../../utils/date';
+import { unitLabel, weightText } from '../../utils/units';
 import { MacroLegend, NutritionRings } from '../nutrition';
 import type { Macros } from './reviewTypes';
 
@@ -48,6 +49,7 @@ export function SummaryStats({
     fat: profile.fat_target_g,
   };
   const { weightChange } = weeklyData;
+  const unit = profile.weight_unit ?? 'kg';
 
   return (
     <>
@@ -64,10 +66,10 @@ export function SummaryStats({
           icon={<Scale size={20} className="text-body-ink" />}
           value={
             weightChange !== null
-              ? `${weightChange > 0 ? '+' : ''}${weightChange}`
+              ? `${weightChange > 0 ? '+' : ''}${weightText(weightChange, unit, 'body')}`
               : '--'
           }
-          unit={weightChange !== null ? 'kg' : undefined}
+          unit={weightChange !== null ? unitLabel(unit) : undefined}
           label="Weight change"
         />
         <Stat

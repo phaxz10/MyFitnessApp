@@ -12,7 +12,7 @@ import {
 import { TargetsEditor } from '../components/onboarding/TargetsEditor';
 import { WelcomeScreen } from '../components/onboarding/WelcomeScreen';
 import { AISetupForm } from '../components/settings/AISetupForm';
-import { Button, Input } from '../components/ui';
+import { Button, Input, UnitSelector } from '../components/ui';
 import { AI_PROVIDER, FALLBACK_MODEL } from '../constants/aiProviders';
 import { dietTypeOptions } from '../constants/options';
 import { useAppStore } from '../hooks/useAppStore';
@@ -25,6 +25,7 @@ import {
   calculateTargets,
 } from '../services/coaching/nutritionCoach';
 import { calculateAgeFromBirthdate, formatDate } from '../utils/date';
+import { fromInputWeight, unitLabel } from '../utils/units';
 
 type Step =
   | 'welcome'
@@ -100,7 +101,8 @@ export function Onboarding() {
       birthdate: '',
       gender: 'male',
       heightCm: '',
-      weightKg: '',
+      weight: '',
+      weightUnit: 'kg',
       activityLevel: 'moderate',
       goal: 'lean_bulk',
       dietType: 'balanced',
@@ -121,6 +123,7 @@ export function Onboarding() {
   const dietType = watch('dietType');
   const targets = watch('targets');
   const aiModel = watch('aiModel');
+  const weightUnit = watch('weightUnit');
   const apiKey = watch('apiKey') ?? '';
 
   const handleNext = async () => {
@@ -139,7 +142,7 @@ export function Onboarding() {
         break;
       }
       case 'weight': {
-        const isValid = await trigger('weightKg');
+        const isValid = await trigger('weight');
         if (!isValid) {
           setError('Please enter your weight');
           return;
@@ -163,13 +166,18 @@ export function Onboarding() {
     }
   };
 
+  const enteredWeightKg = () => {
+    const values = getValues();
+    return fromInputWeight(parseFloat(values.weight), values.weightUnit);
+  };
+
   const buildTargetProfile = () => {
     const values = getValues();
     return {
       age: calculateAgeFromBirthdate(values.birthdate),
       gender: values.gender,
       height_cm: parseFloat(values.heightCm),
-      weight_kg: parseFloat(values.weightKg),
+      weight_kg: enteredWeightKg(),
       activity_level: values.activityLevel,
       goal: values.goal,
       diet_type: values.dietType,
@@ -207,6 +215,7 @@ export function Onboarding() {
             activity_level: values.activityLevel,
             goal: values.goal,
             diet_type: values.dietType,
+            weight_unit: values.weightUnit,
             calorie_target: 0,
             protein_target_g: 0,
             carbs_target_g: 0,
@@ -246,6 +255,7 @@ export function Onboarding() {
         activity_level: values.activityLevel,
         goal: values.goal,
         diet_type: values.dietType,
+        weight_unit: values.weightUnit,
         calorie_target: values.targets.calories,
         protein_target_g: values.targets.protein,
         carbs_target_g: values.targets.carbs,
@@ -259,7 +269,7 @@ export function Onboarding() {
       // Add initial weight log
       await addLog({
         date: formatDate(new Date()),
-        weight_kg: parseFloat(values.weightKg),
+        weight_kg: enteredWeightKg(),
         waist_cm: null,
         neck_cm: null,
         arm_cm: null,
@@ -399,15 +409,30 @@ export function Onboarding() {
           description="This will be your starting point for tracking progress."
           actions={continueButton('Continue')}
         >
-          <Input
-            label="Weight (kg)"
-            type="number"
-            inputMode="decimal"
-            step="0.1"
-            {...register('weightKg')}
-            placeholder="Enter your current weight"
-            error={errors.weightKg?.message}
-          />
+          <div className="space-y-4">
+            <div>
+              <p className="block text-sm font-semibold text-ink-2 mb-1.5">
+                Units
+              </p>
+              <UnitSelector
+                tone="body"
+                value={weightUnit}
+                onChange={(unit) => setValue('weightUnit', unit)}
+              />
+              <p className="text-sm text-ink-3 mt-1.5">
+                Used for body weight and lifts. Change it any time in Settings.
+              </p>
+            </div>
+            <Input
+              label={`Weight (${unitLabel(weightUnit)})`}
+              type="number"
+              inputMode="decimal"
+              step="0.1"
+              {...register('weight')}
+              placeholder="Enter your current weight"
+              error={errors.weight?.message}
+            />
+          </div>
         </OnboardingFrame>
       );
 

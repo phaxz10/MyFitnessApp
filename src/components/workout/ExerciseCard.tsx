@@ -8,11 +8,13 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useState } from 'react';
+import { useWeightUnit } from '../../hooks/useWeightUnit';
 import type { ExerciseWithSets, SetData } from '../../hooks/useWorkoutSession';
 import type {
   AIExerciseCoachingResponse,
   ProgressionDirection,
 } from '../../types';
+import { unitLabel } from '../../utils/units';
 import { getProgressionArrow } from '../../utils/workoutHelpers';
 import { Button, ExerciseMark } from '../ui';
 import {
@@ -68,6 +70,7 @@ export function ExerciseCard({
   onLinkExercise,
 }: ExerciseCardProps) {
   const [editing, setEditing] = useState(false);
+  const weightUnit = useWeightUnit();
   const { exercise, workoutLogExercise, sets } = exerciseData;
   const { isDuration, hasWeight } = exerciseKind(exerciseData.exerciseType);
 
@@ -145,7 +148,9 @@ export function ExerciseCard({
           <div className={`${SET_GRID} px-1 text-xs font-medium text-ink-3`}>
             <span className="text-center">Set</span>
             <span>Previous</span>
-            <span className="text-center">{hasWeight ? 'lbs' : ''}</span>
+            <span className="text-center">
+              {hasWeight ? unitLabel(weightUnit) : ''}
+            </span>
             <span className="text-center">{isDuration ? 'sec' : 'Reps'}</span>
             <span className="text-center">Done</span>
           </div>
@@ -165,10 +170,12 @@ export function ExerciseCard({
                 editing={editing}
                 isDuration={isDuration}
                 hasWeight={hasWeight}
+                unit={unitLabel(weightUnit)}
                 previous={formatPrevious(
                   exerciseData.lastPerformance?.[setIndex],
                   isDuration,
                   hasWeight,
+                  weightUnit,
                 )}
                 setCoaching={coaching?.sets?.[setIndex]}
                 isCompleting={isLoading(
@@ -238,6 +245,7 @@ interface SetRowProps {
   editing: boolean;
   isDuration: boolean;
   hasWeight: boolean;
+  unit: string;
   previous: string;
   setCoaching?: { reps?: ProgressionDirection; weight?: ProgressionDirection };
   isCompleting: boolean;
@@ -256,6 +264,7 @@ function SetRow({
   editing,
   isDuration,
   hasWeight,
+  unit,
   previous,
   setCoaching,
   isCompleting,
@@ -304,7 +313,7 @@ function SetRow({
 
       {hasWeight ? (
         <NumberCell
-          label={`Weight for ${label}, lbs`}
+          label={`Weight for ${label}, ${unit}`}
           value={set.weight}
           placeholder={set.placeholderWeight || '0'}
           disabled={isCompleted}

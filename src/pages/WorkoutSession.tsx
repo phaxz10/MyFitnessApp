@@ -21,6 +21,7 @@ import {
   RestTimer,
   SessionChangesModal,
 } from '../components/workout';
+import { useWeightUnit } from '../hooks/useWeightUnit';
 import { useWorkoutLogs } from '../hooks/useWorkoutLogs';
 import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
 import { useWorkoutSession } from '../hooks/useWorkoutSession';
@@ -33,6 +34,7 @@ import {
   compareSessionToProgram,
   type SessionDiff,
 } from '../utils/sessionDiff';
+import { unitLabel } from '../utils/units';
 
 export function WorkoutSession() {
   const navigate = useNavigate();
@@ -43,6 +45,7 @@ export function WorkoutSession() {
 
   // Main workout session hook
   const session = useWorkoutSession(dateOverride);
+  const weightUnit = useWeightUnit();
   const {
     activeWorkout,
     exercisesWithSets,
@@ -217,7 +220,7 @@ export function WorkoutSession() {
       exerciseNotesModal.currentWeight &&
       parseFloat(exerciseNotesModal.currentWeight) > 0
     ) {
-      noteContent += ` @ ${exerciseNotesModal.currentWeight} lbs`;
+      noteContent += ` @ ${exerciseNotesModal.currentWeight} ${unitLabel(weightUnit)}`;
     }
 
     const note = await addExerciseNote(

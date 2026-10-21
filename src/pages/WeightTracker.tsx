@@ -18,6 +18,7 @@ import {
 import { useProfile } from '../hooks/useProfile';
 import { useProgressPhotos } from '../hooks/useProgressPhotos';
 import { useWeight } from '../hooks/useWeight';
+import { useWeightUnit } from '../hooks/useWeightUnit';
 import type { WeightLogFormData } from '../schemas/forms';
 import {
   calculateBodyFatPercentage,
@@ -31,6 +32,7 @@ import {
   formatShortDate,
   getDaysAgo,
 } from '../utils/date';
+import { parseWeightInput, weightText } from '../utils/units';
 
 export function WeightTracker() {
   const [searchParams] = useSearchParams();
@@ -65,6 +67,8 @@ export function WeightTracker() {
     }
   }, [searchParams]);
 
+  const unit = useWeightUnit();
+
   // Selected date from URL param, defaulting to today
   const selectedDate = searchParams.get('date') || formatDate(new Date());
   const selectedDateLog = logs.find(
@@ -75,7 +79,7 @@ export function WeightTracker() {
   const handleOpenModal = useCallback(() => {
     if (selectedDateLog) {
       setFormInitial({
-        weight: selectedDateLog.weight_kg.toString(),
+        weight: weightText(selectedDateLog.weight_kg, unit, 'body'),
         waist: selectedDateLog.waist_cm?.toString() || '',
         neck: selectedDateLog.neck_cm?.toString() || '',
         arm: selectedDateLog.arm_cm?.toString() || '',
@@ -86,7 +90,7 @@ export function WeightTracker() {
       setIsEditingToday(false);
     }
     setIsModalOpen(true);
-  }, [selectedDateLog]);
+  }, [selectedDateLog, unit]);
 
   const filteredLogs = useMemo(() => {
     if (timeRange === 'all') return [...logs].reverse();
@@ -138,7 +142,12 @@ export function WeightTracker() {
 
       await addLog({
         date: selectedDate,
-        weight_kg: parseFloat(data.weight),
+        weight_kg: parseWeightInput(
+          data.weight,
+          unit,
+          selectedDateLog?.weight_kg,
+          'body',
+        ),
         waist_cm: data.waist ? parseFloat(data.waist) : null,
         neck_cm: data.neck ? parseFloat(data.neck) : null,
         arm_cm: data.arm ? parseFloat(data.arm) : null,

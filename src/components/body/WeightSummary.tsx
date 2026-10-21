@@ -1,6 +1,7 @@
+import { useWeightUnit } from '../../hooks/useWeightUnit';
 import type { WeightLog } from '../../types';
-import { formatWeight } from '../../utils/calculations';
 import { formatDisplayDate } from '../../utils/date';
+import { unitLabel, weightText } from '../../utils/units';
 import {
   Card,
   getTrendColorClass,
@@ -23,6 +24,7 @@ export function WeightSummary({
   hasMultipleLogs,
   onTrack,
 }: WeightSummaryProps) {
+  const unit = useWeightUnit();
   // 0.1 kg threshold: smaller moves are noise, not a trend.
   const direction = getTrendDirection(weeklyChange, 0.1);
   const bodyFat = latestLog?.body_fat_pct;
@@ -34,10 +36,12 @@ export function WeightSummary({
           <p className="text-sm font-semibold text-body-ink">Current weight</p>
           <p className="mt-1 flex items-baseline gap-1.5">
             <span className="num text-6xl font-bold text-ink">
-              {latestLog ? formatWeight(latestLog.weight_kg) : '--'}
+              {latestLog ? weightText(latestLog.weight_kg, unit, 'body') : '--'}
             </span>
             {latestLog && (
-              <span className="text-lg font-semibold text-ink-3">kg</span>
+              <span className="text-lg font-semibold text-ink-3">
+                {unitLabel(unit)}
+              </span>
             )}
           </p>
           {latestLog && (
@@ -70,10 +74,11 @@ export function WeightSummary({
               className={`num text-2xl font-bold ${getTrendColorClass(direction)}`}
             >
               {weeklyChange > 0 ? '+' : ''}
-              {formatWeight(weeklyChange)}
+              {weightText(weeklyChange, unit, 'body')}
             </span>
             <span className="text-sm text-ink-3">
-              kg{hasEnoughData ? '/wk' : ''}
+              {unitLabel(unit)}
+              {hasEnoughData ? '/wk' : ''}
             </span>
           </div>
           {!hasEnoughData && hasMultipleLogs && (

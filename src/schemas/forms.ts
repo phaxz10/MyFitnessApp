@@ -100,7 +100,9 @@ export const onboardingSchema = z.object({
   birthdate: z.string().min(1, 'Birthdate is required'),
   gender: z.enum(['male', 'female']),
   heightCm: z.string().min(1, 'Height is required'),
-  weightKg: z.string().min(1, 'Weight is required'),
+  // Entered in weightUnit; converted to kg on save.
+  weight: z.string().min(1, 'Weight is required'),
+  weightUnit: z.enum(['kg', 'lbs']),
   activityLevel: z.enum(['sedentary', 'light', 'moderate', 'active']),
   goal: z.enum(['bulk', 'lean_bulk', 'recomp', 'cut', 'maintain']),
   dietType: z.enum(['balanced', 'moderate', 'low_carb', 'keto']),

@@ -1,7 +1,8 @@
 import { Plus } from 'lucide-react';
+import { useWeightUnit } from '../../hooks/useWeightUnit';
 import type { WeightLog } from '../../types';
-import { formatWeight } from '../../utils/calculations';
 import { formatDisplayDate } from '../../utils/date';
+import { unitLabel, weightText } from '../../utils/units';
 import { Button, Card, CardContent, CardHeader, CardTitle } from '../ui';
 
 interface WeightHistoryProps {
@@ -10,6 +11,7 @@ interface WeightHistoryProps {
 }
 
 export function WeightHistory({ logs, onLog }: WeightHistoryProps) {
+  const unit = useWeightUnit();
   return (
     <Card>
       <CardHeader>
@@ -45,9 +47,9 @@ export function WeightHistory({ logs, onLog }: WeightHistoryProps) {
               </div>
               <p className="flex items-baseline gap-1">
                 <span className="num text-xl font-bold text-ink">
-                  {formatWeight(log.weight_kg)}
+                  {weightText(log.weight_kg, unit, 'body')}
                 </span>
-                <span className="text-sm text-ink-3">kg</span>
+                <span className="text-sm text-ink-3">{unitLabel(unit)}</span>
               </p>
             </li>
           ))}

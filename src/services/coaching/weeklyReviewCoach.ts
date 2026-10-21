@@ -102,6 +102,8 @@ export async function reviewGoals(
 
   const prompt = `Review my fitness progress and provide recommendations.
 
+Units: all weights below are in kg. When your reply mentions a weight, write it in ${profile.weight_unit ?? 'kg'} (1 kg = 2.2046 lbs).
+
 Current Profile:
 - Age: ${calculateAgeFromBirthdate(profile.birthdate)}, Gender: ${profile.gender}, Height: ${profile.height_cm}cm
 - Goal: ${profile.goal}
@@ -172,6 +174,8 @@ export async function reviewWeeklyProgress(
   const expectedWeeklyWeightChange = weeklyCalorieDifference / 7700;
 
   const prompt = `You are a fitness coach conducting a weekly check-in review. Analyze the user's past week of progress and provide actionable recommendations.
+
+Units: all weights below are in kg. When your reply mentions a weight, write it in ${profile.weight_unit ?? 'kg'} (1 kg = 2.2046 lbs).
 
 User Profile:
 - Age: ${calculateAgeFromBirthdate(profile.birthdate)}, Gender: ${profile.gender}, Height: ${profile.height_cm}cm

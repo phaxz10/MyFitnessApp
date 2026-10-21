@@ -7,14 +7,23 @@ import type {
   WorkoutLogExerciseWithDetails,
   WorkoutSet,
 } from '../types';
+import {
+  parseWeightInput,
+  toDisplayWeight,
+  type WeightUnit,
+} from '../utils/units';
 import { useExercises } from './useExercises';
+import { useWeightUnit } from './useWeightUnit';
 import { useWorkoutLogs } from './useWorkoutLogs';
 
 export interface SetData {
   id: number; // Database ID - always present since sets are pre-created
   set_number: number;
   reps: string;
+  /** In the user's display unit (see useWeightUnit); stored as kg. */
   weight: string;
+  /** The kg value last loaded/saved for this set; keeps unedited saves exact. */
+  weightKg?: number | null;
   durationSeconds: string;
   completed: boolean; // Based on completed_at IS NOT NULL
   // Placeholder values for new sets (from last performance or targets)
@@ -45,11 +54,14 @@ function debounce<T extends (...args: Parameters<T>) => void>(
   };
 }
 
-// Helper to parse weight - always returns a number, never null
-function parseWeight(value: string | undefined | null): number {
-  if (!value || value === '') return 0;
-  const parsed = parseFloat(value);
-  return Number.isNaN(parsed) ? 0 : parsed;
+// A set cell's weight text (display unit) as kg - always a number, never null
+function parseWeight(set: SetData | undefined, unit: WeightUnit): number {
+  return parseWeightInput(set?.weight, unit, set?.weightKg);
+}
+
+// A stored kg value as the string shown in a set cell
+function weightText(kg: number, unit: WeightUnit): string {
+  return toDisplayWeight(kg, unit, 'lift').toString();
 }
 
 // Helper to parse reps - can be null for duration exercises
@@ -106,6 +118,12 @@ export function useWorkoutSession(dateOverride?: string) {
   } = useWorkoutLogs();
 
   const { exercises: allExercises, fetchExercises } = useExercises();
+
+  // SetData.weight strings are in the display unit; convert at the DB edge.
+  // A ref so callbacks read the current unit without re-creating.
+  const weightUnit = useWeightUnit();
+  const unitRef = useRef(weightUnit);
+  unitRef.current = weightUnit;
 
   const [exercisesWithSets, setExercisesWithSets] = useState<
     ExerciseWithSets[]
@@ -232,7 +250,10 @@ export function useWorkoutSession(dateOverride?: string) {
                   : lastSet?.reps?.toString() ||
                     wle.target_rep_min?.toString() ||
                     '8';
-                const placeholderWeight = (lastSet?.weight_kg ?? 0).toString();
+                const placeholderWeight = weightText(
+                  lastSet?.weight_kg ?? 0,
+                  unitRef.current,
+                );
                 const placeholderDuration = isDuration
                   ? wle.target_duration_seconds?.toString() || '30'
                   : undefined;
@@ -251,7 +272,10 @@ export function useWorkoutSession(dateOverride?: string) {
                     : isDuration
                       ? ''
                       : '',
-                  weight: hasExistingWeight ? dbSet.weight_kg!.toString() : '',
+                  weight: hasExistingWeight
+                    ? weightText(dbSet.weight_kg!, unitRef.current)
+                    : '',
+                  weightKg: dbSet.weight_kg,
                   durationSeconds: hasExistingDuration
                     ? dbSet.duration_seconds!.toString()
                     : '',
@@ -329,7 +353,10 @@ export function useWorkoutSession(dateOverride?: string) {
                   set_number: dbSet.set_number,
                   reps: dbSet.reps !== null ? dbSet.reps.toString() : '',
                   weight:
-                    dbSet.weight_kg !== null ? dbSet.weight_kg.toString() : '',
+                    dbSet.weight_kg !== null
+                      ? weightText(dbSet.weight_kg, unitRef.current)
+                      : '',
+                  weightKg: dbSet.weight_kg,
                   durationSeconds:
                     dbSet.duration_seconds !== null
                       ? dbSet.duration_seconds.toString()
@@ -338,7 +365,10 @@ export function useWorkoutSession(dateOverride?: string) {
                   placeholderReps: isDur
                     ? undefined
                     : lastSet?.reps?.toString() || '8',
-                  placeholderWeight: (lastSet?.weight_kg ?? 0).toString(),
+                  placeholderWeight: weightText(
+                    lastSet?.weight_kg ?? 0,
+                    unitRef.current,
+                  ),
                   placeholderDuration: isDur ? '30' : undefined,
                 };
               });
@@ -383,7 +413,7 @@ export function useWorkoutSession(dateOverride?: string) {
 
       // Parse values
       const reps = isDuration ? null : parseReps(setData.reps);
-      const weight = parseWeight(setData.weight);
+      const weight = parseWeight(setData, unitRef.current);
       const duration = isDuration
         ? parseDuration(setData.durationSeconds)
         : null;
@@ -485,7 +515,7 @@ export function useWorkoutSession(dateOverride?: string) {
           exerciseData.exerciseType === 'duration_weight';
 
         const reps = isDuration ? null : parseReps(setData.reps);
-        const weight = parseWeight(setData.weight);
+        const weight = parseWeight(setData, unitRef.current);
         const duration = isDuration
           ? parseDuration(setData.durationSeconds)
           : null;
@@ -585,7 +615,7 @@ export function useWorkoutSession(dateOverride?: string) {
             exerciseData.exerciseType === 'duration_weight';
 
           const reps = isDuration ? null : parseReps(setData.reps);
-          const weight = parseWeight(setData.weight);
+          const weight = parseWeight(setData, unitRef.current);
           const duration = isDuration
             ? parseDuration(setData.durationSeconds)
             : null;
@@ -1046,7 +1076,10 @@ export function useWorkoutSession(dateOverride?: string) {
             placeholderReps: isDuration
               ? undefined
               : lastSet?.reps?.toString() || '10',
-            placeholderWeight: (lastSet?.weight_kg ?? 0).toString(),
+            placeholderWeight: weightText(
+              lastSet?.weight_kg ?? 0,
+              unitRef.current,
+            ),
             placeholderDuration: isDuration ? '30' : undefined,
           };
         });
@@ -1107,7 +1140,7 @@ export function useWorkoutSession(dateOverride?: string) {
       if (!exerciseData) return;
 
       const setData = exerciseData.sets[setIndex];
-      const weight = parseWeight(setData?.weight);
+      const weight = parseWeight(setData, unitRef.current);
 
       try {
         // Update the set with actual duration and mark as completed

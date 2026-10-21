@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useWeightUnit } from '../../hooks/useWeightUnit';
 import type { ExerciseWithSets } from '../../hooks/useWorkoutSession';
 import { getAICapability } from '../../services/ai/useAICapability';
 import { getExerciseCoaching } from '../../services/coaching/workoutCoach';
@@ -13,6 +14,7 @@ export function useExerciseCoaching(
   getExerciseId: (ex: ExerciseWithSets) => number,
   getExerciseNotes: (exerciseId: number) => Promise<ExerciseNote[]>,
 ): Map<number, AIExerciseCoachingResponse> {
+  const weightUnit = useWeightUnit();
   // AI coaching state
   const [exerciseCoaching, setExerciseCoaching] = useState<
     Map<number, AIExerciseCoachingResponse>
@@ -66,6 +68,7 @@ export function useExerciseCoaching(
           targetRepMax,
           targetSets,
           notes,
+          weightUnit,
         );
         coaching.exerciseId = exerciseId;
         setExerciseCoaching((prev) => new Map(prev).set(exerciseId, coaching));
@@ -79,7 +82,7 @@ export function useExerciseCoaching(
         });
       }
     },
-    [coachingLoading, exerciseCoaching, getExerciseNotes],
+    [coachingLoading, exerciseCoaching, getExerciseNotes, weightUnit],
   );
 
   // Fetch coaching when exercises load

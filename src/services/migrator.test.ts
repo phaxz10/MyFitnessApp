@@ -91,7 +91,7 @@ describe('runPendingMigrations', () => {
   });
 
   // Bump LATEST_MIGRATION when a new migration is added to migrator.ts.
-  const LATEST_MIGRATION = 5;
+  const LATEST_MIGRATION = 6;
 
   it(`records version ${LATEST_MIGRATION} in schema_migrations`, async () => {
     await runPendingMigrations(db);
@@ -200,6 +200,56 @@ describe('runPendingMigrations', () => {
     );
     expect(constraint.rows).toHaveLength(1);
     expect(constraint.rows[0].conname).toBe('user_profile_ai_provider_check');
+  });
+
+  it('adds weight_unit and converts lbs-entered lifts to kg (migration 6)', async () => {
+    // Pre-v6 shape: the set-row UI labelled weight_kg as "lbs", so stored
+    // lifting numbers are pounds. Body weight was always entered as kg.
+    await runPendingMigrations(db, 5);
+    await db.exec(`
+      INSERT INTO user_profile
+        (id, birthdate, gender, height_cm, activity_level, goal, calorie_target, protein_target_g, carbs_target_g, fat_target_g)
+      VALUES (1, '1990-01-01', 'male', 180, 'moderate', 'recomp', 2000, 150, 200, 70);
+      INSERT INTO weight_logs (date, weight_kg) VALUES ('2026-01-01', 82.5);
+      INSERT INTO exercises (name) VALUES ('Bench Press');
+      INSERT INTO workout_logs (date, started_at) VALUES ('2026-01-01', '2026-01-01T09:00:00');
+      INSERT INTO workout_sets (workout_log_id, exercise_id, set_number, reps, weight_kg)
+      VALUES (1, 1, 1, 8, 135), (1, 1, 2, 10, NULL);
+    `);
+
+    await runPendingMigrations(db);
+
+    const profile = await db.query<{ weight_unit: string }>(
+      'SELECT weight_unit FROM user_profile WHERE id = 1',
+    );
+    expect(profile.rows[0].weight_unit).toBe('lbs');
+
+    const sets = await db.query<{ weight_kg: number | null }>(
+      'SELECT weight_kg FROM workout_sets ORDER BY set_number',
+    );
+    expect(sets.rows[0].weight_kg).toBeCloseTo(135 * 0.45359237, 4);
+    expect(sets.rows[1].weight_kg).toBeNull();
+
+    const body = await db.query<{ weight_kg: number }>(
+      'SELECT weight_kg FROM weight_logs',
+    );
+    expect(body.rows[0].weight_kg).toBe(82.5);
+  });
+
+  it('defaults weight_unit to kg for new profiles and rejects other values', async () => {
+    await runPendingMigrations(db);
+    await db.exec(`
+      INSERT INTO user_profile
+        (id, birthdate, gender, height_cm, activity_level, goal, calorie_target, protein_target_g, carbs_target_g, fat_target_g)
+      VALUES (1, '1990-01-01', 'male', 180, 'moderate', 'recomp', 2000, 150, 200, 70);
+    `);
+    const result = await db.query<{ weight_unit: string }>(
+      'SELECT weight_unit FROM user_profile WHERE id = 1',
+    );
+    expect(result.rows[0].weight_unit).toBe('kg');
+    await expect(
+      db.exec(`UPDATE user_profile SET weight_unit = 'stone'`),
+    ).rejects.toThrow();
   });
 
   it('allows null reps and weight_kg in workout_sets', async () => {

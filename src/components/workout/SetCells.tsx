@@ -2,6 +2,7 @@ import { Check, Loader2, Play, Sparkles } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { ExerciseWithSets } from '../../hooks/useWorkoutSession';
 import type { WorkoutSet } from '../../types';
+import { toDisplayWeight, type WeightUnit } from '../../utils/units';
 
 // Shared building blocks for session set rows (single exercises and superset
 // rounds): big condensed numerals in large tap targets, done at the right edge.
@@ -20,6 +21,7 @@ export function formatPrevious(
   last: WorkoutSet | undefined,
   isDuration: boolean,
   hasWeight: boolean,
+  unit: WeightUnit,
 ): string {
   if (!last) return '—';
   const value = isDuration
@@ -30,7 +32,9 @@ export function formatPrevious(
       ? `${last.reps}`
       : null;
   if (value == null) return '—';
-  return hasWeight && last.weight_kg ? `${last.weight_kg}×${value}` : value;
+  return hasWeight && last.weight_kg
+    ? `${toDisplayWeight(last.weight_kg, unit, 'lift')}×${value}`
+    : value;
 }
 
 interface NumberCellProps {

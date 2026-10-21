@@ -5,11 +5,13 @@ import {
   useVolumeChartData,
   useWeeklyMuscleStats,
 } from '../../hooks/useStrengthProgress';
-import type { PersonalRecord } from '../../types';
+import { useWeightUnit } from '../../hooks/useWeightUnit';
+import type { PersonalRecord, WeightUnit } from '../../types';
 import {
   formatDurationMinutes,
   formatLargeNumber,
 } from '../../utils/formatters';
+import { formatWeight, toDisplayWeight, unitLabel } from '../../utils/units';
 import {
   Card,
   CardContent,
@@ -40,7 +42,21 @@ function OverviewSkeleton() {
   );
 }
 
+function formatPR(pr: PersonalRecord, unit: WeightUnit): string {
+  switch (pr.type) {
+    case 'weight':
+      return formatWeight(pr.value, unit, 'lift');
+    case '1rm':
+      return `Est. ${formatWeight(pr.value, unit, 'lift')}`;
+    case 'volume':
+      return formatWeight(pr.value, unit, 'volume');
+    case 'reps':
+      return `${pr.value} reps`;
+  }
+}
+
 function RecentPRs({ prs }: { prs: PersonalRecord[] }) {
+  const unit = useWeightUnit();
   return (
     <Card>
       <CardHeader className="flex items-center gap-2">
@@ -63,7 +79,7 @@ function RecentPRs({ prs }: { prs: PersonalRecord[] }) {
               </p>
             </div>
             <p className="num shrink-0 text-lg font-bold text-ink">
-              {pr.details}
+              {formatPR(pr, unit)}
             </p>
           </li>
         ))}
@@ -73,6 +89,7 @@ function RecentPRs({ prs }: { prs: PersonalRecord[] }) {
 }
 
 export function OverviewTab({ timeRange }: OverviewTabProps) {
+  const weightUnit = useWeightUnit();
   const { data: metrics, isLoading: metricsLoading } =
     useOverallProgress(timeRange);
 
@@ -95,8 +112,12 @@ export function OverviewTab({ timeRange }: OverviewTabProps) {
           stats={[
             {
               label: 'Volume',
-              value: metrics ? formatLargeNumber(metrics.totalVolume) : '--',
-              unit: metrics ? 'lbs' : undefined,
+              value: metrics
+                ? formatLargeNumber(
+                    toDisplayWeight(metrics.totalVolume, weightUnit, 'volume'),
+                  )
+                : '--',
+              unit: metrics ? unitLabel(weightUnit) : undefined,
               change: metrics?.volumeChange,
               changeLabel: 'vs prev',
             },

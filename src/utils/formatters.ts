@@ -62,11 +62,3 @@ export function formatLargeNumber(value: number): string {
   if (value >= 1000) return `${Math.round(value / 1000)}K`;
   return value.toString();
 }
-
-/**
- * Format volume with units (e.g., "150K lbs")
- * Used by: Progress overview
- */
-export function formatVolume(value: number, unit = 'lbs'): string {
-  return `${formatLargeNumber(value)} ${unit}`;
-}

@@ -3,7 +3,7 @@ import { getTrendDirection, TrendIndicator } from '../ui';
 export interface Stat {
   label: string;
   value: string | number;
-  /** Small unit shown after the value, e.g. "lbs". */
+  /** Small unit shown after the value, e.g. "kg". */
   unit?: string;
   /** Muted line under the value. */
   sub?: string;

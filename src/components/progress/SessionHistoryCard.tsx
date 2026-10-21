@@ -1,5 +1,7 @@
+import { useWeightUnit } from '../../hooks/useWeightUnit';
 import type { ExerciseSessionData } from '../../types';
 import { formatDisplayDate } from '../../utils/date';
+import { formatWeight, toDisplayWeight } from '../../utils/units';
 import { Card, CardContent, CardHeader, CardTitle, Skeleton } from '../ui';
 
 interface SessionHistoryCardProps {
@@ -11,6 +13,7 @@ export function SessionHistoryCard({
   sessions,
   isLoading,
 }: SessionHistoryCardProps) {
+  const unit = useWeightUnit();
   return (
     <Card>
       <CardHeader>
@@ -43,7 +46,7 @@ export function SessionHistoryCard({
                   </p>
                   {session.estimated1RM && (
                     <p className="num text-sm font-semibold text-train-ink">
-                      1RM {session.estimated1RM} lbs
+                      1RM {formatWeight(session.estimated1RM, unit, 'lift')}
                     </p>
                   )}
                 </div>
@@ -54,12 +57,13 @@ export function SessionHistoryCard({
                       key={`${session.date}-set-${setIndex}-${set.weight}-${set.reps}`}
                       className="num rounded-lg bg-sunken px-2 py-1 text-sm text-ink-2"
                     >
-                      {set.weight ?? 0} x {set.reps ?? 0}
+                      {toDisplayWeight(set.weight ?? 0, unit, 'lift')} x{' '}
+                      {set.reps ?? 0}
                     </span>
                   ))}
                 </div>
                 <p className="num text-sm text-ink-3">
-                  Volume {session.totalVolume.toLocaleString()} lbs
+                  Volume {formatWeight(session.totalVolume, unit, 'volume')}
                 </p>
               </li>
             ))}

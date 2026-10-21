@@ -4,6 +4,8 @@ import {
   type TimeRange,
   useAllExercisesProgress,
 } from '../../hooks/useStrengthProgress';
+import { useWeightUnit } from '../../hooks/useWeightUnit';
+import { formatWeight } from '../../utils/units';
 import {
   Card,
   ExerciseMark,
@@ -49,6 +51,7 @@ export function ExercisesTab({
   timeRange,
   onSelectExercise,
 }: ExercisesTabProps) {
+  const weightUnit = useWeightUnit();
   const { data: exercises = [], isLoading } =
     useAllExercisesProgress(timeRange);
   const [searchQuery, setSearchQuery] = useState('');
@@ -157,7 +160,7 @@ export function ExercisesTab({
                     <p className="num text-sm text-ink-3">
                       {formatSessionCount(exercise.totalSessions)}
                       {exercise.estimated1RM
-                        ? ` · 1RM ${exercise.estimated1RM} lbs`
+                        ? ` · 1RM ${formatWeight(exercise.estimated1RM, weightUnit, 'lift')}`
                         : ''}
                     </p>
                   </div>

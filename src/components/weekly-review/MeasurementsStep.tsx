@@ -1,4 +1,6 @@
 import { Scale } from 'lucide-react';
+import { useWeightUnit } from '../../hooks/useWeightUnit';
+import { unitLabel } from '../../utils/units';
 import { Input } from '../ui';
 import type { MeasurementsFormState } from './reviewTypes';
 import { StepActions } from './StepActions';
@@ -21,6 +23,7 @@ export function MeasurementsStep({
   onSkip,
   onSave,
 }: MeasurementsStepProps) {
+  const unit = useWeightUnit();
   const set = (key: keyof MeasurementsFormState) => (value: string) =>
     onChange({ ...form, [key]: value });
 
@@ -33,7 +36,7 @@ export function MeasurementsStep({
       />
 
       <Input
-        label="Weight (kg) *"
+        label={`Weight (${unitLabel(unit)}) *`}
         id="review-weight"
         type="number"
         inputMode="decimal"

@@ -7,8 +7,10 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { useWeightUnit } from '../../hooks/useWeightUnit';
 import type { ExerciseSessionData } from '../../types';
 import { formatShortDate } from '../../utils/date';
+import { toDisplayWeight, unitLabel } from '../../utils/units';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui';
 import {
   AXIS_TICK,
@@ -30,14 +32,21 @@ export function OneRMChart({
   height = 200,
   exerciseName,
 }: OneRMChartProps) {
+  const unit = useWeightUnit();
   const chartData = data
     .filter((d) => d.estimated1RM !== null)
     .map((d) => ({
       date: formatShortDate(d.date),
-      oneRM: d.estimated1RM,
-      bestWeight: d.bestWeight,
+      oneRM:
+        d.estimated1RM === null
+          ? null
+          : toDisplayWeight(d.estimated1RM, unit, 'lift'),
+      bestWeight:
+        d.bestWeight === null
+          ? null
+          : toDisplayWeight(d.bestWeight, unit, 'lift'),
       bestReps: d.bestReps,
-      volume: d.totalVolume,
+      volume: toDisplayWeight(d.totalVolume, unit, 'volume'),
     }));
 
   return (
@@ -74,7 +83,8 @@ export function OneRMChart({
                   labelStyle={TOOLTIP_LABEL_STYLE}
                   formatter={(value, name) => {
                     if (value === undefined) return ['--', String(name ?? '')];
-                    if (name === 'oneRM') return [`${value} lbs`, 'Est. 1RM'];
+                    if (name === 'oneRM')
+                      return [`${value} ${unitLabel(unit)}`, 'Est. 1RM'];
                     return [String(value), String(name ?? '')];
                   }}
                 />

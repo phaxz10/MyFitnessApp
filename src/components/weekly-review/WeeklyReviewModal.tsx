@@ -13,6 +13,7 @@ import type {
 } from '../../types';
 import { calculateBodyFatPercentage } from '../../utils/calculations';
 import { formatDate } from '../../utils/date';
+import { fromInputWeight } from '../../utils/units';
 import { Modal } from '../ui';
 import { CompleteStep } from './CompleteStep';
 import { GoalStep } from './GoalStep';
@@ -171,7 +172,10 @@ export function WeeklyReviewModal({
 
       await addLog({
         date: formatDate(new Date()),
-        weight_kg: parseFloat(measurementsForm.weight),
+        weight_kg: fromInputWeight(
+          parseFloat(measurementsForm.weight),
+          profile.weight_unit ?? 'kg',
+        ),
         waist_cm: measurementsForm.waist
           ? parseFloat(measurementsForm.waist)
           : null,

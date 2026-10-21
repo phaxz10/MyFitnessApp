@@ -7,8 +7,10 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { useWeightUnit } from '../../hooks/useWeightUnit';
 import type { VolumeChartData } from '../../types';
 import { formatShortDate } from '../../utils/date';
+import { toDisplayWeight, unitLabel } from '../../utils/units';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui';
 import {
   AXIS_TICK,
@@ -27,8 +29,10 @@ export function VolumeChart({
   title = 'Volume Trend',
   height = 200,
 }: VolumeChartProps) {
+  const unit = useWeightUnit();
   const chartData = data.map((d) => ({
     ...d,
+    volume: toDisplayWeight(d.volume, unit, 'volume'),
     displayDate: formatShortDate(d.date),
   }));
 
@@ -70,7 +74,7 @@ export function VolumeChart({
                   labelStyle={TOOLTIP_LABEL_STYLE}
                   formatter={(value) => [
                     typeof value === 'number'
-                      ? `${formatVolume(value)} lbs`
+                      ? `${formatVolume(value)} ${unitLabel(unit)}`
                       : '--',
                     'Volume',
                   ]}

@@ -9,6 +9,7 @@ import {
   useLocation,
 } from 'react-router-dom';
 import { GlobalModalContainer } from './components/modals';
+import { SupportPrompt } from './components/support/SupportPrompt';
 import { BottomNav, Header } from './components/ui';
 import { useAppStore } from './hooks/useAppStore';
 import { useProfile } from './hooks/useProfile';
@@ -48,6 +49,7 @@ function MainLayout() {
         <Outlet />
       </main>
       <BottomNav />
+      <SupportPrompt />
     </div>
   );
 }

@@ -1,7 +1,9 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
+import { useWeightUnit } from '../../hooks/useWeightUnit';
 import { type WeightLogFormData, weightLogSchema } from '../../schemas/forms';
+import { unitLabel } from '../../utils/units';
 import { Button, Input, Modal } from '../ui';
 
 export const EMPTY_WEIGHT_FORM: WeightLogFormData = {
@@ -34,6 +36,7 @@ export function WeightEntryModal({
   error,
   onSave,
 }: WeightEntryModalProps) {
+  const unit = useWeightUnit();
   const {
     register,
     handleSubmit,
@@ -58,7 +61,7 @@ export function WeightEntryModal({
           </p>
         )}
         <Input
-          label="Weight (kg)"
+          label={`Weight (${unitLabel(unit)})`}
           type="number"
           step="0.1"
           {...register('weight')}

@@ -294,6 +294,30 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    // Weight unit setting (kg | lbs). Storage stays kg everywhere.
+    //
+    // Before this migration the set-row UI labelled workout_sets.weight_kg as
+    // "lbs" (since b48b461, five days after the first commit) and the AI coach
+    // prompted and answered in lbs, so stored lifting weights are pounds.
+    // Existing profiles therefore switch to 'lbs' and lifting weights convert
+    // lbs -> kg, so the user sees the same numbers as before. Body weight was
+    // always entered as kg and is left alone. workout_sets is the only lifting
+    // weight column (program targets carry no weight). Backups made before
+    // this migration get the same treatment on import (see backup.ts).
+    version: 6,
+    up: async (db) => {
+      await db.exec(`
+        ALTER TABLE user_profile ADD COLUMN weight_unit TEXT NOT NULL DEFAULT 'kg'
+          CHECK (weight_unit IN ('kg', 'lbs'));
+
+        UPDATE user_profile SET weight_unit = 'lbs';
+
+        UPDATE workout_sets SET weight_kg = weight_kg * 0.45359237
+          WHERE weight_kg IS NOT NULL;
+      `);
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------

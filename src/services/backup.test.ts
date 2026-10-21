@@ -203,3 +203,129 @@ describe('backup zip format', () => {
     expect(await snapshot(pg)).toEqual(before);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Weight unit (migration v6). Before v6 the set-row UI labelled weight_kg as
+// "lbs", so lifting weights in pre-v6 backups are pounds.
+// ---------------------------------------------------------------------------
+
+const PROFILE_ROW = {
+  id: 1,
+  birthdate: '1990-04-02',
+  gender: 'male',
+  height_cm: 180,
+  activity_level: 'moderate',
+  goal: 'recomp',
+  diet_type: 'balanced',
+  calorie_target: 2500,
+  protein_target_g: 180,
+  carbs_target_g: 250,
+  fat_target_g: 80,
+  ai_provider: 'openrouter',
+  ai_model: 'openai/gpt-4o-mini',
+  created_at: '2026-01-01 08:00:00',
+  updated_at: '2026-01-01 08:00:00',
+};
+
+const WORKOUT_DATA = {
+  exercises: [{ id: 1, name: 'Bench Press', exercise_type: 'reps_weight' }],
+  workout_logs: [
+    {
+      id: 1,
+      date: '2026-01-01',
+      started_at: '2026-01-01 09:00:00',
+      ended_at: '2026-01-01 10:00:00',
+      status: 'completed',
+    },
+  ],
+  workout_sets: [
+    {
+      id: 1,
+      workout_log_id: 1,
+      exercise_id: 1,
+      set_number: 1,
+      reps: 8,
+      weight_kg: 135,
+    },
+    {
+      id: 2,
+      workout_log_id: 1,
+      exercise_id: 1,
+      set_number: 2,
+      reps: 8,
+      weight_kg: null,
+    },
+  ],
+};
+
+function backupJson(version: string, data: Record<string, unknown[]>) {
+  return strToU8(
+    JSON.stringify({ version, exported_at: '2026-01-01T00:00:00.000Z', data }),
+  );
+}
+
+async function readUnitAndSets(db: PGlite) {
+  const profile = await db.query<{ weight_unit: string }>(
+    'SELECT weight_unit FROM user_profile WHERE id = 1',
+  );
+  const sets = await db.query<{ weight_kg: number | null }>(
+    'SELECT weight_kg FROM workout_sets ORDER BY id',
+  );
+  return {
+    unit: profile.rows[0]?.weight_unit,
+    weights: sets.rows.map((r) => r.weight_kg),
+  };
+}
+
+describe('backup weight unit', () => {
+  it('round-trips weight_unit and kg-stored lifts unchanged', async () => {
+    await seed(pg);
+    await pg.exec(`
+      UPDATE user_profile SET weight_unit = 'lbs';
+      INSERT INTO workout_logs (date, started_at) VALUES ('2026-10-01', '2026-10-01 09:00:00');
+      INSERT INTO workout_sets (workout_log_id, exercise_id, set_number, reps, weight_kg) VALUES (1, 1, 1, 8, 61.25);
+    `);
+    const before = await readUnitAndSets(pg);
+
+    const zip = await exportBackup();
+    const json = JSON.parse(strFromU8(unzipSync(zip)['backup.json']));
+    expect(json.data.user_profile[0].weight_unit).toBe('lbs');
+
+    await pg.exec('DELETE FROM workout_sets; DELETE FROM workout_logs');
+    await clearAll(pg);
+    await importBackup(zip);
+
+    expect(await readUnitAndSets(pg)).toEqual(before);
+    expect(before).toEqual({ unit: 'lbs', weights: [61.25] });
+  });
+
+  it('treats a pre-units backup like migration v6: profile lbs, lifts converted to kg', async () => {
+    await importBackup(
+      backupJson('2.0', { user_profile: [PROFILE_ROW], ...WORKOUT_DATA }),
+    );
+
+    const { unit, weights } = await readUnitAndSets(pg);
+    expect(unit).toBe('lbs');
+    expect(weights[0]).toBeCloseTo(135 * 0.45359237, 4);
+    expect(weights[1]).toBeNull();
+  });
+
+  it('converts lifts from a pre-units backup that has no profile', async () => {
+    await importBackup(backupJson('0', WORKOUT_DATA));
+    const { weights } = await readUnitAndSets(pg);
+    expect(weights[0]).toBeCloseTo(135 * 0.45359237, 4);
+  });
+
+  it('defaults a current-format profile without weight_unit to kg and converts nothing', async () => {
+    await importBackup(
+      backupJson(BACKUP_VERSION, {
+        user_profile: [PROFILE_ROW],
+        ...WORKOUT_DATA,
+      }),
+    );
+    expect(await readUnitAndSets(pg)).toEqual({
+      unit: 'kg',
+      weights: [135, null],
+    });
+  });
+});

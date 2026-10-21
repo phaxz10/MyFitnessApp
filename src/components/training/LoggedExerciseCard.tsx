@@ -1,5 +1,7 @@
 import { Check } from 'lucide-react';
+import { useWeightUnit } from '../../hooks/useWeightUnit';
 import type { WorkoutSetWithExercise } from '../../types';
+import { toDisplayWeight, unitLabel } from '../../utils/units';
 import { Card, ExerciseMark } from '../ui';
 
 // Past-session exercise with fixed set columns. A completed set is stamped
@@ -67,6 +69,7 @@ function SetRow({
   setNumber: number;
   isTimed: boolean;
 }) {
+  const unit = useWeightUnit();
   const done = set.completed_at !== null;
   const second = isTimed ? set.duration_seconds : set.reps;
   const valueTone = done ? 'text-ink' : 'text-ink-3 line-through';
@@ -79,8 +82,10 @@ function SetRow({
       <span className={`num text-lg font-bold ${valueTone}`}>
         {set.weight_kg !== null ? (
           <>
-            {set.weight_kg}
-            <span className="text-sm font-medium text-ink-3 ml-0.5">lbs</span>
+            {toDisplayWeight(set.weight_kg, unit, 'lift')}
+            <span className="text-sm font-medium text-ink-3 ml-0.5">
+              {unitLabel(unit)}
+            </span>
           </>
         ) : (
           '–'

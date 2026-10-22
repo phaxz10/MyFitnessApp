@@ -6,9 +6,11 @@ import type {
   AIProgramGeneratorInputV2,
   AIProgramGeneratorResponse,
   AIProgramOptimizationInput,
+  EquipmentType,
   Exercise,
   ExperienceLevel,
   ExperienceLevelInference,
+  UserProfile,
 } from '../../types';
 import { complete, respond } from '../ai/aiClient';
 
@@ -175,7 +177,7 @@ const OPTIMIZE_INSTRUCTIONS = `You are an expert strength and conditioning coach
 The user message lists the PROFILE, PREFERENCES, CURRENT PROGRAM, RECENT PERFORMANCE, WEEKLY VOLUME and an EXERCISE LIBRARY.
 Line formats: program exercises are "name|type|sets|reps|duration|muscles|equipment|notes"; library lines are "name|type|muscles|equipment"; performance lines are "name|last performed|avg kg×reps|max kg×reps|volume|sessions".
 
-EXERCISE LIBRARY RULE: you MUST use ONLY exercise names from the EXERCISE LIBRARY (case-insensitive match). The app rejects any exercise name that does not appear verbatim in the library. If you want an exercise that's not in the library, pick the closest existing one instead — do not invent new names.
+EXERCISE NAMING RULE: when a library exercise fits, use its name verbatim (case-insensitive match). Otherwise use a standard, common exercise name (e.g. "Dumbbell Romanian Deadlift"); never invent hybrids or add made-up qualifiers. The app adds any new names to the library.
 
 TASKS:
 1. Keep the program structure similar, but improve exercise selection, volume balance, and progression ranges.
@@ -184,7 +186,7 @@ TASKS:
 4. Maintain or improve exercise ordering (compounds first, accessories later).
 5. Use supersets when it improves efficiency, but avoid overloading fatigue. Paired exercises reference each other in "supersetWith".
 6. Keep session duration within the preferred limit.
-7. CRITICAL: every "name" field in your output must be a verbatim copy of an exercise name from the library. Do not paraphrase, abbreviate, or add qualifiers.
+7. Name every exercise per the EXERCISE NAMING RULE.
 
 Output: a JSON object matching the provided schema. weeklyVolumeSummary.muscleGroupBreakdown is a list of {muscleGroup, sets}; use null for fields that do not apply (targetDurationSeconds on rep exercises, empty notes, no superset).`;
 
@@ -350,6 +352,90 @@ ${exerciseLibrary || 'No library data'}`;
 }
 
 // ============================================================================
+// fillSessionExercises — a few exercises for one session
+// ============================================================================
+
+const fillSessionSchema = z.object({
+  exercises: z.array(
+    z.object({
+      name: z.string(),
+      targetSets: z.number(),
+      targetRepMin: z.number().nullable(),
+      targetRepMax: z.number().nullable(),
+      targetDurationSeconds: z.number().nullable(),
+      notes: z.string().nullable(),
+    }),
+  ),
+});
+
+export type FilledSessionExercise = z.infer<
+  typeof fillSessionSchema
+>['exercises'][number];
+
+const FILL_SESSION_INSTRUCTIONS = `You are an expert strength and conditioning coach. Add exercises to ONE session of the user's workout program.
+
+The user message lists the PROFILE, the SESSION name, what the session should cover (REQUEST), the exercises ALREADY IN THE SESSION, AVAILABLE EQUIPMENT and an EXERCISE LIBRARY (lines are "name|type|muscles|equipment").
+
+RULES:
+1. Return 4-6 exercises that cover the request and complement the exercises already in the session. Never repeat one that is already there.
+2. EXERCISE NAMING RULE: when a library exercise fits, use its name verbatim. Otherwise use a standard, common exercise name (e.g. "Dumbbell Romanian Deadlift"); never invent hybrids or add made-up qualifiers.
+3. Use only the available equipment. Order compounds first, accessories later.
+4. Rep ranges: heavy compounds 5-10, isolation 8-15, lateral raises, rear delts, calves and core 15-25.
+5. Timed holds (planks, carries, hangs) set targetDurationSeconds and leave the rep fields null; rep exercises leave targetDurationSeconds null.
+
+Output: a JSON object matching the provided schema; use null for fields that do not apply.`;
+
+interface FillSessionInput {
+  sessionName: string;
+  instruction: string;
+  existing: { name: string }[];
+  library: Exercise[];
+  profile: Pick<UserProfile, 'gender' | 'goal'>;
+  equipment?: EquipmentType[];
+}
+
+export async function fillSessionExercises(
+  input: FillSessionInput,
+): Promise<{ exercises: FilledSessionExercise[] }> {
+  const library = input.library
+    .filter((e) => !e.archived_at)
+    .slice(0, MAX_OPTIMIZE_LIBRARY)
+    .map(
+      (e) =>
+        `${e.name}|${e.exercise_type}|${e.muscle_groups ?? ''}|${e.equipment ?? ''}`,
+    )
+    .join('\n');
+  const equipment = [
+    ...ALWAYS_AVAILABLE_EQUIPMENT,
+    ...(input.equipment ?? []),
+  ].join(', ');
+
+  const prompt = `PROFILE:
+- Gender: ${input.profile.gender}
+- Goal: ${input.profile.goal}
+
+SESSION: ${input.sessionName}
+REQUEST: ${input.instruction.trim() || input.sessionName}
+
+ALREADY IN THE SESSION:
+${input.existing.map((e) => `- ${e.name}`).join('\n') || 'Nothing yet'}
+
+AVAILABLE EQUIPMENT:
+${input.equipment ? equipment : 'Not specified; prefer common gym equipment'}
+
+EXERCISE LIBRARY:
+${library || 'Empty library'}`;
+
+  return complete({
+    instructions: FILL_SESSION_INSTRUCTIONS,
+    prompt,
+    schema: fillSessionSchema,
+    schemaName: 'session_exercises',
+    reasoning: 'medium',
+  });
+}
+
+// ============================================================================
 // Experience level — computed locally. The criteria are fixed thresholds, so
 // asking a model to apply them was a paid call with nothing to reason about.
 // ============================================================================
@@ -425,7 +511,7 @@ export function inferExperienceLevelLocally(
 // 10-step cap as a fallback, so there is no extra round trip just to hear
 // "done".
 
-export interface StreamlinedProgramResult {
+interface StreamlinedProgramResult {
   program: AIProgramGeneratorResponse;
   exercisesToCreate: AIExerciseResponse[];
   selectedExercises: { name: string; reason?: string }[];
@@ -583,6 +669,7 @@ USER PREFERENCES:
 - Split preference: ${splitPreference}
 ${input.focusAreas?.length ? `- Focus areas (prioritize): ${input.focusAreas.join(', ')}` : ''}
 ${input.injuries ? `- Injuries/limitations: ${input.injuries}` : ''}
+${input.notes?.trim() ? `\nUSER REQUEST: ${input.notes.trim()}\n(Follow this where it does not conflict with safety or the hard caps above.)` : ''}
 
 AVAILABLE EQUIPMENT:
 ${allEquipment.join(', ')}

@@ -7,7 +7,6 @@ import {
   useState,
 } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ProgramGeneratorWizard } from '../components/program-generator';
 import {
   formatElapsed,
   formatRelativeDay,
@@ -69,7 +68,6 @@ export function Workout() {
   const [showDeleteModal, setShowDeleteModal] = useState<WorkoutProgram | null>(
     null,
   );
-  const [showAIGenerator, setShowAIGenerator] = useState(false);
   const [todaySession, setTodaySession] =
     useState<ProgramSessionWithExercises | null>(null);
   const [todaySessionStatus, setTodaySessionStatus] = useState<{
@@ -271,42 +269,44 @@ export function Workout() {
           >
             Exercise Library
           </button>
-          <Menu
-            label="New program"
-            minWidth="min-w-60"
-            trigger={
-              <>
-                <Plus size={18} aria-hidden="true" />
-                New
-              </>
-            }
-            triggerClassName="inline-flex items-center gap-1.5 h-11 px-3 rounded-xl border border-line-strong bg-surface text-sm font-semibold text-ink hover:bg-sunken"
-          >
-            {(close) => (
-              <>
-                <MenuItem
-                  icon={<Plus size={18} />}
-                  description="Build your own program"
-                  onSelect={() => {
-                    close();
-                    navigate('/workout/program/new');
-                  }}
-                >
-                  Create Manually
-                </MenuItem>
-                <MenuItem
-                  icon={<Sparkles size={18} />}
-                  description="Let AI create a program for you"
-                  onSelect={() => {
-                    close();
-                    setShowAIGenerator(true);
-                  }}
-                >
-                  Generate with AI
-                </MenuItem>
-              </>
-            )}
-          </Menu>
+          {programs.length > 0 && (
+            <Menu
+              label="New program"
+              minWidth="min-w-60"
+              trigger={
+                <>
+                  <Plus size={18} aria-hidden="true" />
+                  New
+                </>
+              }
+              triggerClassName="inline-flex items-center gap-1.5 h-11 px-3 rounded-xl border border-line-strong bg-surface text-sm font-semibold text-ink hover:bg-sunken"
+            >
+              {(close) => (
+                <>
+                  <MenuItem
+                    icon={<Sparkles size={18} />}
+                    description="Describe it; edit everything before saving"
+                    onSelect={() => {
+                      close();
+                      navigate('/workout/program/new?ai=1');
+                    }}
+                  >
+                    Generate with AI
+                  </MenuItem>
+                  <MenuItem
+                    icon={<Plus size={18} />}
+                    description="Build your own program"
+                    onSelect={() => {
+                      close();
+                      navigate('/workout/program/new');
+                    }}
+                  >
+                    Create manually
+                  </MenuItem>
+                </>
+              )}
+            </Menu>
+          )}
         </SectionHeader>
 
         {programs.length > 0 ? (
@@ -317,9 +317,30 @@ export function Workout() {
             onDelete={setShowDeleteModal}
           />
         ) : (
-          <p className="text-ink-2 text-sm">
-            No programs yet. Tap New to build one or generate one with AI.
-          </p>
+          <Card>
+            <div className="p-4 space-y-3">
+              <p className="text-ink-2">
+                Tell the AI what you want and it builds the program. You can
+                edit everything before saving.
+              </p>
+              <Button
+                tone="ink"
+                size="lg"
+                className="w-full"
+                onClick={() => navigate('/workout/program/new?ai=1')}
+              >
+                <Sparkles size={20} aria-hidden="true" />
+                Generate with AI
+              </Button>
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={() => navigate('/workout/program/new')}
+              >
+                Build manually
+              </Button>
+            </div>
+          </Card>
         )}
       </section>
 
@@ -373,14 +394,6 @@ export function Workout() {
         Are you sure you want to delete "{showDeleteModal?.name}"? This action
         cannot be undone.
       </ConfirmModal>
-
-      <ProgramGeneratorWizard
-        isOpen={showAIGenerator}
-        onClose={() => {
-          setShowAIGenerator(false);
-          fetchPrograms();
-        }}
-      />
     </div>
   );
 }

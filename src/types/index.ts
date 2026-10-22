@@ -538,6 +538,8 @@ export interface AIProgramGeneratorInputV2
   extends Omit<AIProgramGeneratorInput, 'experienceLevel'> {
   // Optional - if not provided, AI will infer from workout history
   experienceLevel?: ExperienceLevel;
+  // Free-text request from the user ("4 days, home gym, keep my knee happy")
+  notes?: string;
   // Workout history for experience inference
   workoutHistory?: {
     totalWorkouts: number;

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-// Single-choice option for the AI wizard. Selected state is neutral ink.
+// Single-choice options for the AI generate sheet. Selected state is neutral ink.
 
 interface OptionButtonProps {
   selected: boolean;
@@ -61,25 +61,5 @@ export function NumberOption({
     >
       {children}
     </button>
-  );
-}
-
-/** Question heading inside a wizard step. */
-export function StepQuestion({
-  icon,
-  children,
-}: {
-  icon?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <h3 className="flex items-center gap-2 font-semibold text-ink mb-3">
-      {icon && (
-        <span className="text-ink-2" aria-hidden="true">
-          {icon}
-        </span>
-      )}
-      {children}
-    </h3>
   );
 }

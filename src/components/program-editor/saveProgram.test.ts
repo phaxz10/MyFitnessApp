@@ -159,4 +159,22 @@ describe('saveProgram', () => {
     );
     expect(rows.rows[0].n).toBe(4);
   });
+
+  it('activates a new program when it is the only one', async () => {
+    const form = await loadForm();
+    await pg.exec('DELETE FROM workout_programs');
+    for (const session of form.sessions) {
+      session.id = undefined;
+      for (const e of session.exercises) e.id = undefined;
+    }
+    const firstId = await saveProgram(db, form, null);
+    const secondId = await saveProgram(db, { ...form, name: 'Second' }, null);
+    const rows = await pg.query<{ id: number; is_active: boolean }>(
+      'SELECT id, is_active FROM workout_programs ORDER BY id',
+    );
+    expect(rows.rows).toEqual([
+      { id: firstId, is_active: true },
+      { id: secondId, is_active: false },
+    ]);
+  });
 });

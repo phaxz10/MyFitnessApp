@@ -1,6 +1,14 @@
-import { ChevronDown, ChevronUp, Link2, Plus, Trash2, X } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronUp,
+  Link2,
+  Plus,
+  Sparkles,
+  Trash2,
+  X,
+} from 'lucide-react';
 import type { UseFormRegister } from 'react-hook-form';
-import { Card, Input, Select } from '../ui';
+import { Button, Card, Input, Select } from '../ui';
 import { ExerciseRow } from './ExerciseRow';
 import { NumberInput } from './NumberInput';
 import {
@@ -21,6 +29,7 @@ interface SessionCardProps {
   onToggleExpand: () => void;
   onRemove: () => void;
   onAddExercise: () => void;
+  onFillWithAI: () => void;
   onDeleteExercise: (exerciseIndex: number) => void;
   onSupersetTap: (exerciseIndex: number) => void;
   onBreakSuperset: (supersetGroupId: string) => void;
@@ -37,6 +46,7 @@ export function SessionCard({
   onToggleExpand,
   onRemove,
   onAddExercise,
+  onFillWithAI,
   onDeleteExercise,
   onSupersetTap,
   onBreakSuperset,
@@ -179,14 +189,26 @@ export function SessionCard({
             </ul>
           )}
 
-          <button
-            type="button"
-            onClick={onAddExercise}
-            className="w-full min-h-12 border-t border-line rounded-b-xl flex items-center justify-center gap-2 font-semibold text-train-ink hover:bg-sunken transition-colors"
-          >
-            <Plus size={18} aria-hidden="true" />
-            Add Exercise
-          </button>
+          <div className="flex gap-2 p-3 border-t border-line">
+            <Button
+              type="button"
+              variant="secondary"
+              className="flex-1 whitespace-nowrap"
+              onClick={onAddExercise}
+            >
+              <Plus size={18} aria-hidden="true" />
+              Add exercise
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="flex-1 whitespace-nowrap"
+              onClick={onFillWithAI}
+            >
+              <Sparkles size={18} aria-hidden="true" />
+              Fill with AI
+            </Button>
+          </div>
         </div>
       )}
     </Card>

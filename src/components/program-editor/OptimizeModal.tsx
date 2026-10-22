@@ -46,11 +46,11 @@ export function OptimizeModal({
     useState<EquipmentType[]>(ALL_EQUIPMENT);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Optimize with AI">
+    <Modal isOpen={isOpen} onClose={onClose} title="Improve with AI">
       <div className="space-y-5">
         <p className="text-ink-2">
-          AI will analyze your program and suggest improvements based on your
-          preferences, exercise selection, and training principles.
+          AI rebalances your program for these preferences. You can review and
+          undo the result before saving.
         </p>
 
         <Select
@@ -185,7 +185,7 @@ export function OptimizeModal({
             }
           >
             {!isOptimizing && <Sparkles size={18} aria-hidden="true" />}
-            {isOptimizing ? 'Optimizing...' : 'Optimize Program'}
+            {isOptimizing ? 'Improving...' : 'Improve program'}
           </Button>
         </div>
       </div>

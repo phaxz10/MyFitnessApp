@@ -1,4 +1,10 @@
+import type { FilledSessionExercise } from '../../services/coaching/programCoach';
+import {
+  type ExerciseRequest,
+  normalizeExerciseName,
+} from '../../services/writers/exerciseResolver';
 import type {
+  AIExerciseResponse,
   AIProgramGeneratorResponse,
   AIProgramOptimizationInput,
   EquipmentType,
@@ -8,13 +14,15 @@ import type {
 } from '../../types';
 import { calculateAgeFromBirthdate } from '../../utils/date';
 import {
+  type ExerciseFormData,
   generateSupersetId,
   isDurationType,
   type ProgramFormData,
   type SessionFormData,
 } from './schema';
 
-// Pure translation between the editor form and the AI optimizer.
+// Pure translation between the editor form and the AI coach (generate,
+// improve, fill).
 
 export interface OptimizePreferences {
   experienceLevel: ExperienceLevel;
@@ -116,20 +124,60 @@ export function buildOptimizationInput(
   };
 }
 
+/** Every exercise name in an AI program, as resolver requests. */
+export function programExerciseRequests(
+  result: AIProgramGeneratorResponse,
+  created: AIExerciseResponse[] = [],
+): ExerciseRequest[] {
+  const details = new Map(
+    created.map((d) => [normalizeExerciseName(d.name), d]),
+  );
+  return result.sessions.flatMap((s) =>
+    s.exercises.map((e) => ({
+      name: e.name,
+      details: details.get(normalizeExerciseName(e.name)),
+    })),
+  );
+}
+
+/** Targets from the AI on a library exercise, shaped for the form. */
+function toFormExercise(
+  exercise: Exercise,
+  target: {
+    targetSets: number;
+    targetRepMin?: number | null;
+    targetRepMax?: number | null;
+    targetDurationSeconds?: number | null;
+    notes?: string | null;
+  },
+  supersetGroupId: string | null = null,
+): ExerciseFormData {
+  const exerciseType = exercise.exercise_type || 'reps_weight';
+  const isDuration = isDurationType(exerciseType);
+  return {
+    exerciseId: exercise.id,
+    exerciseName: exercise.name,
+    exerciseType,
+    targetSets: Math.max(1, Math.round(target.targetSets) || 3),
+    targetRepMin: isDuration ? null : (target.targetRepMin ?? 8),
+    targetRepMax: isDuration ? null : (target.targetRepMax ?? 12),
+    targetDurationSeconds: isDuration
+      ? target.targetDurationSeconds || 30
+      : null,
+    supersetGroupId,
+    notes: target.notes || '',
+  };
+}
+
 /**
- * Map the optimizer's result back onto the form.
- *
- * Exercises returned by the optimizer must resolve to a row in the user's
- * library before they can be saved (program_exercises.exercise_id is a NOT
- * NULL FK). Unmatched exercises are filtered out and returned by name so the
- * user knows which ones were dropped and can re-add them manually.
+ * Map an AI program (generated or improved) onto the form. `resolved` comes
+ * from resolveExercises over programExerciseRequests, so every name has a
+ * library row and nothing is dropped.
  */
 export function applyOptimizationResult(
   result: AIProgramGeneratorResponse,
-  allExercises: Exercise[],
-): { form: ProgramFormData; unmatchedNames: string[] } {
-  const unmatchedNames: string[] = [];
-
+  resolved: Map<string, Exercise>,
+): ProgramFormData {
   const sessions: SessionFormData[] = result.sessions.map((session) => {
     // Track superset pairs by name
     const supersetPairs: Record<string, string> = {};
@@ -144,79 +192,59 @@ export function applyOptimizationResult(
       }
     }
 
-    const matchedExercises = session.exercises
-      .map((exercise) => {
-        const libraryExercise = allExercises.find(
-          (e) => e.name.toLowerCase() === exercise.name.toLowerCase(),
-        );
-        if (!libraryExercise) {
-          unmatchedNames.push(exercise.name);
-          return null;
-        }
-
-        // Determine superset group ID
-        let supersetGroupId: string | null = null;
-        if (exercise.supersetWith) {
-          const key = [exercise.name, exercise.supersetWith].sort().join('|');
-          supersetGroupId = supersetPairs[key] || null;
-        }
-
-        const exerciseType = libraryExercise.exercise_type || 'reps_weight';
-        const isDuration = isDurationType(exerciseType);
-
-        return {
-          exerciseId: libraryExercise.id,
-          exerciseName: libraryExercise.name,
-          exerciseType,
-          targetSets: exercise.targetSets,
-          targetRepMin: isDuration ? null : exercise.targetRepMin,
-          targetRepMax: isDuration ? null : exercise.targetRepMax,
-          targetDurationSeconds: isDuration
-            ? exercise.targetDurationSeconds || 30
-            : null,
-          supersetGroupId,
-          notes: exercise.notes || '',
-        };
-      })
-      .filter(<T>(x: T | null): x is T => x !== null);
+    const exercises = session.exercises.flatMap((exercise) => {
+      const libraryExercise = resolved.get(
+        normalizeExerciseName(exercise.name),
+      );
+      if (!libraryExercise) return [];
+      const supersetGroupId = exercise.supersetWith
+        ? supersetPairs[
+            [exercise.name, exercise.supersetWith].sort().join('|')
+          ] || null
+        : null;
+      return [toFormExercise(libraryExercise, exercise, supersetGroupId)];
+    });
 
     return {
       name: session.name,
       dayOfWeek: session.dayOfWeek?.toString() ?? '',
       isExpanded: true,
-      exercises: matchedExercises,
+      exercises,
     };
   });
 
   return {
-    form: {
-      name: result.programName,
-      description: result.programDescription,
-      sessions,
-    },
-    unmatchedNames,
+    name: result.programName,
+    description: result.programDescription,
+    sessions,
   };
 }
 
-/** Recommendations and any dropped exercises, as one alert message. */
-export function optimizationSummary(
-  result: AIProgramGeneratorResponse,
-  unmatchedNames: string[],
-): string | null {
-  const messageLines: string[] = ['Optimization complete!'];
-  if (unmatchedNames.length > 0) {
-    const uniqueUnmatched = [...new Set(unmatchedNames)];
-    messageLines.push(
-      '',
-      `Dropped ${uniqueUnmatched.length} exercise(s) not in your library:`,
-      ...uniqueUnmatched.map((n) => `- ${n}`),
-      '',
-      'Add them to your exercise library first, then re-optimize.',
-    );
-  }
-  if (result.recommendations && result.recommendations.length > 0) {
-    messageLines.push('', 'Recommendations:');
-    messageLines.push(...result.recommendations.map((r) => `- ${r}`));
-  }
-  return messageLines.length > 1 ? messageLines.join('\n') : null;
+/** Fill suggestions not already in the session (or repeated), by name. */
+export function newFillExercises<T extends { name: string }>(
+  existing: { exerciseName: string }[],
+  filled: T[],
+): T[] {
+  const seen = new Set(
+    existing.map((e) => normalizeExerciseName(e.exerciseName)),
+  );
+  return filled.filter((e) => {
+    const key = normalizeExerciseName(e.name);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** Append "Fill with AI" suggestions to a session, skipping duplicates. */
+export function appendFilledExercises(
+  existing: ExerciseFormData[],
+  filled: FilledSessionExercise[],
+  resolved: Map<string, Exercise>,
+): ExerciseFormData[] {
+  const added = newFillExercises(existing, filled).flatMap((e) => {
+    const libraryExercise = resolved.get(normalizeExerciseName(e.name));
+    return libraryExercise ? [toFormExercise(libraryExercise, e)] : [];
+  });
+  return [...existing, ...added];
 }

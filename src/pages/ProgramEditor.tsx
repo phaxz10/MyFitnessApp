@@ -1,15 +1,19 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Plus, Save, Sparkles } from 'lucide-react';
+import { Plus, Save, Sparkles, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFieldArray, useForm, useWatch } from 'react-hook-form';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AddExerciseModal } from '../components/program-editor/AddExerciseModal';
+import { FillSessionModal } from '../components/program-editor/FillSessionModal';
+import { GenerateProgramModal } from '../components/program-editor/GenerateProgramModal';
 import { OptimizeModal } from '../components/program-editor/OptimizeModal';
 import {
+  appendFilledExercises,
   applyOptimizationResult,
   buildOptimizationInput,
+  newFillExercises,
   type OptimizePreferences,
-  optimizationSummary,
+  programExerciseRequests,
 } from '../components/program-editor/optimize';
 import { SessionCard } from '../components/program-editor/SessionCard';
 import { saveProgram } from '../components/program-editor/saveProgram';
@@ -34,18 +38,43 @@ import {
   Skeleton,
   TextArea,
 } from '../components/ui';
+import { useAppStore } from '../hooks/useAppStore';
 import { useExercises } from '../hooks/useExercises';
 import { useProfile } from '../hooks/useProfile';
+import type { GeneratedDraft } from '../hooks/useProgramGenerator';
 import { useWorkoutPrograms } from '../hooks/useWorkoutPrograms';
 import { getAICapability } from '../services/ai/useAICapability';
-import { optimizeWorkoutProgram } from '../services/coaching/programCoach';
+import {
+  fillSessionExercises,
+  optimizeWorkoutProgram,
+} from '../services/coaching/programCoach';
 import { getDB } from '../services/db';
-import type { Exercise } from '../types';
+import {
+  type ExerciseDetailsFetcher,
+  type ExerciseRequest,
+  resolveExercises,
+} from '../services/writers/exerciseResolver';
+import type {
+  AIExerciseResponse,
+  AIProgramGeneratorResponse,
+  Exercise,
+} from '../types';
+
+// An applied AI draft: what to show, and the form to restore on Undo.
+interface AIDraftResult {
+  recommendations: string[];
+  snapshot: ProgramFormData;
+}
+
+const NO_EXERCISES_ERROR =
+  'The AI returned no exercises, so nothing was changed. Please try again.';
 
 export function ProgramEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const isEditing = !!id && id !== 'new';
+  const isOnline = useAppStore((state) => state.isOnline);
 
   const programsApi = useWorkoutPrograms();
   const { getProgramById, loading } = programsApi;
@@ -60,7 +89,13 @@ export function ProgramEditor() {
   const [showOptimizeModal, setShowOptimizeModal] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [optimizeError, setOptimizeError] = useState<string | null>(null);
+  const [showGenerate, setShowGenerate] = useState(false);
+  const [fillSessionIndex, setFillSessionIndex] = useState<number | null>(null);
+  const [isFilling, setIsFilling] = useState(false);
+  const [fillError, setFillError] = useState<string | null>(null);
+  const [aiResult, setAIResult] = useState<AIDraftResult | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const {
     register,
@@ -136,6 +171,125 @@ export function ProgramEditor() {
       loadProgram(parseInt(id, 10));
     }
   }, [id, isEditing, fetchExercises, loadProgram]);
+
+  // "Generate with AI" from the Workout page lands here with ?ai=1.
+  useEffect(() => {
+    if (searchParams.get('ai') === '1') {
+      setShowGenerate(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  // Resolve AI exercise names to library rows, creating the missing ones.
+  // Details come from the AI only when it can be reached.
+  const resolve = async (requests: ExerciseRequest[]) => {
+    const library = await fetchExercises();
+    const fetcher: ExerciseDetailsFetcher | undefined =
+      getAICapability().available && isOnline ? undefined : async () => [];
+    const resolved = await resolveExercises(
+      await getDB(),
+      requests,
+      library,
+      fetcher,
+    );
+    fetchExercises();
+    return resolved;
+  };
+
+  // Replace the form with an AI program (generate / improve). The previous
+  // form is kept for Undo; keepDefaultValues leaves the form dirty so the
+  // discard guard still applies.
+  const applyAIProgram = async (
+    program: AIProgramGeneratorResponse,
+    created: AIExerciseResponse[] = [],
+  ) => {
+    if (!program.sessions.some((s) => s.exercises.length > 0)) {
+      throw new Error(NO_EXERCISES_ERROR);
+    }
+    const snapshot = getValues();
+    const resolved = await resolve(programExerciseRequests(program, created));
+    reset(applyOptimizationResult(program, resolved), {
+      keepDefaultValues: true,
+    });
+    setSelectedForSuperset(null);
+    setAIResult({ recommendations: program.recommendations ?? [], snapshot });
+  };
+
+  const handleGenerated = async (draft: GeneratedDraft) => {
+    await applyAIProgram(draft.program, draft.exercisesToCreate);
+    setShowGenerate(false);
+  };
+
+  const handleUndoAI = () => {
+    if (!aiResult) return;
+    reset(aiResult.snapshot, { keepDefaultValues: true });
+    setSelectedForSuperset(null);
+    setAIResult(null);
+  };
+
+  const aiUnavailableMessage = () =>
+    !profile
+      ? 'Please set up your profile first in Settings.'
+      : !getAICapability().available
+        ? 'Please add your OpenRouter API key in Settings to use AI features.'
+        : !isOnline
+          ? 'You are offline. Connect to use AI features.'
+          : null;
+
+  const handleFill = async (instruction: string) => {
+    if (fillSessionIndex === null || isFilling) return;
+    const unavailable = aiUnavailableMessage();
+    if (unavailable || !profile) {
+      setFillError(unavailable);
+      return;
+    }
+    const sessionIndex = fillSessionIndex;
+    const session = getValues(`sessions.${sessionIndex}`);
+    setIsFilling(true);
+    setFillError(null);
+    try {
+      const { exercises } = await fillSessionExercises({
+        sessionName: session.name,
+        instruction,
+        existing: session.exercises.map((e) => ({ name: e.exerciseName })),
+        library: allExercises,
+        profile,
+      });
+      const added = newFillExercises(session.exercises, exercises);
+      if (added.length === 0) {
+        setFillError(
+          'The AI did not suggest anything new for this session. Try describing it differently.',
+        );
+        return;
+      }
+      const snapshot = getValues();
+      const resolved = await resolve(added.map((e) => ({ name: e.name })));
+      setValue(
+        `sessions.${sessionIndex}.exercises`,
+        appendFilledExercises(session.exercises, added, resolved),
+        { shouldDirty: true },
+      );
+      setAIResult({ recommendations: [], snapshot });
+      setFillSessionIndex(null);
+    } catch (err) {
+      console.error('Fill session failed:', err);
+      setFillError(
+        err instanceof Error
+          ? err.message
+          : 'Could not add exercises. Please try again.',
+      );
+    } finally {
+      setIsFilling(false);
+    }
+  };
+
+  const handleCreateExercise = async (name: string) => {
+    if (showAddExercise === null) return;
+    const sessionIndex = showAddExercise;
+    const resolved = await resolve([{ name }]);
+    const [exercise] = resolved.values();
+    if (exercise) handleAddExercise(sessionIndex, exercise);
+  };
 
   const handleBack = () => {
     if (isDirty) {
@@ -302,12 +456,13 @@ export function ProgramEditor() {
 
   const onSubmit = async (data: ProgramFormData) => {
     if (data.sessions.length === 0) {
-      alert('Please add at least one session');
+      setSaveError('Add at least one session before saving.');
       return;
     }
 
     if (isSaving) return;
     setIsSaving(true);
+    setSaveError(null);
     try {
       await saveProgram(
         await getDB(),
@@ -324,32 +479,22 @@ export function ProgramEditor() {
         errorMessage.includes('not-null constraint') ||
         errorMessage.includes('target_rep_min')
       ) {
-        alert(
-          'Database schema needs updating. Please:\n' +
-            '1. Hard refresh the page (Ctrl+Shift+R or Cmd+Shift+R)\n' +
-            '2. If that doesn\'t work, go to Settings and use "Reset Database"\n' +
-            '\nNote: Reset Database will clear all your data.',
+        setSaveError(
+          'The database needs updating. Hard refresh the page; if that does not help, use Reset Database in Settings (this clears all your data).',
         );
       } else {
-        alert(`Failed to save program: ${errorMessage}`);
+        setSaveError(`Failed to save program: ${errorMessage}`);
       }
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Handle AI optimization
+  // Handle AI improvement
   const handleOptimize = async (prefs: OptimizePreferences) => {
-    if (!profile) {
-      setOptimizeError('Please set up your profile first in Settings.');
-      return;
-    }
-
-    // Capability check: aiClient reads the key from store on each call.
-    if (!getAICapability().available) {
-      setOptimizeError(
-        'Please add your OpenRouter API key in Settings to use AI features.',
-      );
+    const unavailable = aiUnavailableMessage();
+    if (unavailable || !profile) {
+      setOptimizeError(unavailable);
       return;
     }
 
@@ -368,28 +513,14 @@ export function ProgramEditor() {
         prefs,
       );
       const result = await optimizeWorkoutProgram(input);
-      const { form, unmatchedNames } = applyOptimizationResult(
-        result,
-        allExercises,
-      );
-
-      // Reset the form with new sessions
-      reset(form);
+      await applyAIProgram(result);
       setShowOptimizeModal(false);
-
-      // Show recommendations and any dropped exercises in a single alert.
-      const summary = optimizationSummary(result, unmatchedNames);
-      if (summary) {
-        setTimeout(() => {
-          alert(summary);
-        }, 100);
-      }
     } catch (error) {
       console.error('Optimization failed:', error);
       setOptimizeError(
         error instanceof Error
           ? error.message
-          : 'Failed to optimize program. Please try again.',
+          : 'Failed to improve program. Please try again.',
       );
     } finally {
       setIsOptimizing(false);
@@ -451,23 +582,66 @@ export function ProgramEditor() {
               </div>
             </Card>
 
-            {/* AI optimize: only once there is something to optimize */}
-            {sessionFields.length > 0 && (
-              <div className="flex items-center gap-3 p-4 rounded-xl bg-sunken">
-                <p className="flex-1 text-sm text-ink-2">
-                  Let AI review your sessions and suggest improvements.
-                </p>
-                <Button
-                  tone="ink"
+            {/* AI: generate an empty program, improve a filled one */}
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-sunken">
+              <p className="flex-1 text-sm text-ink-2">
+                {sessionFields.length === 0
+                  ? 'Describe your goals and let AI build the sessions.'
+                  : 'Let AI rebalance volume, order and exercise choice.'}
+              </p>
+              <Button
+                tone="ink"
+                type="button"
+                size="sm"
+                className="shrink-0 h-11"
+                onClick={() =>
+                  sessionFields.length === 0
+                    ? setShowGenerate(true)
+                    : setShowOptimizeModal(true)
+                }
+                disabled={isOptimizing}
+              >
+                <Sparkles size={18} aria-hidden="true" />
+                {sessionFields.length === 0
+                  ? 'Generate with AI'
+                  : 'Improve with AI'}
+              </Button>
+            </div>
+
+            {aiResult && (
+              <div
+                role="status"
+                className="flex gap-2 pl-4 pr-1 py-1 rounded-xl bg-sunken"
+              >
+                <div className="flex-1 py-3 space-y-2">
+                  <p className="font-semibold text-ink">
+                    AI draft applied. Review, then save.
+                  </p>
+                  {aiResult.recommendations.length > 0 && (
+                    <ul className="list-disc pl-5 space-y-1 text-sm text-ink-2">
+                      {aiResult.recommendations.map((r) => (
+                        <li key={r}>{r}</li>
+                      ))}
+                    </ul>
+                  )}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="h-11"
+                    onClick={handleUndoAI}
+                  >
+                    Undo
+                  </Button>
+                </div>
+                <button
                   type="button"
-                  size="sm"
-                  className="shrink-0 h-11"
-                  onClick={() => setShowOptimizeModal(true)}
-                  disabled={isOptimizing}
+                  onClick={() => setAIResult(null)}
+                  aria-label="Dismiss"
+                  className="grid place-items-center size-11 shrink-0 rounded-full text-ink-2 hover:text-ink hover:bg-sunken-strong"
                 >
-                  <Sparkles size={18} aria-hidden="true" />
-                  Optimize
-                </Button>
+                  <X size={18} />
+                </button>
               </div>
             )}
 
@@ -512,6 +686,10 @@ export function ProgramEditor() {
                       onToggleExpand={() => handleToggleExpand(sessionIndex)}
                       onRemove={() => removeSession(sessionIndex)}
                       onAddExercise={() => setShowAddExercise(sessionIndex)}
+                      onFillWithAI={() => {
+                        setFillError(null);
+                        setFillSessionIndex(sessionIndex);
+                      }}
                       onDeleteExercise={(exerciseIndex) =>
                         handleDeleteExercise(sessionIndex, exerciseIndex)
                       }
@@ -543,6 +721,11 @@ export function ProgramEditor() {
 
           {/* Save: pinned at thumb height */}
           <div className="sticky bottom-0 z-20 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] bg-canvas border-t border-line">
+            {saveError && (
+              <p role="alert" className="mb-2 text-sm text-danger">
+                {saveError}
+              </p>
+            )}
             <Button
               type="submit"
               size="lg"
@@ -564,6 +747,7 @@ export function ProgramEditor() {
           showAddExercise !== null &&
           handleAddExercise(showAddExercise, exercise)
         }
+        onCreate={handleCreateExercise}
         onManageLibrary={() => navigate('/exercises')}
       />
 
@@ -586,6 +770,24 @@ export function ProgramEditor() {
         error={optimizeError}
         canOptimize={!!profile}
         onOptimize={handleOptimize}
+      />
+
+      <GenerateProgramModal
+        isOpen={showGenerate}
+        onClose={() => setShowGenerate(false)}
+        onGenerated={handleGenerated}
+      />
+
+      <FillSessionModal
+        sessionName={
+          fillSessionIndex === null
+            ? null
+            : (watchedSessions[fillSessionIndex]?.name ?? '')
+        }
+        isFilling={isFilling}
+        error={fillError}
+        onClose={() => setFillSessionIndex(null)}
+        onFill={handleFill}
       />
     </div>
   );

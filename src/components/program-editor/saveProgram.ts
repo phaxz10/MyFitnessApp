@@ -91,8 +91,9 @@ async function insertSession(
 }
 
 /**
- * Save the form; `programId` is the id being edited, or null to create.
- * Resolves to the program's id.
+ * Save the form; `programId` is the id being edited, or null to create (a
+ * new program is made active when it is the only one). Resolves to the
+ * program's id.
  */
 export async function saveProgram(
   db: DB,
@@ -107,9 +108,10 @@ export async function saveProgram(
     };
 
     if (programId === null) {
+      // The first program becomes the active one: nothing else to schedule.
       const result = await tx.query<{ id: number }>(
         `INSERT INTO workout_programs (name, description, sessions_per_week, is_active)
-         VALUES ($1, $2, $3, false) RETURNING id`,
+         VALUES ($1, $2, $3, NOT EXISTS (SELECT 1 FROM workout_programs)) RETURNING id`,
         [program.name, program.description, program.sessions_per_week],
       );
       const newId = result.rows[0].id;

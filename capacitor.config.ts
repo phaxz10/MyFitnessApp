@@ -7,6 +7,10 @@ const config: CapacitorConfig = {
   appName: 'MyPersonalFitness',
   webDir: 'dist',
   plugins: {
+    // Shrink the web view above the keyboard so pinned action bars stay visible.
+    Keyboard: {
+      resize: 'native',
+    },
     LocalNotifications: {
       iconColor: '#1572ae',
     },

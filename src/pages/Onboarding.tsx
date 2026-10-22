@@ -24,6 +24,8 @@ import {
   calculateDeterministicTargets,
   calculateTargets,
 } from '../services/coaching/nutritionCoach';
+import { getDB } from '../services/db';
+import { seedStarterLibraryIfEmpty } from '../services/starterLibrary';
 import { calculateAgeFromBirthdate, formatDate } from '../utils/date';
 import { fromInputWeight, unitLabel } from '../utils/units';
 
@@ -275,6 +277,9 @@ export function Onboarding() {
         arm_cm: null,
         body_fat_pct: null,
       });
+
+      await seedStarterLibraryIfEmpty(await getDB());
+      await queryClient.invalidateQueries();
 
       setOnboardingComplete(true);
       setStep('ready');

@@ -219,3 +219,21 @@ input[type="number"] {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* iOS gives date inputs an intrinsic min-width that overflows narrow screens. */
+input[type="date"] {
+  min-width: 0;
+  display: block;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
+}
+
+/* Focused fields scroll clear of the sticky header and pinned action bars. */
+html {
+  scroll-padding-top: calc(4rem + env(safe-area-inset-top));
+  scroll-padding-bottom: 7rem;
+}

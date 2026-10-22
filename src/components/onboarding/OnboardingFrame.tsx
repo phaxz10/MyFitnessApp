@@ -54,7 +54,7 @@ export function OnboardingFrame({
 }: OnboardingFrameProps) {
   return (
     <div className="min-h-dvh bg-canvas flex flex-col">
-      <div className="w-full max-w-lg mx-auto px-4 pt-[env(safe-area-inset-top)]">
+      <div className="sticky top-0 z-10 bg-canvas w-full max-w-lg mx-auto px-4 pt-[env(safe-area-inset-top)]">
         <div className="flex items-center gap-3 h-14">
           {onBack ? (
             <button

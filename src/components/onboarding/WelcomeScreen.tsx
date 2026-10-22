@@ -42,7 +42,7 @@ export function WelcomeScreen({
           MyPersonalFitness
         </h1>
         <p className="text-lg text-ink-2">
-          Free and offline. Your data stays in your browser. Bring your own AI
+          Free and offline. Your data stays on your device. Bring your own AI
           key via OpenRouter.
         </p>
       </main>

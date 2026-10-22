@@ -6,6 +6,8 @@ PODS:
   - CapacitorCordova (7.6.9)
   - CapacitorHaptics (7.0.5):
     - Capacitor
+  - CapacitorKeyboard (7.0.6):
+    - Capacitor
   - CapacitorLocalNotifications (7.0.7):
     - Capacitor
 
@@ -14,6 +16,7 @@ DEPENDENCIES:
   - "CapacitorCommunityKeepAwake (from `../../node_modules/.pnpm/@capacitor-community+keep-awake@7.1.0_@capacitor+core@7.6.9/node_modules/@capacitor-community/keep-awake`)"
   - "CapacitorCordova (from `../../node_modules/.pnpm/@capacitor+ios@7.6.9_@capacitor+core@7.6.9/node_modules/@capacitor/ios`)"
   - "CapacitorHaptics (from `../../node_modules/.pnpm/@capacitor+haptics@7.0.5_@capacitor+core@7.6.9/node_modules/@capacitor/haptics`)"
+  - "CapacitorKeyboard (from `../../node_modules/.pnpm/@capacitor+keyboard@7.0.6_@capacitor+core@7.6.9/node_modules/@capacitor/keyboard`)"
   - "CapacitorLocalNotifications (from `../../node_modules/.pnpm/@capacitor+local-notifications@7.0.7_@capacitor+core@7.6.9/node_modules/@capacitor/local-notifications`)"
 
 EXTERNAL SOURCES:
@@ -25,6 +28,8 @@ EXTERNAL SOURCES:
     :path: "../../node_modules/.pnpm/@capacitor+ios@7.6.9_@capacitor+core@7.6.9/node_modules/@capacitor/ios"
   CapacitorHaptics:
     :path: "../../node_modules/.pnpm/@capacitor+haptics@7.0.5_@capacitor+core@7.6.9/node_modules/@capacitor/haptics"
+  CapacitorKeyboard:
+    :path: "../../node_modules/.pnpm/@capacitor+keyboard@7.0.6_@capacitor+core@7.6.9/node_modules/@capacitor/keyboard"
   CapacitorLocalNotifications:
     :path: "../../node_modules/.pnpm/@capacitor+local-notifications@7.0.7_@capacitor+core@7.6.9/node_modules/@capacitor/local-notifications"
 
@@ -33,8 +38,9 @@ SPEC CHECKSUMS:
   CapacitorCommunityKeepAwake: 05c75aab989f60e621870cf03b24a144a5544c30
   CapacitorCordova: 2080fc0d6bfbc9dcc0e6d88e77fa624190d343ca
   CapacitorHaptics: 1b145fa83c622e5383a3bac04ea81e2514f0b0f5
+  CapacitorKeyboard: a2e0869edd229490ce36aed2549c0d6b95e27ee8
   CapacitorLocalNotifications: 71124afe526ac00585314bff34651bd023f86e37
 
-PODFILE CHECKSUM: 37310aa511048dc58c40ec4fd7f1c9fd715758d8
+PODFILE CHECKSUM: 6aa7f75fb35425fa91ae03fb7d757c0261dc4ed4
 
 COCOAPODS: 1.17.0
